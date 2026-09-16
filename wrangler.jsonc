@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "promptwatch",
+  "main": "./src/server/index.ts",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "promptwatch-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "./migrations",
+    },
+  ],
+  "triggers": { "crons": ["0 * * * *"] },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.05 },
+  },
+  "vars": {
+    "APP_URL": "http://localhost:5173",
+    "APP_ENV": "development",
+    "LEMON_SQUEEZY_STORE_ID": "",
+    "LEMON_SQUEEZY_PRODUCT_ID": "",
+    "LEMON_SQUEEZY_VARIANT_ID": "",
+    "LEMON_SQUEEZY_STORE_HOST": "",
+    "LEMON_SQUEEZY_TEST_MODE": "true",
+    "RESEND_FROM_EMAIL": "PromptWatch <auth@example.com>",
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+    "GLOBAL_DAILY_PROVIDER_CALL_CAP": "100",
+    "PER_USER_MONTHLY_PROVIDER_CALL_CAP": "350",
+    "MAX_PROVIDER_CALLS_PER_CRON_INVOCATION": "20",
+    "EXTERNAL_INTEGRATIONS_ENABLED": "false",
+    "TEST_AUTH_ENABLED": "false",
+  },
+}
