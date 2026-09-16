@@ -8,6 +8,7 @@ import { loginRoutes } from './routes/login';
 import { scanRoutes } from './routes/scans';
 import { runScheduledScans } from './cron';
 import { accountRoutes } from './routes/account';
+import { operatorRoutes } from './routes/operator';
 
 interface AppEnv {
   Bindings: CloudflareBindings;
@@ -58,6 +59,14 @@ app.use('/api/*', async (c, next) => {
 });
 
 app.get('/api/health', (c) => c.json({ data: { status: 'ok', service: 'promptwatch' } }));
+app.get('/api/public-config', (c) =>
+  c.json({
+    data: {
+      turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
+      integrationsEnabled: getConfig(c.env).EXTERNAL_INTEGRATIONS_ENABLED === 'true',
+    },
+  }),
+);
 app.post('/api/auth/sign-in/magic-link', (c) =>
   c.json(
     { error: { code: 'TURNSTILE_REQUIRED', message: 'Use the protected login endpoint.' } },
@@ -81,6 +90,7 @@ app.route('/api/billing', billingRoutes);
 app.route('/api/login', loginRoutes);
 app.route('/api/scans', scanRoutes);
 app.route('/api/account', accountRoutes);
+app.route('/api/operator', operatorRoutes);
 app.post('/api/webhooks/lemonsqueezy', (c) => handleLemonWebhook(c.req.raw, c.env));
 
 app.notFound((c) => {

@@ -797,7 +797,137 @@ footer {
   color: var(--blue);
   font-weight: 650;
 }
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+}
+.auth-page > section:first-child {
+  background: var(--ink);
+  color: white;
+  padding: 45px 6vw;
+  display: flex;
+  flex-direction: column;
+}
+.auth-page .logo {
+  align-self: flex-start;
+}
+.auth-copy {
+  margin: auto 0;
+  max-width: 650px;
+}
+.auth-copy .eyebrow {
+  color: #8baeff;
+}
+.auth-copy h1 {
+  font-size: clamp(52px, 7vw, 88px);
+}
+.auth-copy p:last-child {
+  color: #aaa89f;
+  line-height: 1.7;
+  max-width: 520px;
+}
+.auth-form {
+  display: grid;
+  place-items: center;
+  padding: 40px;
+}
+.auth-form form {
+  width: min(430px, 100%);
+}
+.auth-form h2 {
+  font-family: 'DM Sans Variable';
+  font-size: 29px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  margin-bottom: 30px;
+}
+.auth-form label,
+.onboarding label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  margin: 18px 0;
+}
+.auth-form input,
+.onboarding input,
+.onboarding textarea {
+  width: 100%;
+  border: 1px solid #aaa89f;
+  background: #fbfaf6;
+  padding: 13px;
+  font: inherit;
+  border-radius: 0;
+}
+.turnstile-placeholder {
+  border: 1px dashed #aaa89f;
+  padding: 15px;
+  color: #77756c;
+  font-size: 11px;
+  margin: 18px 0;
+}
+.auth-form .button {
+  width: 100%;
+}
+.auth-form small,
+.onboarding small {
+  font-size: 11px;
+  color: #77756c;
+  font-weight: 400;
+}
+.form-status,
+.form-error {
+  font-size: 12px;
+  min-height: 18px;
+}
+.form-error {
+  color: #9b2f2a;
+}
+.onboarding {
+  padding-top: 70px;
+  max-width: 850px;
+}
+.onboarding h1 {
+  font-size: 64px;
+}
+.onboarding form {
+  margin-top: 50px;
+  background: #fbfaf6;
+  border: 1px solid var(--line);
+  padding: 30px;
+}
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
 @media (max-width: 760px) {
+  .auth-page {
+    grid-template-columns: 1fr;
+  }
+  .auth-page > section:first-child {
+    padding: 25px 20px;
+  }
+  .auth-copy {
+    margin: 70px 0 30px;
+  }
+  .auth-copy h1 {
+    font-size: 50px;
+  }
+  .auth-form {
+    padding: 55px 20px;
+  }
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+  .onboarding h1 {
+    font-size: 48px;
+  }
+  .onboarding form {
+    padding: 18px;
+  }
   .app-frame {
     grid-template-columns: 1fr;
   }

@@ -5,6 +5,7 @@ import { verifyTurnstile } from '../../integrations/turnstile/verify';
 import { createAuth } from '../auth';
 import { getConfig } from '../config';
 import { readJsonLimited } from '../http';
+import { consumeRateLimit } from '../rate-limit';
 
 const loginSchema = z.object({
   email: z.email().trim().toLowerCase().max(254),
@@ -23,6 +24,8 @@ loginRoutes.post('/magic-link', async (c) => {
   };
   if (!parsed.success) return c.json(generic);
   const config = getConfig(c.env);
+  const clientKey = c.req.header('CF-Connecting-IP') ?? 'unknown';
+  if (!(await consumeRateLimit(c.env.DB, `magic-link:${clientKey}`, 5, 60))) return c.json(generic);
   const expectedHostname = new URL(config.APP_URL).hostname;
   if (config.EXTERNAL_INTEGRATIONS_ENABLED === 'true') {
     const valid = await verifyTurnstile({

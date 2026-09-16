@@ -11,6 +11,8 @@ import {
   ResponsesPage,
   SettingsPage,
 } from './pages/AppShell';
+import { Login } from './pages/Login';
+import { Onboarding } from './pages/Onboarding';
 
 const visibility = demoDays.map((day) => day.visibilityScore);
 
@@ -454,10 +456,11 @@ export function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/demo" element={<Demo />} />
         <Route path="/pricing" element={<Pricing />} />
-        <Route path="/login" element={<Placeholder title="Sign in with a secure magic link." />} />
+        <Route path="/login" element={<Login />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/app" element={<AppShell />}>
+          <Route path="onboarding" element={<Onboarding />} />
           <Route path="overview" element={<AppOverview />} />
           <Route path="prompts" element={<PromptsPage />} />
           <Route path="responses" element={<ResponsesPage />} />

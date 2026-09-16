@@ -15,11 +15,17 @@ const configSchema = z.object({
   LEMON_SQUEEZY_STORE_HOST: z.string(),
   TURNSTILE_SITE_KEY: z.string().min(1),
   RESEND_FROM_EMAIL: z.string().min(1),
+  OPERATOR_SECRET: z.string().optional(),
 });
 
 export function getConfig(env: CloudflareBindings) {
   const config = configSchema.parse(env);
   if (config.APP_ENV === 'production' && config.TEST_AUTH_ENABLED === 'true')
     throw new Error('TEST_AUTH_MUST_BE_DISABLED');
+  if (
+    config.APP_ENV === 'production' &&
+    (!config.OPERATOR_SECRET || config.OPERATOR_SECRET.length < 32)
+  )
+    throw new Error('OPERATOR_SECRET_REQUIRED');
   return config;
 }

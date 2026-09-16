@@ -52,6 +52,25 @@ projectRoutes.post('/', async (c) => {
       { error: { code: 'VALIDATION_ERROR', message: 'Check the project details.' } },
       422,
     );
+  let canonicalDomain: string;
+  try {
+    canonicalDomain = normalizeDomain(parsed.data.canonicalDomain);
+  } catch {
+    return c.json(
+      { error: { code: 'VALIDATION_ERROR', message: 'Enter a valid canonical domain.' } },
+      422,
+    );
+  }
+  const normalizedCompetitors = parsed.data.competitors.map((item) => normalizeText(item.name));
+  const normalizedPrompts = parsed.data.prompts.map(normalizeText);
+  if (
+    new Set(normalizedCompetitors).size !== normalizedCompetitors.length ||
+    new Set(normalizedPrompts).size !== normalizedPrompts.length
+  )
+    return c.json(
+      { error: { code: 'DUPLICATE_INPUT', message: 'Competitors and prompts must be unique.' } },
+      422,
+    );
   const db = drizzle(c.env.DB);
   const existing = await db
     .select({ id: projects.id })
@@ -92,7 +111,7 @@ projectRoutes.post('/', async (c) => {
           userId: session.user.id,
           name: parsed.data.name,
           brandName: parsed.data.brandName,
-          canonicalDomain: normalizeDomain(parsed.data.canonicalDomain),
+          canonicalDomain,
           createdAt: now,
           updatedAt: now,
         })
@@ -101,7 +120,7 @@ projectRoutes.post('/', async (c) => {
       ...promptRows.map((row) => db.insert(prompts).values(row).toSQL()),
     ].map(({ sql, params }) => c.env.DB.prepare(sql).bind(...params)),
   );
-  return c.json({ data: { id: projectId } }, 201);
+  return c.json({ data: { id: projectId, promptIds: promptRows.map((row) => row.id) } }, 201);
 });
 projectRoutes.delete('/', async (c) => {
   const auth = createAuth(c.env);
