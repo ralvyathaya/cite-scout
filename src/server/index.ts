@@ -1,11 +1,24 @@
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
+import { createAuth } from './auth';
+import { getConfig } from './config';
+import { projectRoutes } from './routes/project';
+import { billingRoutes, handleLemonWebhook } from './routes/billing';
+import { loginRoutes } from './routes/login';
+import { scanRoutes } from './routes/scans';
+import { runScheduledScans } from './cron';
+import { accountRoutes } from './routes/account';
 
 interface AppEnv {
   Bindings: CloudflareBindings;
 }
 
 const app = new Hono<AppEnv>();
+
+app.use('*', async (c, next) => {
+  getConfig(c.env);
+  await next();
+});
 
 app.use(
   '*',
@@ -45,6 +58,30 @@ app.use('/api/*', async (c, next) => {
 });
 
 app.get('/api/health', (c) => c.json({ data: { status: 'ok', service: 'promptwatch' } }));
+app.post('/api/auth/sign-in/magic-link', (c) =>
+  c.json(
+    { error: { code: 'TURNSTILE_REQUIRED', message: 'Use the protected login endpoint.' } },
+    403,
+  ),
+);
+app.all('/api/auth/*', (c) => createAuth(c.env).handler(c.req.raw));
+app.get('/api/me', async (c) => {
+  const session = await createAuth(c.env).api.getSession({ headers: c.req.raw.headers });
+  if (!session)
+    return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
+  return c.json({
+    data: {
+      user: { id: session.user.id, email: session.user.email },
+      session: { expiresAt: session.session.expiresAt },
+    },
+  });
+});
+app.route('/api/project', projectRoutes);
+app.route('/api/billing', billingRoutes);
+app.route('/api/login', loginRoutes);
+app.route('/api/scans', scanRoutes);
+app.route('/api/account', accountRoutes);
+app.post('/api/webhooks/lemonsqueezy', (c) => handleLemonWebhook(c.req.raw, c.env));
 
 app.notFound((c) => {
   if (c.req.path.startsWith('/api/')) {
@@ -63,7 +100,7 @@ app.onError((error, c) => {
   );
 });
 
-function scheduled(controller: ScheduledController): void {
+async function scheduled(controller: ScheduledController, env: CloudflareBindings): Promise<void> {
   console.log(
     JSON.stringify({
       event: 'cron_invoked',
@@ -71,6 +108,7 @@ function scheduled(controller: ScheduledController): void {
       cron: controller.cron,
     }),
   );
+  await runScheduledScans(env, controller.scheduledTime);
 }
 
 export default {

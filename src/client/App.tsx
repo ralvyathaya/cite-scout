@@ -2,8 +2,17 @@ import { ArrowRight, Check, CircleDot, ExternalLink, Menu, X } from 'lucide-reac
 import { useState } from 'react';
 import { Link, Route, Routes } from 'react-router';
 import { brand } from '../shared/brand';
+import { demoDays } from '../domain/demo';
+import {
+  AppShell,
+  AppOverview,
+  BillingPage,
+  PromptsPage,
+  ResponsesPage,
+  SettingsPage,
+} from './pages/AppShell';
 
-const visibility = [42, 49, 47, 54, 58, 56, 64, 69, 66, 73, 76, 74, 81, 84];
+const visibility = demoDays.map((day) => day.visibilityScore);
 
 function Logo() {
   return (
@@ -372,6 +381,53 @@ function Placeholder({ title }: { title: string }) {
   );
 }
 
+function Privacy() {
+  return (
+    <Legal title="Privacy policy">
+      <p>
+        PromptWatch stores the prompts you configure and the provider responses returned for your
+        account. Prompts are sent to Perplexity for processing.
+      </p>
+      <p>
+        Authentication emails are processed by Resend. Billing is processed by Lemon Squeezy.
+        PromptWatch does not store payment-card data.
+      </p>
+      <p>
+        You can request account and product-data deletion from settings. Minimal billing identifiers
+        may be retained where legally or operationally required.
+      </p>
+    </Legal>
+  );
+}
+function Terms() {
+  return (
+    <Legal title="Terms of service">
+      <p>
+        PromptWatch provides directional observations from the Perplexity Agent API. AI-generated
+        answers are nondeterministic and are not guaranteed rankings or exact copies of any consumer
+        AI product.
+      </p>
+      <p>
+        Usage is subject to configured prompt, daily, and monthly limits. Customers remain
+        responsible for their prompts, domains, and use of the resulting research.
+      </p>
+    </Legal>
+  );
+}
+function Legal({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <>
+      <Header />
+      <main className="page shell narrow legal" id="main">
+        <p className="eyebrow">Effective September 16, 2026</p>
+        <h1>{title}</h1>
+        <div>{children}</div>
+      </main>
+      <Footer />
+    </>
+  );
+}
+
 function Footer() {
   return (
     <footer>
@@ -399,8 +455,15 @@ export function App() {
         <Route path="/demo" element={<Demo />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/login" element={<Placeholder title="Sign in with a secure magic link." />} />
-        <Route path="/privacy" element={<Placeholder title="Privacy policy" />} />
-        <Route path="/terms" element={<Placeholder title="Terms of service" />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/app" element={<AppShell />}>
+          <Route path="overview" element={<AppOverview />} />
+          <Route path="prompts" element={<PromptsPage />} />
+          <Route path="responses" element={<ResponsesPage />} />
+          <Route path="billing" element={<BillingPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
         <Route path="*" element={<Placeholder title="Page not found" />} />
       </Routes>
     </>
