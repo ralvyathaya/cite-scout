@@ -7,16 +7,19 @@
   "assets": {
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"],
+    "binding": "ASSETS",
   },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "promptwatch-local",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_name": "promptwatch",
+      "database_id": "6e530e47-7c40-48fb-97b9-3e625ce6389b",
       "migrations_dir": "./migrations",
     },
   ],
-  "triggers": { "crons": ["0 * * * *"] },
+  "triggers": {
+    "crons": ["0 * * * *"],
+  },
   "observability": {
     "enabled": true,
     "logs": { "enabled": true, "head_sampling_rate": 1 },
@@ -25,6 +28,8 @@
   "vars": {
     "APP_URL": "http://localhost:5173",
     "APP_ENV": "development",
+    "EXTERNAL_INTEGRATIONS_ENABLED": "false",
+    "TEST_AUTH_ENABLED": "false",
     "LEMON_SQUEEZY_STORE_ID": "",
     "LEMON_SQUEEZY_PRODUCT_ID": "",
     "LEMON_SQUEEZY_VARIANT_ID": "",
@@ -35,7 +40,5 @@
     "GLOBAL_DAILY_PROVIDER_CALL_CAP": "100",
     "PER_USER_MONTHLY_PROVIDER_CALL_CAP": "350",
     "MAX_PROVIDER_CALLS_PER_CRON_INVOCATION": "20",
-    "EXTERNAL_INTEGRATIONS_ENABLED": "false",
-    "TEST_AUTH_ENABLED": "false",
   },
 }
