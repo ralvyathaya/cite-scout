@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { PageState } from './AppShell';
-import { useDashboard } from './use-dashboard';
+import { useDashboardContext } from './dashboard-context';
 import { fmtDelta, fmtPercent, fmtPosition, fmtScore } from './dashboard-view';
 import type { DashboardPayload } from './dashboard-view';
 
@@ -159,7 +159,7 @@ function RunScanButton({ data, onDone }: { data: DashboardPayload; onDone: () =>
 }
 
 export function AppOverview() {
-  const { state, reload } = useDashboard();
+  const { state, reload } = useDashboardContext();
 
   if (state.status !== 'ready') return <PageState state={state} onRetry={reload} />;
   const data = state.data;

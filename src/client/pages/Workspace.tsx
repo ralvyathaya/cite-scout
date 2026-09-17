@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { PageState } from './AppShell';
-import { useDashboard } from './use-dashboard';
+import { useDashboardContext } from './dashboard-context';
 
 const RECOMMENDED = 'recommended';
 const MENTIONED = 'mentioned';
@@ -55,7 +55,7 @@ function usePrompts() {
 }
 
 export function PromptsPage() {
-  const dashboard = useDashboard();
+  const dashboard = useDashboardContext();
   const list = usePrompts();
   const [newText, setNewText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -327,7 +327,7 @@ interface ArchiveResponse {
 }
 
 export function ResponsesPage() {
-  const dashboard = useDashboard();
+  const dashboard = useDashboardContext();
   const [page, setPage] = useState<ArchiveResponse | null>(null);
   const [extra, setExtra] = useState<ResponseRow[]>([]);
   const [open, setOpen] = useState<string | null>(null);

@@ -1219,3 +1219,16 @@ footer {
   cursor: not-allowed;
   transform: none;
 }
+.sidebar a.sidebar-signin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  margin-top: auto;
+  color: #aaa89f;
+  font-size: 13px;
+}
+.sidebar a.sidebar-signin:hover {
+  background: #292923;
+  color: #fff;
+}

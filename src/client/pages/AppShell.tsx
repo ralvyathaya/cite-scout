@@ -9,7 +9,9 @@
   Settings,
 } from 'lucide-react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router';
+import type { DashboardContext } from './dashboard-context';
 import type { DashboardPayload, LoadState } from './dashboard-view';
+import { useDashboard } from './use-dashboard';
 
 const navigation = [
   { Icon: BarChart3, label: 'Overview', path: '/app/overview' },
@@ -21,6 +23,8 @@ const navigation = [
 
 export function AppShell() {
   const navigate = useNavigate();
+  const { state, reload } = useDashboard();
+  const signedOut = state.status === 'unauthenticated';
 
   return (
     <div className="app-frame">
@@ -36,23 +40,35 @@ export function AppShell() {
             </NavLink>
           ))}
         </nav>
-        <button
-          type="button"
-          onClick={() => {
-            void fetch('/api/auth/sign-out', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-            }).then(() => {
-              void navigate('/');
-            });
-          }}
-        >
-          <LogOut size={15} aria-hidden="true" />
-          Sign out
-        </button>
+        {signedOut ? (
+          <Link className="sidebar-signin" to="/login">
+            <LogOut size={15} aria-hidden="true" />
+            Sign in
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              void fetch('/api/auth/sign-out', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+              }).then(() => {
+                reload();
+                void navigate('/');
+              });
+            }}
+          >
+            <LogOut size={15} aria-hidden="true" />
+            Sign out
+          </button>
+        )}
       </aside>
       <main className="app-main" id="main">
-        <Outlet />
+        {signedOut ? (
+          <PageState state={state} onRetry={reload} />
+        ) : (
+          <Outlet context={{ state, reload } satisfies DashboardContext} />
+        )}
       </main>
     </div>
   );

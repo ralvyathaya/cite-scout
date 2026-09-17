@@ -118,10 +118,14 @@ test.describe('mobile', () => {
 });
 
 test.describe('authenticated workspace', () => {
-  test('anonymous visitor is refused and told to sign in', async ({ page }) => {
+  test('anonymous visitor is refused and offered sign in', async ({ page }) => {
     await page.goto('/app/overview');
     await expect(page.getByText('Session expired')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
+
+    // The application sidebar must offer sign in, never sign out, for an anonymous visitor.
+    const sidebar = page.getByRole('complementary');
+    await expect(sidebar.getByRole('link', { name: 'Sign in' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign out' })).toHaveCount(0);
   });
 
   test('a checkout redirect alone does not unlock paid access', async ({ page }) => {

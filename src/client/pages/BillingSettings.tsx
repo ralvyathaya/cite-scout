@@ -1,7 +1,7 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { PageState } from './AppShell';
-import { useDashboard } from './use-dashboard';
+import { useDashboardContext } from './dashboard-context';
 import { fmtPercent } from './dashboard-view';
 
 interface BillingStatus {
@@ -129,7 +129,7 @@ function ConfirmingSubscription({ onVerified }: { onVerified: () => void }) {
 }
 
 export function BillingPage() {
-  const dashboard = useDashboard();
+  const dashboard = useDashboardContext();
   const [params, setParams] = useSearchParams();
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -290,7 +290,7 @@ export function BillingPage() {
 }
 
 export function SettingsPage() {
-  const dashboard = useDashboard();
+  const dashboard = useDashboardContext();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
