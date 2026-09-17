@@ -1,5 +1,5 @@
-import '@fontsource-variable/dm-sans';
-import '@fontsource-variable/newsreader';
+import '@fontsource-variable/plus-jakarta-sans';
+import '@fontsource-variable/plus-jakarta-sans/wght-italic.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';

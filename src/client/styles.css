@@ -3,7 +3,7 @@
 :root {
   color: #171713;
   background: #f4f1e9;
-  font-family: 'DM Sans Variable', sans-serif;
+  font-family: 'Plus Jakarta Sans Variable', sans-serif;
   font-synthesis: none;
   --blue: #145cff;
   --ink: #171713;
@@ -72,8 +72,9 @@ button {
   height: 31px;
   background: var(--ink);
   color: white;
-  font-family: 'Newsreader Variable', serif;
+  font-family: 'Plus Jakarta Sans Variable', sans-serif;
   font-style: italic;
+  font-weight: 800;
 }
 .nav {
   display: flex;
@@ -130,11 +131,11 @@ button {
 }
 h1,
 h2 {
-  font-family: 'Newsreader Variable', serif;
-  font-weight: 520;
+  font-family: 'Plus Jakarta Sans Variable', sans-serif;
+  font-weight: 800;
   letter-spacing: -0.045em;
   margin: 0;
-  line-height: 0.96;
+  line-height: 1;
 }
 h1 {
   font-size: clamp(52px, 7.2vw, 96px);
@@ -203,7 +204,7 @@ h1 em {
   color: var(--blue);
 }
 .dash-top h2 {
-  font-family: 'DM Sans Variable';
+  font-family: 'Plus Jakarta Sans Variable';
   font-size: 21px;
   letter-spacing: -0.03em;
   font-weight: 700;
@@ -238,9 +239,9 @@ h1 em {
   letter-spacing: 0.06em;
 }
 .metric-strip strong {
-  font-family: 'Newsreader Variable';
+  font-family: 'Plus Jakarta Sans Variable', sans-serif;
   font-size: 36px;
-  font-weight: 550;
+  font-weight: 700;
   margin: 5px 0 1px;
 }
 .metric-strip small {
@@ -415,9 +416,9 @@ h1 em {
   padding-top: 14px;
 }
 .price strong {
-  font-family: 'Newsreader Variable';
+  font-family: 'Plus Jakarta Sans Variable', sans-serif;
   font-size: 70px;
-  font-weight: 520;
+  font-weight: 800;
 }
 .price > span {
   font-size: 14px;
@@ -465,12 +466,13 @@ h1 em {
 }
 .pricing-panel strong {
   display: block;
-  font-family: 'Newsreader Variable';
+  font-family: 'Plus Jakarta Sans Variable', sans-serif;
   font-size: 58px;
+  font-weight: 800;
   margin: 25px 0 8px;
 }
 .pricing-panel strong small {
-  font: 500 13px 'DM Sans Variable';
+  font: 500 13px 'Plus Jakarta Sans Variable';
 }
 .pricing-panel p,
 .pricing-panel li {
@@ -710,7 +712,7 @@ footer {
   margin-bottom: 32px;
 }
 .app-header h1 {
-  font-family: 'DM Sans Variable';
+  font-family: 'Plus Jakarta Sans Variable';
   font-size: 34px;
   font-weight: 700;
   letter-spacing: -0.04em;
@@ -747,7 +749,7 @@ footer {
   height: 34px;
 }
 .empty-chart h2 {
-  font-family: 'DM Sans Variable';
+  font-family: 'Plus Jakarta Sans Variable';
   font-size: 18px;
   margin: 15px 0 5px;
 }
@@ -761,7 +763,7 @@ footer {
   max-width: 900px;
 }
 .settings-panel h2 {
-  font-family: 'DM Sans Variable';
+  font-family: 'Plus Jakarta Sans Variable';
   font-weight: 700;
   font-size: 22px;
   letter-spacing: -0.02em;
@@ -836,7 +838,7 @@ footer {
   width: min(430px, 100%);
 }
 .auth-form h2 {
-  font-family: 'DM Sans Variable';
+  font-family: 'Plus Jakarta Sans Variable';
   font-size: 29px;
   font-weight: 700;
   letter-spacing: -0.035em;
@@ -987,7 +989,7 @@ footer {
 }
 .app-state h1,
 .app-state h2 {
-  font-family: 'DM Sans Variable';
+  font-family: 'Plus Jakarta Sans Variable';
   font-weight: 700;
   letter-spacing: -0.03em;
   font-size: 24px;
