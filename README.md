@@ -83,20 +83,29 @@ wrangler secret put OPERATOR_SECRET --config wrangler.production.jsonc
 
 (Lemon Squeezy secrets follow the same pattern once the store is configured.)
 
+## Preview and dogfood testing
+
+`npm run deploy:preview` uploads a version without touching production traffic and
+moves the stable `staging` alias to it (find the URL under dashboard → Workers &
+Pages → citescout → Deployments). Full ritual, golden rules, and the launch gate
+live in [docs/dogfood.md](docs/dogfood.md). Two hard limits: full login only works
+on `cite-scout.com` (Turnstile rejects other hostnames), and preview URLs expose
+no logs — debug locally.
+
 Remote migrations are an explicit operator step. Review generated SQL and confirm a backup strategy before applying destructive changes. The Cron Trigger runs at `0 * * * *` UTC and processes no more than `MAX_PROVIDER_CALLS_PER_CRON_INVOCATION` reservations in deterministic order.
 
 ## Secrets and configuration
 
-Set every production secret interactively:
+Set every production secret interactively (after the first deploy creates the Worker):
 
 ```bash
-npx wrangler secret put PERPLEXITY_API_KEY
-npx wrangler secret put LEMON_SQUEEZY_API_KEY
-npx wrangler secret put LEMON_SQUEEZY_WEBHOOK_SECRET
-npx wrangler secret put BETTER_AUTH_SECRET
-npx wrangler secret put RESEND_API_KEY
-npx wrangler secret put TURNSTILE_SECRET_KEY
-npx wrangler secret put OPERATOR_SECRET
+npx wrangler secret put PERPLEXITY_API_KEY --config wrangler.production.jsonc
+npx wrangler secret put LEMON_SQUEEZY_API_KEY --config wrangler.production.jsonc
+npx wrangler secret put LEMON_SQUEEZY_WEBHOOK_SECRET --config wrangler.production.jsonc
+npx wrangler secret put BETTER_AUTH_SECRET --config wrangler.production.jsonc
+npx wrangler secret put RESEND_API_KEY --config wrangler.production.jsonc
+npx wrangler secret put TURNSTILE_SECRET_KEY --config wrangler.production.jsonc
+npx wrangler secret put OPERATOR_SECRET --config wrangler.production.jsonc
 ```
 
 Set production values for `APP_URL`, Lemon Squeezy IDs and host, `RESEND_FROM_EMAIL`, `TURNSTILE_SITE_KEY`, and cost caps in the production Wrangler environment.
