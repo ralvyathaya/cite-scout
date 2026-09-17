@@ -64,6 +64,25 @@ npm run db:migrate:remote
 npm run deploy
 ```
 
+`npm run deploy` targets production via `wrangler.production.jsonc`
+(`wrangler deploy --config wrangler.production.jsonc`), which attaches the
+`cite-scout.com` custom domain, enables integrations, and schedules the hourly
+Cron Trigger. `wrangler.jsonc` stays local-dev friendly and is the only file the
+Cloudflare Vite plugin reads — it ignores `env` blocks, which is why production
+lives in a separate file. `npm run dev` is unaffected.
+
+Production secrets can only be set after the first deploy creates the Worker:
+
+```bash
+wrangler secret put PERPLEXITY_API_KEY --config wrangler.production.jsonc
+wrangler secret put BETTER_AUTH_SECRET --config wrangler.production.jsonc
+wrangler secret put RESEND_API_KEY --config wrangler.production.jsonc
+wrangler secret put TURNSTILE_SECRET_KEY --config wrangler.production.jsonc
+wrangler secret put OPERATOR_SECRET --config wrangler.production.jsonc
+```
+
+(Lemon Squeezy secrets follow the same pattern once the store is configured.)
+
 Remote migrations are an explicit operator step. Review generated SQL and confirm a backup strategy before applying destructive changes. The Cron Trigger runs at `0 * * * *` UTC and processes no more than `MAX_PROVIDER_CALLS_PER_CRON_INVOCATION` reservations in deterministic order.
 
 ## Secrets and configuration
