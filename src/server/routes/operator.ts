@@ -1,10 +1,10 @@
-import { eq, or } from 'drizzle-orm';
+﻿import { eq, or } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { subscriptions } from '../../db/schema';
 import { LemonSqueezyClient } from '../../integrations/lemonsqueezy/client';
-import { readJsonLimited } from '../http';
+import { readJson } from '../http';
 import { getConfig } from '../config';
 
 const inputSchema = z
@@ -34,7 +34,7 @@ operatorRoutes.post('/billing/reconcile', async (c) => {
       { error: { code: 'UNAUTHORIZED', message: 'Invalid operator credential.' } },
       401,
     );
-  const parsed = inputSchema.safeParse(await readJsonLimited(c.req.raw));
+  const parsed = inputSchema.safeParse(await readJson(c.req.raw));
   if (!parsed.success)
     return c.json(
       { error: { code: 'VALIDATION_ERROR', message: 'Provide a user or subscription ID.' } },

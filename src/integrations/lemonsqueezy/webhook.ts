@@ -18,8 +18,8 @@ export const lemonWebhookSchema = z.object({
     custom_data: z.object({ user_id: z.string().min(1) }).optional(),
   }),
   data: z.object({
-    type: z.string(),
-    id: z.string(),
+    type: z.string().min(1),
+    id: z.string().min(1),
     attributes: z.looseObject({
       store_id: z.number(),
       test_mode: z.boolean(),

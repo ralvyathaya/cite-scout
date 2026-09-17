@@ -1,11 +1,11 @@
-import { and, eq } from 'drizzle-orm';
+﻿import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { competitors, projects, prompts } from '../../db/schema';
 import { normalizeDomain, normalizeText } from '../../domain/normalization';
 import { createAuth } from '../auth';
-import { readJsonLimited, requireSession } from '../http';
+import { readJson, requireSession } from '../http';
 
 const projectInput = z.object({
   name: z.string().trim().min(1).max(80),
@@ -46,7 +46,7 @@ projectRoutes.post('/', async (c) => {
   const session = await requireSession(c, auth);
   if (!session)
     return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
-  const parsed = projectInput.safeParse(await readJsonLimited(c.req.raw));
+  const parsed = projectInput.safeParse(await readJson(c.req.raw));
   if (!parsed.success)
     return c.json(
       { error: { code: 'VALIDATION_ERROR', message: 'Check the project details.' } },

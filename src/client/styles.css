@@ -968,3 +968,254 @@ footer {
     margin-left: 0;
   }
 }
+
+/* --- Workspace states and data views --- */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.app-state {
+  padding: 60px 0;
+  max-width: 620px;
+}
+.app-state h1,
+.app-state h2 {
+  font-family: 'DM Sans Variable';
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 10px;
+}
+.app-state p {
+  color: #5c5a53;
+  line-height: 1.65;
+  margin: 0 0 22px;
+}
+.app-state .button {
+  display: inline-flex;
+}
+.notice-warn {
+  background: #fff4e0;
+  border-color: #e0b264;
+}
+.chart-empty {
+  height: 150px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  color: #6d6b64;
+  font-size: 13px;
+  text-align: center;
+  padding: 0 20px;
+  margin-top: 16px;
+}
+.run-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.run-message {
+  font-size: 11px;
+  color: #5c5a53;
+  max-width: 250px;
+  text-align: right;
+}
+.result-row .recommended {
+  color: #0a754f;
+  font-weight: 650;
+}
+.result-row .mentioned {
+  color: #765514;
+}
+.result-row .negative {
+  color: #9b2f2a;
+}
+.result-row .absent {
+  color: #8a3631;
+}
+.result-row .unknown {
+  color: #6d6b64;
+}
+.result-row span:first-child {
+  overflow-wrap: anywhere;
+}
+.inline-form {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.inline-form label {
+  flex: 1 1 420px;
+}
+.inline-form input {
+  width: 100%;
+}
+.row-meta {
+  display: block;
+  font-size: 11px;
+  color: #6d6b64;
+  margin-top: 5px;
+  line-height: 1.5;
+}
+.row-actions {
+  display: flex;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.setting-row {
+  align-items: flex-start;
+  gap: 20px;
+}
+.archive {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 10px;
+}
+.archive-row {
+  background: #fbfaf6;
+  border: 1px solid var(--line);
+  padding: 20px;
+}
+.archive-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+.archive-prompt {
+  font-size: 14px;
+  font-weight: 650;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.archive-head > span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+}
+.archive-head > span.recommended {
+  color: #0a754f;
+  border-color: #0a754f;
+}
+.archive-head > span.negative {
+  color: #9b2f2a;
+  border-color: #9b2f2a;
+}
+.archive-row > button {
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font-weight: 650;
+  font-size: 12px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+.archive-detail {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.raw-answer {
+  font-size: 14px;
+  line-height: 1.75;
+  color: #33322d;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.raw-answer mark {
+  background: #d9e5ff;
+  color: inherit;
+  padding: 1px 2px;
+}
+.archive-detail h4 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 22px 0 10px;
+}
+.citation-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.9;
+}
+.citation-list a {
+  color: var(--blue);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+.billing-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 18px;
+  margin: 0 0 26px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+.billing-facts dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6d6b64;
+}
+.billing-facts dd {
+  margin: 5px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.plan-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 26px;
+}
+.plan-list li {
+  font-size: 13px;
+  color: #5c5a53;
+  padding: 7px 0;
+  border-bottom: 1px solid #e6e3da;
+}
+.billing-actions {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+.link-button {
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.button.danger {
+  background: #8a3631;
+  border-color: #8a3631;
+}
+.button.danger:hover {
+  background: #6f2a26;
+  border-color: #6f2a26;
+}
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}

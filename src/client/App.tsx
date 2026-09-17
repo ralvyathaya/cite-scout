@@ -3,14 +3,10 @@ import { useState } from 'react';
 import { Link, Route, Routes } from 'react-router';
 import { brand } from '../shared/brand';
 import { demoDays } from '../domain/demo';
-import {
-  AppShell,
-  AppOverview,
-  BillingPage,
-  PromptsPage,
-  ResponsesPage,
-  SettingsPage,
-} from './pages/AppShell';
+import { AppShell } from './pages/AppShell';
+import { AppOverview, UnknownRoute } from './pages/Overview';
+import { PromptsPage, ResponsesPage } from './pages/Workspace';
+import { BillingPage, SettingsPage } from './pages/BillingSettings';
 import { Login } from './pages/Login';
 import { Onboarding } from './pages/Onboarding';
 
@@ -319,6 +315,12 @@ function Demo() {
           </p>
         </div>
         <DashboardPreview demo />
+        <p className="fine">
+          Illustrative demo data only. PromptWatch observes the Perplexity Agent API and does not
+          claim to reproduce the Perplexity consumer application, ChatGPT, Claude, or Google AI
+          Overviews. AI answers are nondeterministic, so these numbers are directional observations
+          rather than guaranteed rankings.
+        </p>
       </main>
       <Footer />
     </>
@@ -363,20 +365,6 @@ function Pricing() {
             Start with a trial scan <ArrowRight size={16} />
           </Link>
         </div>
-      </main>
-      <Footer />
-    </>
-  );
-}
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <>
-      <Header />
-      <main className="page shell narrow" id="main">
-        <p className="eyebrow">PromptWatch</p>
-        <h1>{title}</h1>
-        <p className="lede">This area is being prepared for the secure application flow.</p>
       </main>
       <Footer />
     </>
@@ -467,7 +455,7 @@ export function App() {
           <Route path="billing" element={<BillingPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
-        <Route path="*" element={<Placeholder title="Page not found" />} />
+        <Route path="*" element={<UnknownRoute />} />
       </Routes>
     </>
   );

@@ -33,14 +33,19 @@ Requirements: Node 22.12+ and npm.
 npm install
 copy .dev.vars.example .dev.vars
 npm run cf:typegen
-npm run db:generate
 npm run db:migrate:local
 npm run dev
 ```
 
-Local development can run with `EXTERNAL_INTEGRATIONS_ENABLED=false`. The UI exposes the public fixture without provider calls. Production fails closed when test authentication is enabled.
+Local development can run with `EXTERNAL_INTEGRATIONS_ENABLED=false`. The UI then renders the public
+fixture and uses a local Turnstile placeholder token. Production fails closed when test authentication is
+enabled.
 
-**Never commit `.dev.vars`. Never put secrets in `wrangler.jsonc`. Never expose the Perplexity or Lemon Squeezy API key to browser code.**
+**Never commit `.dev.vars`. Never put secrets in `wrangler.jsonc`. Never expose the Perplexity or Lemon
+Squeezy API key to browser code.**
+
+The production build deletes any local secret file (`.dev.vars`, `.env*`) from the output and fails the
+build if one survives, so local credentials cannot reach a deployable artifact.
 
 ## Cloudflare and D1 deployment
 
@@ -136,6 +141,11 @@ npm run test:integration
 npm run build
 npm run test:e2e
 ```
+
+Coverage includes deterministic normalization and mention matching, metric formulas and insufficient-data
+behaviour, subscription entitlement transitions, provider prompt neutrality and bounded retries, webhook
+signature verification over exact raw bytes, D1 constraint and cascade behaviour, one-observation-per-day
+uniqueness, multi-tenant authorization guards, and public/mobile/accessibility browser flows.
 
 ## Account deletion
 

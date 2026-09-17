@@ -3,12 +3,14 @@ import { secureHeaders } from 'hono/secure-headers';
 import { createAuth } from './auth';
 import { getConfig } from './config';
 import { projectRoutes } from './routes/project';
+import { competitorRoutes, dashboardRoutes, promptRoutes } from './routes/dashboard';
 import { billingRoutes, handleLemonWebhook } from './routes/billing';
 import { loginRoutes } from './routes/login';
 import { scanRoutes } from './routes/scans';
 import { runScheduledScans } from './cron';
 import { accountRoutes } from './routes/account';
 import { operatorRoutes } from './routes/operator';
+import { BodyTooLargeError } from './http';
 
 interface AppEnv {
   Bindings: CloudflareBindings;
@@ -45,18 +47,52 @@ app.use('/api/*', async (c, next) => {
   const startedAt = performance.now();
   const requestId = c.req.header('cf-ray') ?? crypto.randomUUID();
   c.header('X-Request-ID', requestId);
-  await next();
+
+  let status: number;
+  let outcome = 'ok';
+
+  try {
+    await next();
+    status = c.res.status;
+  } catch (error) {
+    // Rethrow after recording, so app.onError still shapes the response.
+    logRequest(
+      requestId,
+      c.req.path,
+      c.req.method,
+      error instanceof BodyTooLargeError ? 413 : 500,
+      startedAt,
+      'error',
+    );
+    throw error;
+  }
+
+  if (status >= 500) outcome = 'error';
+  else if (status >= 400) outcome = 'rejected';
+
+  logRequest(requestId, c.req.path, c.req.method, status, startedAt, outcome);
+});
+
+function logRequest(
+  requestId: string,
+  route: string,
+  method: string,
+  status: number,
+  startedAt: number,
+  outcome: string,
+): void {
   console.log(
     JSON.stringify({
       event: 'request_completed',
-      route: c.req.path,
-      method: c.req.method,
-      status: c.res.status,
+      route,
+      method,
+      status,
+      outcome,
       request_id: requestId,
       duration_ms: Math.round(performance.now() - startedAt),
     }),
   );
-});
+}
 
 app.get('/api/health', (c) => c.json({ data: { status: 'ok', service: 'promptwatch' } }));
 app.get('/api/public-config', (c) =>
@@ -86,6 +122,9 @@ app.get('/api/me', async (c) => {
   });
 });
 app.route('/api/project', projectRoutes);
+app.route('/api/dashboard', dashboardRoutes);
+app.route('/api/prompts', promptRoutes);
+app.route('/api/competitors', competitorRoutes);
 app.route('/api/billing', billingRoutes);
 app.route('/api/login', loginRoutes);
 app.route('/api/scans', scanRoutes);
@@ -101,6 +140,14 @@ app.notFound((c) => {
 });
 
 app.onError((error, c) => {
+  // Oversized request bodies are a client error, never a server fault.
+  if (error instanceof BodyTooLargeError) {
+    return c.json(
+      { error: { code: 'BODY_TOO_LARGE', message: 'Request body is too large.' } },
+      413,
+    );
+  }
+
   console.error(
     JSON.stringify({ event: 'request_failed', route: c.req.path, error_code: 'INTERNAL_ERROR' }),
   );

@@ -7,10 +7,21 @@ export async function requireSession(c: Context<{ Bindings: CloudflareBindings }
   return session;
 }
 
-export async function readJsonLimited(request: Request, maxBytes = 16_384): Promise<unknown> {
-  const length = Number(request.headers.get('content-length') ?? '0');
-  if (length > maxBytes) throw new Error('BODY_TOO_LARGE');
+export class BodyTooLargeError extends Error {
+  override readonly name = 'BodyTooLargeError';
+}
+
+/**
+ * Reads a JSON body with a hard size ceiling. The size is enforced from the
+ * declared content length and again from the decoded bytes, so a client cannot
+ * bypass the limit by omitting or understating the header.
+ */
+export async function readJson(request: Request, maxBytes = 16_384): Promise<unknown> {
+  const declared = Number(request.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declared) && declared > maxBytes) throw new BodyTooLargeError();
+
   const raw = await request.text();
-  if (new TextEncoder().encode(raw).byteLength > maxBytes) throw new Error('BODY_TOO_LARGE');
+  if (new TextEncoder().encode(raw).byteLength > maxBytes) throw new BodyTooLargeError();
+
   return JSON.parse(raw) as unknown;
 }

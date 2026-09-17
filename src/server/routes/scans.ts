@@ -1,7 +1,7 @@
-import { Hono } from 'hono';
+﻿import { Hono } from 'hono';
 import { z } from 'zod';
 import { createAuth } from '../auth';
-import { readJsonLimited, requireSession } from '../http';
+import { readJson, requireSession } from '../http';
 import { runScan } from '../scans';
 
 const scanInput = z.object({
@@ -18,7 +18,7 @@ for (const [path, trigger] of [
     const session = await requireSession(c, createAuth(c.env));
     if (!session)
       return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
-    const parsed = scanInput.safeParse(await readJsonLimited(c.req.raw));
+    const parsed = scanInput.safeParse(await readJson(c.req.raw));
     if (!parsed.success)
       return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Select valid prompts.' } }, 422);
     try {

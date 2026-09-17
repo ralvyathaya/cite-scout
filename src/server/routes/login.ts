@@ -1,10 +1,10 @@
-import { Hono } from 'hono';
+﻿import { Hono } from 'hono';
 import { z } from 'zod';
 import { safeRedirect } from '../../domain/redirects';
 import { verifyTurnstile } from '../../integrations/turnstile/verify';
 import { createAuth } from '../auth';
 import { getConfig } from '../config';
-import { readJsonLimited } from '../http';
+import { readJson } from '../http';
 import { consumeRateLimit } from '../rate-limit';
 
 const loginSchema = z.object({
@@ -15,7 +15,7 @@ const loginSchema = z.object({
 export const loginRoutes = new Hono<{ Bindings: CloudflareBindings }>();
 
 loginRoutes.post('/magic-link', async (c) => {
-  const parsed = loginSchema.safeParse(await readJsonLimited(c.req.raw));
+  const parsed = loginSchema.safeParse(await readJson(c.req.raw));
   const generic = {
     data: {
       accepted: true,
