@@ -94,7 +94,7 @@ function logRequest(
   );
 }
 
-app.get('/api/health', (c) => c.json({ data: { status: 'ok', service: 'promptwatch' } }));
+app.get('/api/health', (c) => c.json({ data: { status: 'ok', service: 'citescout' } }));
 app.get('/api/public-config', (c) =>
   c.json({
     data: {

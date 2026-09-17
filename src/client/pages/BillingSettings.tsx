@@ -192,7 +192,7 @@ export function BillingPage() {
       )}
 
       <section className="settings-panel">
-        <h2>PromptWatch Monitor â€” $19 USD / month</h2>
+        <h2>CiteScout Monitor â€” $19 USD / month</h2>
         <SubscriptionSummary
           status={status ?? { subscription: null, entitlement: dashboard.state.data.entitlement }}
         />
@@ -266,8 +266,7 @@ export function BillingPage() {
 
         <p className="fine">
           Checkout and the customer portal are hosted by Lemon Squeezy, the merchant of record.
-          PromptWatch never stores card data. Returning from checkout does not by itself grant
-          access.
+          CiteScout never stores card data. Returning from checkout does not by itself grant access.
         </p>
       </section>
 

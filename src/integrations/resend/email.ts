@@ -15,9 +15,9 @@ export async function sendMagicLinkEmail(input: {
   const { error } = await resend.emails.send({
     from: input.from,
     to: [input.to],
-    subject: 'Your PromptWatch sign-in link',
-    html: `<p>Sign in to PromptWatch:</p><p><a href="${escaped}">Open PromptWatch</a></p><p>This single-use link expires shortly.</p>`,
-    text: `Sign in to PromptWatch: ${input.url}`,
+    subject: 'Your CiteScout sign-in link',
+    html: `<p>Sign in to CiteScout:</p><p><a href="${escaped}">Open CiteScout</a></p><p>This single-use link expires shortly.</p>`,
+    text: `Sign in to CiteScout: ${input.url}`,
   });
   if (error) throw new Error('EMAIL_DELIVERY_FAILED');
 }

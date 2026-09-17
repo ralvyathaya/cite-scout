@@ -66,7 +66,7 @@ export function Login() {
     <main className="auth-page" id="main">
       <section>
         <Link className="logo" to="/">
-          <span>PW</span>PromptWatch
+          <span>CS</span>CiteScout
         </Link>
         <div className="auth-copy">
           <p className="eyebrow">Passwordless access</p>

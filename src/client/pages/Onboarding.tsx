@@ -54,7 +54,7 @@ export function Onboarding() {
   return (
     <main className="onboarding shell" id="main">
       <p className="eyebrow">Project setup · About 3 minutes</p>
-      <h1>What should PromptWatch look for?</h1>
+      <h1>What should CiteScout look for?</h1>
       <form
         onSubmit={(event) => {
           void submit(event);

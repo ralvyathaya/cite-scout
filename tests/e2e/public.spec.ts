@@ -132,7 +132,7 @@ test.describe('authenticated workspace', () => {
     // Simulate landing back from hosted checkout without any verified webhook.
     await page.goto('/app/billing?checkout=complete');
     await expect(page.getByText('Session expired')).toBeVisible();
-    await expect(page.getByText(/PromptWatch Monitor/)).toHaveCount(0);
+    await expect(page.getByText(/CiteScout Monitor/)).toHaveCount(0);
   });
 
   test('private API endpoints are refused for anonymous callers', async ({ request }) => {

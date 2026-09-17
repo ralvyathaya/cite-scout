@@ -6,7 +6,7 @@ describe('health endpoint', () => {
     const response = await exports.default.fetch(new Request('https://example.com/api/health'));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      data: { status: 'ok', service: 'promptwatch' },
+      data: { status: 'ok', service: 'citescout' },
     });
   });
 });

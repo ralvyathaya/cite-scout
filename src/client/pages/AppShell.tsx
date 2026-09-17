@@ -30,7 +30,7 @@ export function AppShell() {
     <div className="app-frame">
       <aside className="sidebar">
         <Link className="logo" to="/">
-          <span>PW</span>PromptWatch
+          <span>CS</span>CiteScout
         </Link>
         <nav aria-label="Application">
           {navigation.map(({ Icon, label, path }) => (

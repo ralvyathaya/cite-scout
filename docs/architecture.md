@@ -1,4 +1,4 @@
-# PromptWatch architecture
+# CiteScout architecture
 
 The browser loads a React SPA from Workers Static Assets. `/api/*` routes execute Hono in the same Worker. Every private route resolves the Better Auth session and scopes SQL by the immutable user ID.
 

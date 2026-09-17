@@ -3,7 +3,7 @@ import { brand } from '../../src/shared/brand';
 
 describe('brand configuration', () => {
   it('centralizes the product identity and price', () => {
-    expect(brand.name).toBe('PromptWatch');
+    expect(brand.name).toBe('CiteScout');
     expect(brand.priceMonthly).toBe(19);
   });
 });

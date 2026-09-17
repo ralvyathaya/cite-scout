@@ -2,7 +2,7 @@
 
 ## Description (≤200 characters)
 
-PromptWatch tracks when Perplexity recommends your brand or competitors, preserving daily answers, citations, and transparent visibility trends for $19/month.
+CiteScout tracks when Perplexity recommends your brand or competitors, preserving daily answers, citations, and transparent visibility trends for $19/month.
 
 ## Replacement
 

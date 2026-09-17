@@ -15,7 +15,7 @@ const visibility = demoDays.map((day) => day.visibilityScore);
 function Logo() {
   return (
     <Link className="logo" to="/" aria-label={`${brand.name} home`}>
-      <span>PW</span>
+      <span>CS</span>
       {brand.name}
     </Link>
   );
@@ -214,7 +214,7 @@ function Landing() {
           <div className="hero-note">
             <span>Not another one-off AI answer</span>
             <p>
-              PromptWatch builds a daily evidence trail: what appeared, what disappeared, and which
+              CiteScout builds a daily evidence trail: what appeared, what disappeared, and which
               sources shaped the response.
             </p>
           </div>
@@ -266,7 +266,7 @@ function Landing() {
                 not a fabricated ranking.
               </h2>
               <p>
-                AI answers are nondeterministic. PromptWatch records observations from the supported
+                AI answers are nondeterministic. CiteScout records observations from the supported
                 Perplexity Agent API. It does not claim to reproduce the Perplexity consumer app,
                 ChatGPT, Claude, or Google AI Overviews.
               </p>
@@ -316,7 +316,7 @@ function Demo() {
         </div>
         <DashboardPreview demo />
         <p className="fine">
-          Illustrative demo data only. PromptWatch observes the Perplexity Agent API and does not
+          Illustrative demo data only. CiteScout observes the Perplexity Agent API and does not
           claim to reproduce the Perplexity consumer application, ChatGPT, Claude, or Google AI
           Overviews. AI answers are nondeterministic, so these numbers are directional observations
           rather than guaranteed rankings.
@@ -340,7 +340,7 @@ function Pricing() {
         </h1>
         <div className="pricing-panel">
           <div>
-            <span>PromptWatch Monitor</span>
+            <span>CiteScout Monitor</span>
             <strong>
               $19 <small>USD / month</small>
             </strong>
@@ -375,12 +375,12 @@ function Privacy() {
   return (
     <Legal title="Privacy policy">
       <p>
-        PromptWatch stores the prompts you configure and the provider responses returned for your
+        CiteScout stores the prompts you configure and the provider responses returned for your
         account. Prompts are sent to Perplexity for processing.
       </p>
       <p>
         Authentication emails are processed by Resend. Billing is processed by Lemon Squeezy.
-        PromptWatch does not store payment-card data.
+        CiteScout does not store payment-card data.
       </p>
       <p>
         You can request account and product-data deletion from settings. Minimal billing identifiers
@@ -393,7 +393,7 @@ function Terms() {
   return (
     <Legal title="Terms of service">
       <p>
-        PromptWatch provides directional observations from the Perplexity Agent API. AI-generated
+        CiteScout provides directional observations from the Perplexity Agent API. AI-generated
         answers are nondeterministic and are not guaranteed rankings or exact copies of any consumer
         AI product.
       </p>

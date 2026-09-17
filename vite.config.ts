@@ -14,11 +14,11 @@ const FORBIDDEN_ARTIFACTS = ['.dev.vars', '.env', '.env.local', '.env.production
  */
 function stripLocalSecrets(): Plugin {
   return {
-    name: 'promptwatch:strip-local-secrets',
+    name: 'citescout:strip-local-secrets',
     apply: 'build',
     enforce: 'post',
     closeBundle() {
-      const outputs = ['dist/promptwatch', 'dist/client'];
+      const outputs = ['dist/citescout', 'dist/client'];
       const survivors: string[] = [];
 
       for (const output of outputs) {

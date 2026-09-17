@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "promptwatch",
+  "name": "citescout",
   "main": "./src/server/index.ts",
   "compatibility_date": "2026-09-16",
   "compatibility_flags": ["nodejs_compat"],
@@ -9,6 +9,7 @@
     "run_worker_first": ["/api/*"],
     "binding": "ASSETS",
   },
+  // The D1 database keeps its original name; only the Worker was renamed.
   "d1_databases": [
     {
       "binding": "DB",
@@ -35,7 +36,7 @@
     "LEMON_SQUEEZY_VARIANT_ID": "",
     "LEMON_SQUEEZY_STORE_HOST": "",
     "LEMON_SQUEEZY_TEST_MODE": "true",
-    "RESEND_FROM_EMAIL": "PromptWatch <auth@example.com>",
+    "RESEND_FROM_EMAIL": "CiteScout <auth@example.com>",
     "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
     "GLOBAL_DAILY_PROVIDER_CALL_CAP": "100",
     "PER_USER_MONTHLY_PROVIDER_CALL_CAP": "350",

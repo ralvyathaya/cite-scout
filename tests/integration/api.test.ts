@@ -1,7 +1,7 @@
 ﻿import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 
-const ORIGIN = 'https://promptwatch.test';
+const ORIGIN = 'https://citescout.test';
 
 function call(path: string, init?: RequestInit): Promise<Response> {
   return exports.default.fetch(new Request(`${ORIGIN}${path}`, init));

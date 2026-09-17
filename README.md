@@ -1,10 +1,10 @@
-# PromptWatch
+# CiteScout
 
 **Know when AI recommends your competitors instead of you.**
 
-PromptWatch records daily, web-grounded observations from the Perplexity Agent API, detects tracked brand and competitor mentions, and turns the archive into transparent visibility trends. It is a focused $19/month alternative to expensive GEO/AEO monitoring suites for founders and small teams.
+CiteScout records daily, web-grounded observations from the Perplexity Agent API, detects tracked brand and competitor mentions, and turns the archive into transparent visibility trends. It is a focused $19/month alternative to expensive GEO/AEO monitoring suites for founders and small teams.
 
-> PromptWatch does not monitor ChatGPT's consumer app, Claude's consumer app, Google AI Overviews, or deterministic rankings. API observations are nondeterministic and may differ from the Perplexity consumer application.
+> CiteScout does not monitor ChatGPT's consumer app, Claude's consumer app, Google AI Overviews, or deterministic rankings. API observations are nondeterministic and may differ from the Perplexity consumer application.
 
 ## Architecture
 
@@ -84,7 +84,7 @@ Set production values for `APP_URL`, Lemon Squeezy IDs and host, `RESEND_FROM_EM
 
 ## Perplexity Agent API
 
-PromptWatch uses `POST https://api.perplexity.ai/v1/agent` with bearer authentication and the current `fast` preset. The preset is the least-depth supported citation-oriented configuration selected for the MVP. The actual model returned by Perplexity, preset, usage, response ID, citations, and answer are stored. Re-check [models](https://docs.perplexity.ai/docs/agent-api/models) and [pricing](https://docs.perplexity.ai/docs/getting-started/pricing) before production launch because dynamic presets can change.
+CiteScout uses `POST https://api.perplexity.ai/v1/agent` with bearer authentication and the current `fast` preset. The preset is the least-depth supported citation-oriented configuration selected for the MVP. The actual model returned by Perplexity, preset, usage, response ID, citations, and answer are stored. Re-check [models](https://docs.perplexity.ai/docs/agent-api/models) and [pricing](https://docs.perplexity.ai/docs/getting-started/pricing) before production launch because dynamic presets can change.
 
 The stable instruction is neutral; tracked brands and competitors are never injected. Retries are bounded to timeout, 408, 429, and transient 5xx errors.
 
@@ -149,7 +149,7 @@ uniqueness, multi-tenant authorization guards, and public/mobile/accessibility b
 
 ## Account deletion
 
-Deletion requires recent authentication. An active subscription must be managed or cancelled first. Product data and sessions are deleted; legally or operationally required minimal billing identifiers may be retained. PromptWatch never stores card data.
+Deletion requires recent authentication. An active subscription must be managed or cancelled first. Product data and sessions are deleted; legally or operationally required minimal billing identifiers may be retained. CiteScout never stores card data.
 
 ## Add another AI provider
 

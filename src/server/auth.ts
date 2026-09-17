@@ -10,7 +10,7 @@ export function createAuth(env: CloudflareBindings) {
   const config = getConfig(env);
   const db = drizzle(env.DB, { schema });
   return betterAuth({
-    appName: 'PromptWatch',
+    appName: 'CiteScout',
     baseURL: env.APP_URL,
     secret: env.BETTER_AUTH_SECRET,
     database: drizzleAdapter(db, { provider: 'sqlite', schema, usePlural: true }),
