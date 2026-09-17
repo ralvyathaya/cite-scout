@@ -136,6 +136,7 @@ h2 {
   letter-spacing: -0.045em;
   margin: 0;
   line-height: 1;
+  overflow-wrap: break-word;
 }
 h1 {
   font-size: clamp(52px, 7.2vw, 96px);
@@ -542,7 +543,7 @@ footer {
   }
   .hero {
     padding-top: 55px;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 40px;
   }
   .hero h1 {
@@ -574,7 +575,7 @@ footer {
     border-bottom: 1px solid var(--line);
   }
   .dash-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .trend {
     border-right: 0;
@@ -598,7 +599,7 @@ footer {
     font-size: 43px;
   }
   .feature-columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 25px;
     margin-top: 50px;
   }
@@ -616,7 +617,7 @@ footer {
   .price-cta,
   .page-title,
   .pricing-panel {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .honesty-grid {
     gap: 30px;
@@ -638,7 +639,7 @@ footer {
     grid-column: 1;
   }
   .footer-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
   }
   .footer-grid nav {
@@ -907,7 +908,7 @@ footer {
 }
 @media (max-width: 760px) {
   .auth-page {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .auth-page > section:first-child {
     padding: 25px 20px;
@@ -922,7 +923,7 @@ footer {
     padding: 55px 20px;
   }
   .field-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .onboarding h1 {
     font-size: 48px;
@@ -931,7 +932,7 @@ footer {
     padding: 18px;
   }
   .app-frame {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .sidebar {
     position: static;
