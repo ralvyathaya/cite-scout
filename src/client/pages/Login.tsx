@@ -101,7 +101,7 @@ export function Login() {
           />
           <div ref={widget} className="turnstile-placeholder">
             {turnstileToken === 'local-development'
-              ? 'Verification is being prepared. If this message persists, email support@cite-scout.com.'
+              ? 'Dev mode: the sign-in link is printed in the dev server terminal after you submit.'
               : 'Security verification'}
           </div>
           <button className="button" disabled={status === 'sending' || !turnstileToken}>
