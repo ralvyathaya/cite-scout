@@ -135,7 +135,12 @@ promptRoutes.post('/', async (c) => {
     .where(and(eq(prompts.projectId, project.id), eq(prompts.enabled, true)));
   if (enabled.length >= 10)
     return c.json(
-      { error: { code: 'PROMPT_LIMIT', message: 'The MVP allows up to 10 enabled prompts.' } },
+      {
+        error: {
+          code: 'PROMPT_LIMIT',
+          message: 'CiteScout currently supports up to 10 enabled prompts per project.',
+        },
+      },
       409,
     );
 
@@ -263,7 +268,12 @@ competitorRoutes.post('/', async (c) => {
     .where(eq(competitors.projectId, project.id));
   if (existing.length >= 3)
     return c.json(
-      { error: { code: 'COMPETITOR_LIMIT', message: 'The MVP allows up to 3 competitors.' } },
+      {
+        error: {
+          code: 'COMPETITOR_LIMIT',
+          message: 'CiteScout currently supports up to 3 competitors per project.',
+        },
+      },
       409,
     );
 

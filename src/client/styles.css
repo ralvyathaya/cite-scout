@@ -1235,3 +1235,94 @@ footer {
   background: #292923;
   color: #fff;
 }
+/* --- Dialogs and inline confirmations --- */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(23, 23, 19, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.dialog {
+  background: #fbfaf6;
+  border: 1px solid var(--ink);
+  max-width: 460px;
+  width: 100%;
+  padding: 28px;
+  box-shadow: 0 24px 60px rgba(33, 31, 25, 0.25);
+}
+.dialog h2 {
+  font-family: 'Plus Jakarta Sans Variable', sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+}
+.dialog p {
+  color: #5c5a53;
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 0 0 18px;
+}
+.dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  margin: 0 0 20px;
+}
+.dialog input {
+  border: 1px solid #aaa89f;
+  background: #fff;
+  padding: 11px;
+  font: inherit;
+}
+.dialog .row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+}
+.dialog .row-actions button:not(.button) {
+  border: 1px solid var(--line);
+  background: none;
+  padding: 10px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.dialog .row-actions button:not(.button):hover {
+  border-color: var(--ink);
+}
+.confirm-inline {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #fff4f2;
+  border: 1px solid #d8a49c;
+  padding: 14px;
+  margin-top: 6px;
+}
+.confirm-inline > span:first-child {
+  font-size: 12.5px;
+  color: #5c5a53;
+  line-height: 1.5;
+}
+.confirm-inline .row-actions {
+  display: flex;
+  gap: 12px;
+}
+.confirm-inline .row-actions button {
+  border: 1px solid var(--line);
+  background: none;
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.confirm-inline .row-actions button:first-child {
+  border-color: #8a3631;
+  color: #8a3631;
+  font-weight: 650;
+}

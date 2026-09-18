@@ -6,13 +6,22 @@ import { useDashboardContext } from './dashboard-context';
 import { fmtDelta, fmtPercent, fmtPosition, fmtScore } from './dashboard-view';
 import type { DashboardPayload } from './dashboard-view';
 
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${String(count)} ${count === 1 ? singular : plural}`;
+}
+
+function formatLastSuccess(iso: string): string {
+  const date = new Date(iso);
+  return `${date.toISOString().slice(0, 10)} ${date.toISOString().slice(11, 16)} UTC`;
+}
+
 function Trend({ series }: { series: DashboardPayload['series'] }) {
   const points = series.filter((point) => point.visibilityScore !== null);
   if (points.length < 2)
     return (
       <div className="chart-empty">
         <p>
-          <strong>Not enough data</strong> â€” a trend needs at least two completed daily
+          <strong>Not enough data</strong> — a trend needs at least two completed daily
           observations.
         </p>
       </div>
@@ -39,7 +48,7 @@ function Trend({ series }: { series: DashboardPayload['series'] }) {
       <svg
         viewBox={`0 0 ${String(width)} ${String(height)}`}
         role="img"
-        aria-label={`Visibility score is ${direction}, from ${first.toFixed(1)} to ${last.toFixed(1)} across ${String(points.length)} observed days, peaking at ${best.toFixed(1)}.`}
+        aria-label={`Visibility score is ${direction}, from ${first.toFixed(1)} to ${last.toFixed(1)} across ${pluralize(points.length, 'observed day')}, peaking at ${best.toFixed(1)}.`}
       >
         <defs>
           <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
@@ -144,7 +153,7 @@ function RunScanButton({ data, onDone }: { data: DashboardPayload; onDone: () =>
         }}
       >
         {busy
-          ? 'Runningâ€¦'
+          ? 'Running…'
           : runnable.length === 0
             ? "Today's scan is complete"
             : "Run today's scan"}
@@ -174,7 +183,7 @@ export function AppOverview() {
       <header className="app-header">
         <div>
           <p className="eyebrow">
-            {data.brandName} Â· last {String(data.series.length)} observed day(s)
+            {data.brandName} · last {pluralize(data.series.length, 'observed day')}
           </p>
           <h1>Visibility overview</h1>
         </div>
@@ -191,7 +200,7 @@ export function AppOverview() {
                 : 'Subscription ended.'}
           </b>
           <span>Historical results stay available, but new provider calls are blocked.</span>
-          <Link to="/app/billing">Open billing â†’</Link>
+          <Link to="/app/billing">Open billing →</Link>
         </div>
       )}
 
@@ -238,7 +247,7 @@ export function AppOverview() {
                   <h3>Visibility trend</h3>
                   {data.provider && (
                     <span className="status">
-                      <CircleDot size={13} aria-hidden="true" /> {data.provider.name} Â·{' '}
+                      <CircleDot size={13} aria-hidden="true" /> {data.provider.name} ·{' '}
                       {data.provider.preset ?? 'default'}
                     </span>
                   )}
@@ -247,17 +256,23 @@ export function AppOverview() {
               </div>
               <div className="share">
                 <h3>Share of voice</h3>
-                {data.shareOfVoiceByEntity.map((entity) => (
-                  <div className="bar-row" key={entity.key}>
-                    <div>
-                      <span>{entity.label}</span>
-                      <b>{fmtPercent(entity.share)}</b>
+                {data.shareOfVoiceByEntity.length === 0 ? (
+                  <p className="row-meta">
+                    Share of voice appears once tracked entities are mentioned in stored answers.
+                  </p>
+                ) : (
+                  data.shareOfVoiceByEntity.map((entity) => (
+                    <div className="bar-row" key={entity.key}>
+                      <div>
+                        <span>{entity.label}</span>
+                        <b>{fmtPercent(entity.share)}</b>
+                      </div>
+                      <div className="bar">
+                        <i style={{ width: `${String((entity.share ?? 0) * 100)}%` }} />
+                      </div>
                     </div>
-                    <div className="bar">
-                      <i style={{ width: `${String((entity.share ?? 0) * 100)}%` }} />
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
@@ -265,10 +280,10 @@ export function AppOverview() {
               <h3>Prompt observations</h3>
               <span>
                 {data.provider
-                  ? `${data.provider.name} Â· ${data.provider.model ?? 'unknown model'}`
+                  ? `${data.provider.name} · ${data.provider.model ?? 'unknown model'}`
                   : 'No provider calls yet'}
                 {data.lastSuccessfulAt
-                  ? ` Â· last success ${new Date(data.lastSuccessfulAt).toISOString().slice(0, 16)}Z`
+                  ? ` · last success ${formatLastSuccess(data.lastSuccessfulAt)}`
                   : ''}
               </span>
             </div>
@@ -285,7 +300,7 @@ export function AppOverview() {
                     {statusLabel(prompt.classified)}
                   </span>
                   <span>
-                    {prompt.brandPosition === null ? 'â€”' : `#${String(prompt.brandPosition)}`}
+                    {prompt.brandPosition === null ? '—' : `#${String(prompt.brandPosition)}`}
                   </span>
                 </div>
               ))}

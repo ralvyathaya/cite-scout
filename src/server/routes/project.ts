@@ -79,7 +79,12 @@ projectRoutes.post('/', async (c) => {
     .get();
   if (existing)
     return c.json(
-      { error: { code: 'PROJECT_LIMIT', message: 'The MVP supports one project per account.' } },
+      {
+        error: {
+          code: 'PROJECT_LIMIT',
+          message: 'CiteScout currently supports one project per account.',
+        },
+      },
       409,
     );
   const now = new Date();

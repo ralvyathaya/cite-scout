@@ -83,7 +83,7 @@ export function PageState({ state, onRetry }: PageStateProps) {
   if (state.status === 'loading')
     return (
       <p role="status" aria-live="polite" className="app-state">
-        Loading your workspaceâ€¦
+        Loading your workspace…
       </p>
     );
 

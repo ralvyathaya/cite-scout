@@ -33,7 +33,7 @@ function usePrompts() {
   const load = useCallback(async () => {
     const response = await fetch('/api/prompts');
     if (!response.ok) {
-      setError('Could not load prompts.');
+      setError('Could not load prompts. Check your connection and try again.');
       setLoading(false);
       return;
     }
@@ -59,7 +59,9 @@ export function PromptsPage() {
   const list = usePrompts();
   const [newText, setNewText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [trialBusy, setTrialBusy] = useState(false);
   const [trialMessage, setTrialMessage] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const reload = dashboard.reload;
   const state = dashboard.state;
@@ -79,7 +81,7 @@ export function PromptsPage() {
       <header className="app-header">
         <div>
           <p className="eyebrow">
-            {String(data.prompts.length)}/10 enabled Â·{' '}
+            {String(data.prompts.length)}/10 enabled ·{' '}
             {data.entitlement.canScan ? 'monitoring active' : 'read-only'}
           </p>
           <h1>Monitored prompts</h1>
@@ -93,9 +95,9 @@ export function PromptsPage() {
           <button
             type="button"
             className="link-button"
-            disabled={busy || data.prompts.length === 0}
+            disabled={trialBusy || data.prompts.length === 0}
             onClick={() => {
-              setBusy(true);
+              setTrialBusy(true);
               setTrialMessage('');
               void fetch('/api/scans/trial', {
                 method: 'POST',
@@ -121,12 +123,12 @@ export function PromptsPage() {
                   setTrialMessage('Network error while running the trial scan.');
                 })
                 .finally(() => {
-                  setBusy(false);
+                  setTrialBusy(false);
                 });
             }}
           >
-            <span aria-hidden="true">â–¸ </span>
-            {busy ? 'Running trialâ€¦' : 'Run one-time trial scan'}
+            <span aria-hidden="true">▸ </span>
+            {trialBusy ? 'Running trial scan…' : 'Run one-time trial scan'}
           </button>
         </div>
       )}
@@ -195,7 +197,7 @@ export function PromptsPage() {
       <section className="settings-panel">
         <h2>Configured prompts</h2>
         {list.loading ? (
-          <p role="status">Loading promptsâ€¦</p>
+          <p role="status">Loading prompts…</p>
         ) : list.rows.length === 0 ? (
           <p>No prompts yet. Add between three and ten buyer-style questions.</p>
         ) : (
@@ -207,8 +209,8 @@ export function PromptsPage() {
                   {row.text}
                   <small className="row-meta">
                     {classificationLabel(promptState?.classified ?? null)}
-                    {scannedToday.has(row.id) ? ' Â· observed today' : ''}
-                    {row.enabled ? '' : ' Â· disabled'}
+                    {scannedToday.has(row.id) ? ' · observed today' : ''}
+                    {row.enabled ? '' : ' · disabled'}
                   </small>
                 </span>
                 <span className="row-actions">
@@ -219,7 +221,18 @@ export function PromptsPage() {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ enabled: !row.enabled }),
-                      }).then(() => list.load());
+                      })
+                        .then(async (response) => {
+                          if (!response.ok) {
+                            const body = (await response.json()) as { error?: { message: string } };
+                            list.setError(body.error?.message ?? 'Could not update the prompt.');
+                            return;
+                          }
+                          await list.load();
+                        })
+                        .catch(() => {
+                          list.setError('Network error while updating the prompt.');
+                        });
                     }}
                   >
                     {row.enabled ? 'Disable' : 'Enable'}
@@ -227,15 +240,54 @@ export function PromptsPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      void fetch(`/api/prompts/${row.id}`, { method: 'DELETE' }).then(() => {
-                        void list.load();
-                        reload();
-                      });
+                      setConfirmDelete(row.id);
                     }}
                   >
                     Delete
                   </button>
                 </span>
+                {confirmDelete === row.id && (
+                  <div className="confirm-inline" role="alertdialog" aria-label="Confirm deletion">
+                    <span>
+                      Delete this prompt? Its stored history is removed too. This cannot be undone.
+                    </span>
+                    <span className="row-actions">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmDelete(null);
+                          void fetch(`/api/prompts/${row.id}`, { method: 'DELETE' })
+                            .then(async (response) => {
+                              if (!response.ok) {
+                                const body = (await response.json()) as {
+                                  error?: { message: string };
+                                };
+                                list.setError(
+                                  body.error?.message ?? 'Could not delete the prompt.',
+                                );
+                                return;
+                              }
+                              await list.load();
+                              reload();
+                            })
+                            .catch(() => {
+                              list.setError('Network error while deleting the prompt.');
+                            });
+                        }}
+                      >
+                        Yes, delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmDelete(null);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  </div>
+                )}
               </div>
             );
           })
@@ -332,20 +384,27 @@ export function ResponsesPage() {
   const [extra, setExtra] = useState<ResponseRow[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const ready = dashboard.state.status === 'ready';
 
   const load = useCallback(async (before: string | null, append: boolean) => {
     setLoading(true);
+    setLoadError(false);
     try {
       const response = await fetch(
         `/api/dashboard/responses?limit=10${before === null ? '' : `&before=${before}`}`,
       );
-      if (!response.ok) return;
+      if (!response.ok) {
+        setLoadError(true);
+        return;
+      }
       const body = (await response.json()) as { data: ArchiveResponse };
       setPage(body.data);
       if (append) setExtra((current) => [...current, ...body.data.items]);
       else setExtra([]);
+    } catch {
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -369,13 +428,27 @@ export function ResponsesPage() {
     <>
       <header className="app-header">
         <div>
-          <p className="eyebrow">Auditable archive Â· newest first</p>
+          <p className="eyebrow">Auditable archive · newest first</p>
           <h1>Response archive</h1>
         </div>
       </header>
 
       {loading && items.length === 0 ? (
-        <p role="status">Loading stored responsesâ€¦</p>
+        <p role="status">Loading stored responses…</p>
+      ) : loadError && items.length === 0 ? (
+        <div className="app-state">
+          <h2>Could not load responses</h2>
+          <p>Check your connection and try again. Stored answers are not affected.</p>
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              void load(null, false);
+            }}
+          >
+            Retry
+          </button>
+        </div>
       ) : items.length === 0 ? (
         <div className="app-state">
           <h2>No stored responses yet</h2>
@@ -396,22 +469,22 @@ export function ResponsesPage() {
                   <div>
                     <p className="archive-prompt">{row.promptText}</p>
                     <p className="row-meta">
-                      {row.observationDate} Â· {row.provider} Â·{' '}
+                      {row.observationDate} · {row.provider} ·{' '}
                       {row.providerModel ?? 'unknown model'}
-                      {row.providerPreset === null ? '' : ` Â· ${row.providerPreset}`}
-                      {row.inputTokens === null ? '' : ` Â· ${String(row.inputTokens)} in`}
+                      {row.providerPreset === null ? '' : ` · ${row.providerPreset}`}
+                      {row.inputTokens === null ? '' : ` · ${String(row.inputTokens)} in`}
                       {row.outputTokens === null ? '' : ` / ${String(row.outputTokens)} out`}
                     </p>
                   </div>
                   <span className={classificationClass(row.contextClassification)}>
-                    {row.contextClassification}
+                    {classificationLabel(row.contextClassification)}
                   </span>
                 </div>
 
                 <p className="row-meta">
                   Brand position{' '}
-                  {row.brandPosition === null ? 'â€”' : `#${String(row.brandPosition)}`}
-                  {row.providerRequestId === null ? '' : ` Â· request ${row.providerRequestId}`}
+                  {row.brandPosition === null ? '—' : `#${String(row.brandPosition)}`}
+                  {row.providerRequestId === null ? '' : ` · request ${row.providerRequestId}`}
                 </p>
 
                 <button
@@ -469,7 +542,7 @@ export function ResponsesPage() {
                 void load(page?.nextCursor ?? null, true);
               }}
             >
-              {loading ? 'Loadingâ€¦' : 'Load older responses'}
+              {loading ? 'Loading…' : 'Load older responses'}
             </button>
           )}
         </section>
