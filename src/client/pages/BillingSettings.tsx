@@ -1,9 +1,32 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
+import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/client/components/ui/alert-dialog';
+import { Badge } from '@/client/components/ui/badge';
+import { Button } from '@/client/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/client/components/ui/card';
+import { Input } from '@/client/components/ui/input';
+import { Label } from '@/client/components/ui/label';
+import { Separator } from '@/client/components/ui/separator';
+import { usePageTitle } from '@/client/use-page-title';
 import { PageState } from './AppShell';
 import { useDashboardContext } from './dashboard-context';
 import { fmtPercent } from './dashboard-view';
-import { usePageTitle } from '../use-page-title';
 
 interface BillingStatus {
   subscription: {
@@ -37,11 +60,12 @@ function pluralize(count: number, singular: string, plural = `${singular}s`): st
 }
 
 function SubscriptionSummary({ load }: { load: BillingLoad }) {
-  if (load.status === 'loading') return <p role="status">Loading billing details…</p>;
+  if (load.status === 'loading')
+    return <p className="text-sm text-muted-foreground">Loading billing details…</p>;
 
   if (load.status === 'error')
     return (
-      <p role="alert" className="form-error">
+      <p role="alert" className="text-sm text-destructive">
         Could not load your billing status. Check your connection — this does not affect your
         subscription.
       </p>
@@ -50,30 +74,38 @@ function SubscriptionSummary({ load }: { load: BillingLoad }) {
   const subscription = load.data.subscription;
   if (!subscription)
     return (
-      <p>
+      <p className="text-sm text-muted-foreground">
         No subscription is linked to this account. The free trial scan can be used once; daily
         monitoring starts after a verified payment.
       </p>
     );
 
   return (
-    <dl className="billing-facts">
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
       <div>
-        <dt>Status</dt>
-        <dd>{subscription.status.replace('_', ' ')}</dd>
+        <dt className="text-xs text-muted-foreground">Status</dt>
+        <dd className="mt-0.5 text-sm font-medium capitalize">
+          {subscription.status.replace('_', ' ')}
+        </dd>
       </div>
       <div>
-        <dt>Mode</dt>
-        <dd>{subscription.testMode ? 'Test mode (no real charges)' : 'Live'}</dd>
+        <dt className="text-xs text-muted-foreground">Mode</dt>
+        <dd className="mt-0.5 text-sm font-medium">
+          {subscription.testMode ? 'Test mode (no real charges)' : 'Live'}
+        </dd>
       </div>
       <div>
-        <dt>{subscription.endsAt ? 'Access ends' : 'Renews'}</dt>
-        <dd>{formatScheduleDate(subscription.endsAt, subscription.renewsAt)}</dd>
+        <dt className="text-xs text-muted-foreground">
+          {subscription.endsAt ? 'Access ends' : 'Renews'}
+        </dt>
+        <dd className="mt-0.5 text-sm font-medium tabular-nums">
+          {formatScheduleDate(subscription.endsAt, subscription.renewsAt)}
+        </dd>
       </div>
       {subscription.cardLastFour && (
         <div>
-          <dt>Payment method</dt>
-          <dd>
+          <dt className="text-xs text-muted-foreground">Payment method</dt>
+          <dd className="mt-0.5 text-sm font-medium tabular-nums">
             {subscription.cardBrand ?? 'Card'} ···· {subscription.cardLastFour}
           </dd>
         </div>
@@ -84,7 +116,7 @@ function SubscriptionSummary({ load }: { load: BillingLoad }) {
 
 /**
  * Checkout success is a UX signal only. Access is granted exclusively by a
- * verified Lemon Squeezy webhook, so this polls our own billing state.
+ * verified webhook, so this polls our own billing state.
  */
 function ConfirmingSubscription({ onVerified }: { onVerified: () => void }) {
   const [attempts, setAttempts] = useState(0);
@@ -126,22 +158,26 @@ function ConfirmingSubscription({ onVerified }: { onVerified: () => void }) {
   }, [manual, onVerified]);
 
   return (
-    <div className="notice" role="status" aria-live="polite">
-      <b>Confirming your subscription…</b>
-      <span>
-        Activation happens only after payment is verified by a signed webhook. Checked{' '}
-        {pluralize(attempts, 'time')}.
+    <div
+      className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-4 py-3 text-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <strong className="font-semibold">Confirming your subscription…</strong>
+      <span className="text-muted-foreground">
+        Activation happens only after payment is verified. Checked {pluralize(attempts, 'time')}.
       </span>
-      <button
-        type="button"
-        className="link-button"
+      <Button
+        variant="outline"
+        size="sm"
+        className="ml-auto"
         onClick={() => {
           setAttempts(0);
           setManual((value) => value + 1);
         }}
       >
         Check again
-      </button>
+      </Button>
     </div>
   );
 }
@@ -152,7 +188,6 @@ export function BillingPage() {
   const [params, setParams] = useSearchParams();
   const [load, setLoad] = useState<BillingLoad>({ status: 'loading' });
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -196,13 +231,14 @@ export function BillingPage() {
   const hasSubscription = load.status === 'ready' && load.data.subscription !== null;
 
   return (
-    <>
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">Plan and payment</p>
-          <h1>Billing</h1>
-        </div>
-      </header>
+    <div className="p-6 lg:p-8">
+      <div id="main" className="sr-only">
+        Billing
+      </div>
+      <div className="mb-6">
+        <p className="text-sm text-muted-foreground">Plan and payment</p>
+        <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Billing</h1>
+      </div>
 
       {checkoutComplete && (
         <ConfirmingSubscription
@@ -215,158 +251,130 @@ export function BillingPage() {
         />
       )}
 
-      {message && (
-        <p role="status" aria-live="polite" className="form-status">
-          {message}
-        </p>
-      )}
+      <Card className="max-w-2xl">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base">CiteScout Monitor</CardTitle>
+            <Badge variant="secondary" className="tabular-nums">
+              $19 USD / month
+            </Badge>
+          </div>
+          <CardDescription>
+            For founders and small teams who need evidence, not another enterprise dashboard.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <SubscriptionSummary load={load} />
 
-      <section className="settings-panel">
-        <h2>CiteScout Monitor — $19 USD / month</h2>
-        <SubscriptionSummary load={load} />
-        <ul className="plan-list">
-          <li>One active project and up to 10 enabled prompts</li>
-          <li>Up to 3 tracked competitors</li>
-          <li>One observation per prompt per UTC day</li>
-          <li>Historical trends and the raw answer archive</li>
-        </ul>
+          <Separator />
 
-        <div className="billing-actions">
-          {hasSubscription ? (
-            <button
-              type="button"
-              className="button"
-              disabled={busy}
-              onClick={() => {
-                setBusy(true);
-                setMessage('');
-                void fetch('/api/billing/portal', { method: 'POST' })
-                  .then(async (response) => {
-                    const body = (await response.json()) as {
-                      data?: { url: string };
-                      error?: { message: string };
-                    };
-                    if (response.ok && body.data) window.location.assign(body.data.url);
-                    else setMessage(body.error?.message ?? 'Could not open the billing portal.');
-                  })
-                  .catch(() => {
-                    setMessage('Network error while opening the billing portal.');
-                  })
-                  .finally(() => {
-                    setBusy(false);
-                  });
-              }}
+          <ul className="grid gap-2 text-sm sm:grid-cols-2">
+            <li className="flex items-center gap-2">
+              <span className="size-1 rounded-full bg-foreground" aria-hidden="true" />
+              One active project
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="size-1 rounded-full bg-foreground" aria-hidden="true" />
+              10 enabled prompts
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="size-1 rounded-full bg-foreground" aria-hidden="true" />3 tracked
+              competitors
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="size-1 rounded-full bg-foreground" aria-hidden="true" />
+              One observation per prompt per UTC day
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="size-1 rounded-full bg-foreground" aria-hidden="true" />
+              Historical trends and raw answer archive
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="size-1 rounded-full bg-foreground" aria-hidden="true" />
+              Cancel anytime, keep your history
+            </li>
+          </ul>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {hasSubscription ? (
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  void fetch('/api/billing/portal', { method: 'POST' })
+                    .then(async (response) => {
+                      const body = (await response.json()) as {
+                        data?: { url: string };
+                        error?: { message: string };
+                      };
+                      if (response.ok && body.data) window.location.assign(body.data.url);
+                      else toast.error(body.error?.message ?? 'Could not open the billing portal.');
+                    })
+                    .catch(() => {
+                      toast.error('Network error while opening the billing portal.');
+                    })
+                    .finally(() => {
+                      setBusy(false);
+                    });
+                }}
+              >
+                {busy ? 'Opening…' : 'Manage billing'}
+              </Button>
+            ) : (
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  void fetch('/api/billing/checkout', { method: 'POST' })
+                    .then(async (response) => {
+                      const body = (await response.json()) as {
+                        data?: { url: string };
+                        error?: { message: string };
+                      };
+                      if (response.ok && body.data) window.location.assign(body.data.url);
+                      else toast.error(body.error?.message ?? 'Could not start checkout.');
+                    })
+                    .catch(() => {
+                      toast.error('Network error while starting checkout.');
+                    })
+                    .finally(() => {
+                      setBusy(false);
+                    });
+                }}
+              >
+                {busy ? 'Opening checkout…' : 'Open secure checkout'}
+              </Button>
+            )}
+            <Link
+              to="/app/overview"
+              className="text-sm text-muted-foreground hover:text-foreground"
             >
-              {busy ? 'Opening…' : 'Manage billing'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="button"
-              disabled={busy}
-              onClick={() => {
-                setBusy(true);
-                setMessage('');
-                void fetch('/api/billing/checkout', { method: 'POST' })
-                  .then(async (response) => {
-                    const body = (await response.json()) as {
-                      data?: { url: string };
-                      error?: { message: string };
-                    };
-                    if (response.ok && body.data) window.location.assign(body.data.url);
-                    else setMessage(body.error?.message ?? 'Could not start checkout.');
-                  })
-                  .catch(() => {
-                    setMessage('Network error while starting checkout.');
-                  })
-                  .finally(() => {
-                    setBusy(false);
-                  });
-              }}
-            >
-              {busy ? 'Opening checkout…' : 'Open secure checkout'}
-            </button>
-          )}
-          <Link className="text-link" to="/app/overview">
-            Back to overview
-          </Link>
-        </div>
+              Back to overview
+            </Link>
+          </div>
 
-        <p className="fine">
-          Checkout and the customer portal are hosted by Lemon Squeezy, the merchant of record.
-          CiteScout never stores card data. Returning from checkout does not by itself grant access.
-        </p>
-      </section>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Checkout and the customer portal are hosted by Lemon Squeezy, the merchant of record.
+            CiteScout never stores card data. Returning from checkout does not by itself grant
+            access.
+          </p>
+        </CardContent>
+      </Card>
 
       {load.status === 'ready' && load.data.entitlement.warning && (
-        <p role="alert" className="form-error">
+        <p role="alert" className="mt-4 max-w-2xl text-sm text-destructive">
           Your subscription is {load.data.entitlement.warning}. New provider calls are paused;
-          historical data remains available. Coverage of your archive is unaffected.
+          historical data remains available.
         </p>
       )}
 
       {dashboard.state.data.totalObservations > 0 && (
-        <p className="fine">
+        <p className="mt-4 text-xs text-muted-foreground">
           Stored observations retained on this account:{' '}
           {String(dashboard.state.data.totalObservations)}. Recent coverage:{' '}
           {fmtPercent(dashboard.state.data.current.coverage)}.
         </p>
       )}
-    </>
-  );
-}
-
-function DeleteAccountDialog({
-  onCancel,
-  onConfirm,
-  busy,
-}: {
-  onCancel: () => void;
-  onConfirm: () => void;
-  busy: boolean;
-}) {
-  const [typed, setTyped] = useState('');
-
-  return (
-    <div className="dialog-backdrop" role="presentation">
-      <div
-        className="dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-account-title"
-        aria-describedby="delete-account-body"
-      >
-        <h2 id="delete-account-title">Delete your account?</h2>
-        <p id="delete-account-body">
-          This permanently deletes your project, prompts, competitors, scans, and stored answers,
-          then signs you out everywhere. It cannot be undone. If a subscription is active, cancel it
-          in the billing portal first.
-        </p>
-        <label htmlFor="delete-confirm">
-          Type <strong>DELETE</strong> to confirm
-          <input
-            id="delete-confirm"
-            value={typed}
-            autoComplete="off"
-            onChange={(event) => {
-              setTyped(event.target.value);
-            }}
-          />
-        </label>
-        <div className="row-actions">
-          <button type="button" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="button danger"
-            disabled={busy || typed !== 'DELETE'}
-            onClick={onConfirm}
-          >
-            {busy ? 'Deleting…' : 'Delete my account'}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -375,8 +383,8 @@ export function SettingsPage() {
   const dashboard = useDashboardContext();
   usePageTitle('Settings');
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState('');
 
   if (dashboard.state.status !== 'ready')
     return <PageState state={dashboard.state} onRetry={dashboard.reload} />;
@@ -384,7 +392,6 @@ export function SettingsPage() {
 
   async function deleteAccount() {
     setBusy(true);
-    setMessage('');
     try {
       const response = await fetch('/api/account', { method: 'DELETE' });
       const body = (await response.json()) as {
@@ -395,99 +402,145 @@ export function SettingsPage() {
         window.location.assign('/');
         return;
       }
-      setMessage(body.error?.message ?? 'Account deletion failed.');
+      toast.error(body.error?.message ?? 'Account deletion failed.');
     } catch {
-      setMessage('Network error while deleting the account.');
+      toast.error('Network error while deleting the account.');
     } finally {
       setBusy(false);
       setConfirming(false);
+      setTyped('');
     }
   }
 
   return (
-    <>
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">Workspace</p>
-          <h1>Project settings</h1>
-        </div>
-      </header>
+    <div className="p-6 lg:p-8">
+      <div id="main" className="sr-only">
+        Project settings
+      </div>
+      <div className="mb-6">
+        <p className="text-sm text-muted-foreground">Workspace</p>
+        <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Project settings</h1>
+      </div>
 
-      <section className="settings-panel">
-        <h2>Tracked identity</h2>
-        <dl className="billing-facts">
-          <div>
-            <dt>Brand</dt>
-            <dd>{data.brandName}</dd>
-          </div>
-          <div>
-            <dt>Canonical domain</dt>
-            <dd>{data.canonicalDomain}</dd>
-          </div>
-          <div>
-            <dt>Competitors</dt>
-            <dd>
-              {data.shareOfVoiceByEntity
-                .filter((entity) => entity.key !== 'brand')
-                .map((entity) => entity.label)
-                .join(', ') || 'None'}
-            </dd>
-          </div>
-          <div>
-            <dt>Provider</dt>
-            <dd>
-              {data.provider
-                ? `${data.provider.name} · ${data.provider.model ?? 'unknown model'}`
-                : 'No calls yet'}
-            </dd>
-          </div>
-        </dl>
-      </section>
+      <div className="max-w-2xl space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Tracked identity</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+              <div>
+                <dt className="text-xs text-muted-foreground">Brand</dt>
+                <dd className="mt-0.5 truncate text-sm font-medium">{data.brandName}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Canonical domain</dt>
+                <dd className="mt-0.5 truncate text-sm font-medium">{data.canonicalDomain}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Competitors</dt>
+                <dd className="mt-0.5 truncate text-sm font-medium">
+                  {data.shareOfVoiceByEntity
+                    .filter((entity) => entity.key !== 'brand')
+                    .map((entity) => entity.label)
+                    .join(', ') || 'None'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Provider</dt>
+                <dd className="mt-0.5 truncate text-sm font-medium">
+                  {data.provider
+                    ? `${data.provider.name} · ${data.provider.model ?? 'unknown model'}`
+                    : 'No calls yet'}
+                </dd>
+              </div>
+            </dl>
+          </CardContent>
+        </Card>
 
-      <section className="settings-panel">
-        <h2>Provider usage</h2>
-        <p>
-          Stored observations: {String(data.totalObservations)}. Cost controls are enforced
-          server-side, including a global daily cap, a per-user monthly cap, and a maximum number of
-          provider calls per cron invocation.
-        </p>
-      </section>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Provider usage</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Stored observations: {String(data.totalObservations)}. Cost controls are enforced
+              server-side, including a global daily cap, a per-user monthly cap, and a maximum
+              number of provider calls per cron invocation.
+            </p>
+          </CardContent>
+        </Card>
 
-      <section className="settings-panel">
-        <h2>Delete account and product data</h2>
-        <p>
-          Deletion requires a recent sign-in and removes your project, competitors, prompts, scans,
-          and stored answers, then invalidates your sessions. If a subscription is active you must
-          cancel it in the billing portal first. Minimal billing identifiers may be retained where
-          legally required. Questions first? Email support@cite-scout.com.
-        </p>
-        <button
-          type="button"
-          className="button danger"
-          onClick={() => {
-            setConfirming(true);
-          }}
-        >
-          Delete my account
-        </button>
-        {message && (
-          <p role="status" aria-live="polite" className="form-status">
-            {message}
-          </p>
-        )}
-      </section>
+        <Card className="border-destructive/30">
+          <CardHeader>
+            <CardTitle className="text-base text-destructive">
+              Delete account and product data
+            </CardTitle>
+            <CardDescription>
+              Deletion requires a recent sign-in and removes your project, competitors, prompts,
+              scans, and stored answers, then invalidates your sessions. If a subscription is active
+              you must cancel it in the billing portal first. Questions first? Email
+              support@cite-scout.com.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirming(true);
+              }}
+            >
+              Delete my account
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
 
-      {confirming && (
-        <DeleteAccountDialog
-          busy={busy}
-          onCancel={() => {
+      <AlertDialog
+        open={confirming}
+        onOpenChange={(open) => {
+          if (!open) {
             setConfirming(false);
-          }}
-          onConfirm={() => {
-            void deleteAccount();
-          }}
-        />
-      )}
-    </>
+            setTyped('');
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                This permanently deletes your project, prompts, competitors, scans, and stored
+                answers, then signs you out everywhere. It cannot be undone. If a subscription is
+                active, cancel it in the billing portal first.
+                <div className="mt-4 grid gap-2">
+                  <Label htmlFor="delete-confirm">Type DELETE to confirm</Label>
+                  <Input
+                    id="delete-confirm"
+                    value={typed}
+                    autoComplete="off"
+                    onChange={(event) => {
+                      setTyped(event.target.value);
+                    }}
+                  />
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90 disabled:opacity-50"
+              disabled={busy || typed !== 'DELETE'}
+              onClick={() => {
+                void deleteAccount();
+              }}
+            >
+              {busy ? 'Deleting…' : 'Delete my account'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

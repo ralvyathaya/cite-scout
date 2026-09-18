@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { Link } from 'react-router';
-import { usePageTitle } from '../use-page-title';
+import { Button } from '@/client/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/client/components/ui/card';
+import { Input } from '@/client/components/ui/input';
+import { Label } from '@/client/components/ui/label';
+import { usePageTitle } from '@/client/use-page-title';
 
 interface LoginResponse {
   data?: { accepted: boolean; message: string };
   error?: { message: string };
 }
+
 export function Login() {
   usePageTitle('Sign in');
   const [email, setEmail] = useState('');
@@ -13,6 +24,7 @@ export function Login() {
   const [message, setMessage] = useState('');
   const [turnstileToken, setTurnstileToken] = useState('');
   const widget = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     let active = true;
     void fetch('/api/public-config')
@@ -42,6 +54,7 @@ export function Login() {
       active = false;
     };
   }, []);
+
   async function submit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus('sending');
@@ -64,59 +77,86 @@ export function Login() {
       setStatus('error');
     }
   }
+
   return (
-    <main className="auth-page" id="main">
-      <section>
-        <Link className="logo" to="/">
-          <span>CS</span>CiteScout
-        </Link>
-        <div className="auth-copy">
-          <p className="eyebrow">Passwordless access</p>
-          <h1>Start with one honest observation.</h1>
-          <p>
-            Configure your brand and choose up to three prompts for a genuine Perplexity-based trial
-            scan.
-          </p>
-        </div>
-      </section>
-      <section className="auth-form">
-        <form
-          onSubmit={(event) => {
-            void submit(event);
-          }}
-        >
-          <p className="eyebrow">Sign in</p>
-          <h2>Send me a magic link</h2>
-          <label htmlFor="email">Work email</label>
-          <input
-            id="email"
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(event) => {
-              setEmail(event.target.value);
+    <main
+      id="main"
+      className="flex min-h-svh flex-col items-center justify-center bg-muted/50 px-4 py-12"
+    >
+      <Link to="/" className="mb-8 flex items-center gap-2" aria-label="CiteScout home">
+        <span className="flex size-8 items-center justify-center rounded-md bg-primary text-sm font-bold italic text-primary-foreground">
+          CS
+        </span>
+        <span className="text-lg font-bold tracking-tight">CiteScout</span>
+      </Link>
+
+      <Card className="w-full max-w-sm">
+        <CardHeader className="text-center">
+          <CardTitle className="text-xl font-bold tracking-tight">
+            <h1 className="text-xl font-bold tracking-tight">Sign in to CiteScout</h1>
+          </CardTitle>
+          <CardDescription>
+            We&apos;ll email you a single-use magic link. No password required.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(event) => {
+              void submit(event);
             }}
-            placeholder="you@company.com"
-          />
-          <div ref={widget} className="turnstile-placeholder">
-            {turnstileToken === 'local-development'
-              ? 'Dev mode: the sign-in link is printed in the dev server terminal after you submit.'
-              : 'Security verification'}
-          </div>
-          <button className="button" disabled={status === 'sending' || !turnstileToken}>
-            {status === 'sending' ? 'Sending…' : 'Email my secure link'}
-          </button>
-          <p
-            role="status"
-            aria-live="polite"
-            className={status === 'error' ? 'form-error' : 'form-status'}
           >
-            {message}
-          </p>
-          <small>Links are single-use and expire after 10 minutes.</small>
-        </form>
-      </section>
+            <div className="grid gap-2">
+              <Label htmlFor="email">Work email</Label>
+              <Input
+                id="email"
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                }}
+                placeholder="you@company.com"
+              />
+            </div>
+
+            <div ref={widget} className="min-h-10">
+              {turnstileToken === 'local-development' && (
+                <p className="text-xs text-muted-foreground">
+                  Dev mode: the sign-in link is printed in the dev server terminal after you submit.
+                </p>
+              )}
+            </div>
+
+            <Button type="submit" disabled={status === 'sending' || !turnstileToken}>
+              {status === 'sending' ? 'Sending…' : 'Email my secure link'}
+            </Button>
+
+            <p
+              role="status"
+              aria-live="polite"
+              className={`min-h-4 text-center text-xs ${
+                status === 'error' ? 'text-destructive' : 'text-muted-foreground'
+              }`}
+            >
+              {message}
+            </p>
+          </form>
+        </CardContent>
+      </Card>
+
+      <p className="mt-6 text-center text-xs text-muted-foreground">
+        Links are single-use and expire after 10 minutes. By continuing you agree to our{' '}
+        <Link to="/terms" className="underline underline-offset-4 hover:text-foreground">
+          Terms
+        </Link>{' '}
+        and{' '}
+        <Link to="/privacy" className="underline underline-offset-4 hover:text-foreground">
+          Privacy Policy
+        </Link>
+        .
+      </p>
     </main>
   );
 }

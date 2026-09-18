@@ -12,6 +12,8 @@ export default tseslint.config(
       'worker-configuration.d.ts',
       'migrations/meta',
       'eslint.config.js',
+      // Vendored shadcn/ui primitives: kept as generated upstream code.
+      'src/client/components/ui/**',
     ],
   },
   js.configs.recommended,

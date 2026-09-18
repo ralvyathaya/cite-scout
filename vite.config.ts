@@ -4,7 +4,6 @@ import react from '@vitejs/plugin-react';
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
-
 const FORBIDDEN_ARTIFACTS = ['.dev.vars', '.env', '.env.local', '.env.production'];
 
 /**
@@ -50,4 +49,9 @@ function stripLocalSecrets(): Plugin {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), cloudflare(), stripLocalSecrets()],
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, './src'),
+    },
+  },
 });

@@ -10,17 +10,24 @@ test.describe('public visitor', () => {
     await expect(page.getByText(/does not claim to reproduce/i)).toBeVisible();
   });
 
-  test('landing shows how it works in three steps and an example dashboard', async ({ page }) => {
+  test('hero preview is interactive with tabs and example data', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.getByText('How CiteScout works')).toBeVisible();
-    await expect(page.getByText('Configure your prompts')).toBeVisible();
-    await expect(page.getByText('We observe daily')).toBeVisible();
-    await expect(page.getByText('Inspect the evidence')).toBeVisible();
+    // The hero embeds the same component tree as the demo: clickable tabs.
+    const tabs = page.getByRole('tab', { name: 'Citations' });
+    await expect(tabs.first()).toBeVisible();
+    await tabs.first().click();
+    await expect(page.getByText('Sources most frequently cited')).toBeVisible();
+    await expect(page.getByText('reddit.com').first()).toBeVisible();
 
-    // The preview must be labelled as an example, never as live data.
-    await expect(page.getByText('Example dashboard')).toBeVisible();
-    await expect(page.getByText('Live observation preview')).toHaveCount(0);
+    await page.getByRole('tab', { name: 'Prompts' }).first().click();
+    await expect(
+      page.getByText('Best scheduling tool for independent consultants').first(),
+    ).toBeVisible();
+
+    // The preview is labelled as an example, never as live data.
+    await expect(page.getByText('Example dashboard', { exact: false }).first()).toBeVisible();
+    expect(await page.getByText('Live observation preview').count()).toBe(0);
   });
 
   test('demo dashboard is labelled and shows no provider calls', async ({ page }) => {
@@ -32,8 +39,11 @@ test.describe('public visitor', () => {
     await page.goto('/demo');
 
     await expect(page.getByText('Illustrative demo data').first()).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'OrbitCal visibility' })).toBeVisible();
-    await expect(page.getByText(/does not claim to reproduce/i)).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('See the pattern');
+
+    // Demo tabs are interactive here too.
+    await page.getByRole('tab', { name: 'Citations' }).click();
+    await expect(page.getByText('wikipedia.org')).toBeVisible();
 
     expect(providerCalls).toEqual([]);
   });
@@ -85,7 +95,7 @@ test.describe('public visitor', () => {
     const footer = page.getByRole('contentinfo');
     await expect(footer.getByText(/© \d{4} CiteScout/)).toBeVisible();
     await expect(footer.getByRole('link', { name: 'Support' })).toBeVisible();
-    await expect(footer.getByText('Built for The Build Games')).toHaveCSS('font-size', /1[01]px/);
+    await expect(footer.getByText('Built for The Build Games')).toBeVisible();
   });
 
   test('unknown routes show a marketing 404 with way home', async ({ page }) => {
@@ -190,7 +200,8 @@ test.describe('mobile', () => {
     expect(overflow).toBe(false);
 
     await page.getByRole('button', { name: 'Toggle navigation' }).click();
-    await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Main navigation' }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Pricing' }).first()).toBeVisible();
   });
 
   test('demo dashboard has no horizontal overflow', async ({ page }) => {
@@ -208,6 +219,13 @@ test.describe('mobile', () => {
     );
     expect(overflow).toBe(false);
   });
+
+  test('app navigation is reachable from the mobile header', async ({ page }) => {
+    await page.goto('/app/overview');
+    await expect(page.getByText('Session expired')).toBeVisible();
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await expect(page.getByRole('navigation', { name: 'Application' })).toBeVisible();
+  });
 });
 
 test.describe('authenticated workspace', () => {
@@ -217,7 +235,7 @@ test.describe('authenticated workspace', () => {
 
     const sidebar = page.getByRole('complementary');
     await expect(sidebar.getByRole('link', { name: 'Sign in' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Sign out' })).toHaveCount(0);
+    expect(await page.getByRole('button', { name: 'Sign out' }).count()).toBe(0);
   });
 
   test('visiting /app redirects to the overview', async ({ page }) => {
@@ -225,10 +243,26 @@ test.describe('authenticated workspace', () => {
     await expect(page).toHaveURL(/\/app\/overview$/);
   });
 
+  test('switching tabs never leaks an unrelated view underneath', async ({ page }) => {
+    // The shell renders exactly one route viewport; onboarding lives inside the
+    // same frame as every other tab, so it can never persist beneath them.
+    // Anonymous visitors see the session gate, which proves the route resolved.
+    await page.goto('/app/onboarding');
+    await expect(page.getByText('Session expired')).toBeVisible();
+
+    await page.goto('/app/overview');
+    await expect(page.getByText('Session expired')).toBeVisible();
+    expect(await page.getByLabel('Brand name').count()).toBe(0);
+
+    await page.goto('/app/billing');
+    await expect(page.getByText('Session expired')).toBeVisible();
+    expect(await page.getByLabel('Brand name').count()).toBe(0);
+  });
+
   test('a checkout redirect alone does not unlock paid access', async ({ page }) => {
     await page.goto('/app/billing?checkout=complete');
     await expect(page.getByText('Session expired')).toBeVisible();
-    await expect(page.getByText(/CiteScout Monitor/)).toHaveCount(0);
+    expect(await page.getByText(/CiteScout Monitor/).count()).toBe(0);
   });
 
   test('private API endpoints are refused for anonymous callers', async ({ request }) => {

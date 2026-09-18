@@ -1,24 +1,41 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { toast } from 'sonner';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/client/components/ui/alert-dialog';
+import { Button } from '@/client/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/client/components/ui/card';
+import { Input } from '@/client/components/ui/input';
+import { Label } from '@/client/components/ui/label';
+import { Skeleton } from '@/client/components/ui/skeleton';
+import { Switch } from '@/client/components/ui/switch';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/client/components/ui/table';
+import { StatusBadge } from '@/client/components/status-badge';
+import { usePageTitle } from '@/client/use-page-title';
 import { PageState } from './AppShell';
 import { useDashboardContext } from './dashboard-context';
-import { usePageTitle } from '../use-page-title';
-
-const RECOMMENDED = 'recommended';
-const MENTIONED = 'mentioned';
-const NEGATIVE = 'negative';
-const ABSENT = 'absent';
-
-function classificationClass(value: string | null): string {
-  if (value === RECOMMENDED || value === MENTIONED || value === NEGATIVE || value === ABSENT)
-    return value;
-  return 'unknown';
-}
-
-function classificationLabel(value: string | null): string {
-  if (value === null) return 'Not yet scanned';
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
 
 interface PromptRow {
   id: string;
@@ -62,8 +79,7 @@ export function PromptsPage() {
   const [newText, setNewText] = useState('');
   const [busy, setBusy] = useState(false);
   const [trialBusy, setTrialBusy] = useState(false);
-  const [trialMessage, setTrialMessage] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PromptRow | null>(null);
 
   const reload = dashboard.reload;
   const state = dashboard.state;
@@ -78,29 +94,70 @@ export function PromptsPage() {
   );
   const trialAvailable = data.totalObservations === 0;
 
+  async function confirmDelete() {
+    if (deleteTarget === null) return;
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    try {
+      const response = await fetch(`/api/prompts/${target.id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message: string } };
+        toast.error(body.error?.message ?? 'Could not delete the prompt.');
+        return;
+      }
+      toast.success('Prompt deleted.');
+      await list.load();
+      reload();
+    } catch {
+      toast.error('Network error while deleting the prompt.');
+    }
+  }
+
+  async function togglePrompt(row: PromptRow) {
+    try {
+      const response = await fetch(`/api/prompts/${row.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !row.enabled }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message: string } };
+        toast.error(body.error?.message ?? 'Could not update the prompt.');
+        return;
+      }
+      await list.load();
+    } catch {
+      toast.error('Network error while updating the prompt.');
+    }
+  }
+
   return (
-    <>
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">
-            {String(data.prompts.length)}/10 enabled ·{' '}
-            {data.entitlement.canScan ? 'monitoring active' : 'read-only'}
-          </p>
-          <h1>Monitored prompts</h1>
-        </div>
-      </header>
+    <div className="p-6 lg:p-8">
+      <div id="main" className="sr-only">
+        Monitored prompts
+      </div>
+      <div className="mb-6">
+        <p className="text-sm text-muted-foreground">
+          {String(data.prompts.length)}/10 enabled ·{' '}
+          {data.entitlement.canScan ? 'monitoring active' : 'read-only'}
+        </p>
+        <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Monitored prompts</h1>
+      </div>
 
       {trialAvailable && (
-        <div className="notice">
-          <b>One lifetime trial scan is available.</b>
-          <span>It covers up to three prompts and is consumed once the provider is contacted.</span>
-          <button
-            type="button"
-            className="link-button"
+        <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">One lifetime trial scan is available</p>
+            <p className="text-xs text-muted-foreground">
+              Covers up to three prompts and is consumed once the provider is contacted.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            className="ml-auto"
             disabled={trialBusy || data.prompts.length === 0}
             onClick={() => {
               setTrialBusy(true);
-              setTrialMessage('');
               void fetch('/api/scans/trial', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -114,192 +171,187 @@ export function PromptsPage() {
                     data?: { successful: number; failed: number };
                     error?: { message: string };
                   };
-                  setTrialMessage(
-                    response.ok
-                      ? `Trial complete: ${String(body.data?.successful ?? 0)} observed, ${String(body.data?.failed ?? 0)} failed.`
-                      : (body.error?.message ?? 'Trial scan failed.'),
-                  );
-                  if (response.ok) reload();
+                  if (response.ok) {
+                    toast.success(
+                      `Trial scan finished: ${String(body.data?.successful ?? 0)} observed, ${String(body.data?.failed ?? 0)} failed.`,
+                    );
+                    reload();
+                  } else {
+                    toast.error(body.error?.message ?? 'Trial scan failed.');
+                  }
                 })
                 .catch(() => {
-                  setTrialMessage('Network error while running the trial scan.');
+                  toast.error('Network error while running the trial scan.');
                 })
                 .finally(() => {
                   setTrialBusy(false);
                 });
             }}
           >
-            <span aria-hidden="true">▸ </span>
             {trialBusy ? 'Running trial scan…' : 'Run one-time trial scan'}
-          </button>
+          </Button>
         </div>
       )}
-      {trialMessage && (
-        <p role="status" aria-live="polite" className="form-status">
-          {trialMessage}
-        </p>
-      )}
 
-      <section className="settings-panel">
-        <h2>Add a prompt</h2>
-        <form
-          className="inline-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setBusy(true);
-            list.setError('');
-            void fetch('/api/prompts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text: newText }),
-            })
-              .then(async (response) => {
-                if (!response.ok) {
-                  const body = (await response.json()) as { error?: { message: string } };
-                  list.setError(body.error?.message ?? 'Could not add the prompt.');
-                  return;
-                }
-                setNewText('');
-                await list.load();
-                reload();
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Add a prompt</CardTitle>
+          <CardDescription>A buyer-style question asked to an AI assistant.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="flex flex-col gap-3 sm:flex-row sm:items-end"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setBusy(true);
+              list.setError('');
+              void fetch('/api/prompts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: newText }),
               })
-              .catch(() => {
-                list.setError('Network error while adding the prompt.');
-              })
-              .finally(() => {
-                setBusy(false);
-              });
-          }}
-        >
-          <label htmlFor="new-prompt">
-            Buyer-style question
-            <input
-              id="new-prompt"
-              value={newText}
-              minLength={10}
-              maxLength={500}
-              required
-              placeholder="What is the best scheduling tool for independent consultants?"
-              onChange={(event) => {
-                setNewText(event.target.value);
-              }}
-            />
-          </label>
-          <button className="button" disabled={busy}>
-            Add prompt
-          </button>
-        </form>
-        {list.error && (
-          <p role="alert" className="form-error">
-            {list.error}
-          </p>
-        )}
-      </section>
+                .then(async (response) => {
+                  if (!response.ok) {
+                    const body = (await response.json()) as { error?: { message: string } };
+                    toast.error(body.error?.message ?? 'Could not add the prompt.');
+                    return;
+                  }
+                  toast.success('Prompt added.');
+                  setNewText('');
+                  await list.load();
+                  reload();
+                })
+                .catch(() => {
+                  toast.error('Network error while adding the prompt.');
+                })
+                .finally(() => {
+                  setBusy(false);
+                });
+            }}
+          >
+            <div className="grid flex-1 gap-2">
+              <Label htmlFor="new-prompt" className="sr-only">
+                Buyer-style question
+              </Label>
+              <Input
+                id="new-prompt"
+                value={newText}
+                minLength={10}
+                maxLength={500}
+                required
+                placeholder="What is the best scheduling tool for independent consultants?"
+                onChange={(event) => {
+                  setNewText(event.target.value);
+                }}
+              />
+            </div>
+            <Button type="submit" disabled={busy}>
+              <Plus className="size-4" aria-hidden="true" />
+              Add prompt
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
-      <section className="settings-panel">
-        <h2>Configured prompts</h2>
+      <Card className="gap-0 py-0">
+        <div className="border-b px-5 py-3.5">
+          <h2 className="text-base font-semibold">Configured prompts</h2>
+        </div>
         {list.loading ? (
-          <p role="status">Loading prompts…</p>
+          <div className="space-y-3 p-5">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <Skeleton key={index} className="h-10" />
+            ))}
+          </div>
         ) : list.rows.length === 0 ? (
-          <p>No prompts yet. Add between three and ten buyer-style questions.</p>
+          <p className="p-5 text-sm text-muted-foreground">
+            No prompts yet. Add between three and ten buyer-style questions.
+          </p>
         ) : (
-          list.rows.map((row) => {
-            const promptState = data.prompts.find((prompt) => prompt.promptId === row.id);
-            return (
-              <div className="setting-row" key={row.id}>
-                <span>
-                  {row.text}
-                  <small className="row-meta">
-                    {classificationLabel(promptState?.classified ?? null)}
-                    {scannedToday.has(row.id) ? ' · observed today' : ''}
-                    {row.enabled ? '' : ' · disabled'}
-                  </small>
-                </span>
-                <span className="row-actions">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void fetch(`/api/prompts/${row.id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ enabled: !row.enabled }),
-                      })
-                        .then(async (response) => {
-                          if (!response.ok) {
-                            const body = (await response.json()) as { error?: { message: string } };
-                            list.setError(body.error?.message ?? 'Could not update the prompt.');
-                            return;
-                          }
-                          await list.load();
-                        })
-                        .catch(() => {
-                          list.setError('Network error while updating the prompt.');
-                        });
-                    }}
-                  >
-                    {row.enabled ? 'Disable' : 'Enable'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConfirmDelete(row.id);
-                    }}
-                  >
-                    Delete
-                  </button>
-                </span>
-                {confirmDelete === row.id && (
-                  <div className="confirm-inline" role="alertdialog" aria-label="Confirm deletion">
-                    <span>
-                      Delete this prompt? Its stored history is removed too. This cannot be undone.
-                    </span>
-                    <span className="row-actions">
-                      <button
-                        type="button"
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-5">Prompt</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-20 text-center">Enabled</TableHead>
+                <TableHead className="w-24 pr-5 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {list.rows.map((row) => {
+                const promptState = data.prompts.find((prompt) => prompt.promptId === row.id);
+                return (
+                  <TableRow key={row.id}>
+                    <TableCell className="max-w-md pl-5">
+                      <span className="line-clamp-1">{row.text}</span>
+                      {scannedToday.has(row.id) && (
+                        <span className="text-xs text-muted-foreground"> · observed today</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge classification={promptState?.classified ?? null} />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Switch
+                        checked={row.enabled}
+                        aria-label={row.enabled ? `Disable ${row.text}` : `Enable ${row.text}`}
+                        onCheckedChange={() => {
+                          void togglePrompt(row);
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell className="pr-5 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => {
-                          setConfirmDelete(null);
-                          void fetch(`/api/prompts/${row.id}`, { method: 'DELETE' })
-                            .then(async (response) => {
-                              if (!response.ok) {
-                                const body = (await response.json()) as {
-                                  error?: { message: string };
-                                };
-                                list.setError(
-                                  body.error?.message ?? 'Could not delete the prompt.',
-                                );
-                                return;
-                              }
-                              await list.load();
-                              reload();
-                            })
-                            .catch(() => {
-                              list.setError('Network error while deleting the prompt.');
-                            });
+                          setDeleteTarget(row);
                         }}
                       >
-                        Yes, delete
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConfirmDelete(null);
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </span>
-                  </div>
-                )}
-              </div>
-            );
-          })
+                        Delete
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         )}
-        <p className="fine">
+        <p className="border-t px-5 py-3 text-xs text-muted-foreground">
           Changes take effect on the next scan. Prompts already observed today are skipped so a
           single UTC day never bills twice for the same prompt.
         </p>
-      </section>
-    </>
+      </Card>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this prompt?</AlertDialogTitle>
+            <AlertDialogDescription>
+              &ldquo;{deleteTarget?.text}&rdquo; and its stored history will be removed. This cannot
+              be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => {
+                void confirmDelete();
+              }}
+            >
+              Delete prompt
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
 
@@ -428,50 +480,66 @@ export function ResponsesPage() {
   const items = extra.length > 0 ? extra : (page?.items ?? []);
 
   return (
-    <>
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">Auditable archive · newest first</p>
-          <h1>Response archive</h1>
-        </div>
-      </header>
+    <div className="p-6 lg:p-8">
+      <div id="main" className="sr-only">
+        Response archive
+      </div>
+      <div className="mb-6">
+        <p className="text-sm text-muted-foreground">Auditable archive · newest first</p>
+        <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Response archive</h1>
+      </div>
 
       {loading && items.length === 0 ? (
-        <p role="status">Loading stored responses…</p>
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-32" />
+          ))}
+        </div>
       ) : loadError && items.length === 0 ? (
-        <div className="app-state">
-          <h2>Could not load responses</h2>
-          <p>Check your connection and try again. Stored answers are not affected.</p>
-          <button
-            type="button"
-            className="button"
-            onClick={() => {
-              void load(null, false);
-            }}
-          >
-            Retry
-          </button>
-        </div>
+        <Card className="mx-auto max-w-md text-center">
+          <CardHeader>
+            <CardTitle>Could not load responses</CardTitle>
+            <CardDescription>
+              Check your connection and try again. Stored answers are not affected.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="outline"
+              onClick={() => {
+                void load(null, false);
+              }}
+            >
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
       ) : items.length === 0 ? (
-        <div className="app-state">
-          <h2>No stored responses yet</h2>
-          <p>Run the trial scan to collect the first genuine provider answer.</p>
-          <Link className="button" to="/app/prompts">
-            Go to prompts
-          </Link>
-        </div>
+        <Card className="mx-auto max-w-md text-center">
+          <CardHeader>
+            <CardTitle>No stored responses yet</CardTitle>
+            <CardDescription>
+              Run the trial scan to collect the first genuine provider answer.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link to="/app/prompts">Go to prompts</Link>
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
-        <section className="archive" aria-label="Stored provider responses">
+        <div className="space-y-4" aria-label="Stored provider responses">
           {items.map((row) => {
             const citations = parseCitationData(row.citationDataJson);
             const terms = parseTerms(row.matchedTermsJson);
             const expanded = open === row.id;
             return (
-              <article className="archive-row" key={row.id}>
-                <div className="archive-head">
-                  <div>
-                    <p className="archive-prompt">{row.promptText}</p>
-                    <p className="row-meta">
+              <Card key={row.id} className="gap-0 py-0">
+                <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium leading-snug">{row.promptText}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {row.observationDate} · {row.provider} ·{' '}
                       {row.providerModel ?? 'unknown model'}
                       {row.providerPreset === null ? '' : ` · ${row.providerPreset}`}
@@ -479,52 +547,62 @@ export function ResponsesPage() {
                       {row.outputTokens === null ? '' : ` / ${String(row.outputTokens)} out`}
                     </p>
                   </div>
-                  <span className={classificationClass(row.contextClassification)}>
-                    {classificationLabel(row.contextClassification)}
-                  </span>
+                  <StatusBadge classification={row.contextClassification} />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 px-5 pb-4 pt-2">
+                  <p className="text-xs text-muted-foreground">
+                    Brand position{' '}
+                    {row.brandPosition === null ? '—' : `#${String(row.brandPosition)}`}
+                    {row.providerRequestId === null ? '' : ` · request ${row.providerRequestId}`}
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-expanded={expanded}
+                    onClick={() => {
+                      setOpen(expanded ? null : row.id);
+                    }}
+                  >
+                    {expanded ? 'Hide raw answer' : 'Inspect raw answer and citations'}
+                  </Button>
                 </div>
 
-                <p className="row-meta">
-                  Brand position{' '}
-                  {row.brandPosition === null ? '—' : `#${String(row.brandPosition)}`}
-                  {row.providerRequestId === null ? '' : ` · request ${row.providerRequestId}`}
-                </p>
-
-                <button
-                  type="button"
-                  aria-expanded={expanded}
-                  onClick={() => {
-                    setOpen(expanded ? null : row.id);
-                  }}
-                >
-                  {expanded ? 'Hide raw answer' : 'Inspect raw answer and citations'}
-                </button>
-
                 {expanded && (
-                  <div className="archive-detail">
+                  <div className="border-t px-5 py-4">
                     {row.errorCode === null ? (
-                      <p className="raw-answer">
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed">
                         {highlight(row.rawResponseText ?? '', terms).map((part, index) =>
                           part.marked ? (
-                            <mark key={index}>{part.text}</mark>
+                            <mark key={index} className="bg-blue-50 px-0.5 text-inherit">
+                              {part.text}
+                            </mark>
                           ) : (
                             <span key={index}>{part.text}</span>
                           ),
                         )}
                       </p>
                     ) : (
-                      <p role="alert" className="form-error">
+                      <p role="alert" className="text-sm text-destructive">
                         Provider error recorded: {row.errorCode}. No answer text was stored.
                       </p>
                     )}
-                    <h4>Citations</h4>
+                    <h3 className="mt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Citations
+                    </h3>
                     {citations.length === 0 ? (
-                      <p className="row-meta">No citations were returned for this answer.</p>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        No citations were returned for this answer.
+                      </p>
                     ) : (
-                      <ol className="citation-list">
+                      <ol className="mt-1.5 list-decimal space-y-1 pl-5 text-sm">
                         {citations.map((citation) => (
                           <li key={`${String(citation.id)}-${citation.url}`}>
-                            <a href={citation.url} target="_blank" rel="noreferrer noopener">
+                            <a
+                              href={citation.url}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              className="break-all text-chart-1 underline-offset-4 hover:underline"
+                            >
                               {citation.title ?? citation.url}
                             </a>
                           </li>
@@ -533,23 +611,24 @@ export function ResponsesPage() {
                     )}
                   </div>
                 )}
-              </article>
+              </Card>
             );
           })}
           {(page?.hasMore ?? false) && (
-            <button
-              type="button"
-              className="button"
-              disabled={loading}
-              onClick={() => {
-                void load(page?.nextCursor ?? null, true);
-              }}
-            >
-              {loading ? 'Loading…' : 'Load older responses'}
-            </button>
+            <div className="flex justify-center pt-2">
+              <Button
+                variant="outline"
+                disabled={loading}
+                onClick={() => {
+                  void load(page?.nextCursor ?? null, true);
+                }}
+              >
+                {loading ? 'Loading…' : 'Load older responses'}
+              </Button>
+            </div>
           )}
-        </section>
+        </div>
       )}
-    </>
+    </div>
   );
 }

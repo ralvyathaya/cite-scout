@@ -16,7 +16,10 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true
+    "noImplicitOverride": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src/client", "src/domain", "src/shared", "tests/unit", "tests/e2e"]
 }

@@ -1,21 +1,43 @@
-import { ArrowRight, Check, ChevronDown, CircleDot, ExternalLink, Menu, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, ExternalLink, Menu, TrendingUp, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes } from 'react-router';
-import { demoDays } from '../domain/demo';
-import { brand } from '../shared/brand';
-import { ErrorBoundary } from './ErrorBoundary';
-import { OfflineBanner } from './OfflineBanner';
-import { AppShell } from './pages/AppShell';
-import { AppOverview } from './pages/Overview';
-import { PromptsPage, ResponsesPage } from './pages/Workspace';
-import { BillingPage, SettingsPage } from './pages/BillingSettings';
-import { Login } from './pages/Login';
-import { Onboarding } from './pages/Onboarding';
-import { usePageTitle } from './use-page-title';
+import { Badge } from '@/client/components/ui/badge';
+import { Button } from '@/client/components/ui/button';
+import { Card, CardContent } from '@/client/components/ui/card';
+import { Separator } from '@/client/components/ui/separator';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/client/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/client/components/ui/tabs';
+import {
+  GoogleIcon,
+  NotionIcon,
+  PerplexityIcon,
+  RedditIcon,
+  WikipediaIcon,
+  XIcon,
+  YoutubeIcon,
+} from '@/client/components/brand-icons';
+import { StatusBadge } from '@/client/components/status-badge';
+import { brand } from '@/shared/brand';
+import { demoDays } from '@/domain/demo';
+import { ErrorBoundary } from '@/client/ErrorBoundary';
+import { OfflineBanner } from '@/client/OfflineBanner';
+import { AppShell } from '@/client/pages/AppShell';
+import { AppOverview } from '@/client/pages/Overview';
+import { PromptsPage, ResponsesPage } from '@/client/pages/Workspace';
+import { BillingPage, SettingsPage } from '@/client/pages/BillingSettings';
+import { Login } from '@/client/pages/Login';
+import { Onboarding } from '@/client/pages/Onboarding';
+import { usePageTitle } from '@/client/use-page-title';
 
 const visibility = demoDays.map((day) => day.visibilityScore);
 
-/** Demo fixtures show dates relative to today so the landing never looks stale. */
 function relativeDayLabel(offsetFromToday: number): string {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() - offsetFromToday);
@@ -24,71 +46,204 @@ function relativeDayLabel(offsetFromToday: number): string {
 
 function Logo() {
   return (
-    <Link className="logo" to="/" aria-label={`${brand.name} home`}>
-      <span>CS</span>
-      {brand.name}
+    <Link to="/" className="flex items-center gap-2" aria-label={`${brand.name} home`}>
+      <span className="flex size-7 items-center justify-center rounded-md bg-primary text-xs font-bold italic text-primary-foreground">
+        CS
+      </span>
+      <span className="text-sm font-bold tracking-tight">{brand.name}</span>
     </Link>
   );
 }
 
 function Header() {
   const [open, setOpen] = useState(false);
+  const links = (
+    <>
+      <Link
+        to="/demo"
+        className="text-sm font-medium text-muted-foreground hover:text-foreground"
+        onClick={() => {
+          setOpen(false);
+        }}
+      >
+        Demo
+      </Link>
+      <Link
+        to="/pricing"
+        className="text-sm font-medium text-muted-foreground hover:text-foreground"
+        onClick={() => {
+          setOpen(false);
+        }}
+      >
+        Pricing
+      </Link>
+      <Link
+        to="/login"
+        className="text-sm font-medium text-muted-foreground hover:text-foreground"
+        onClick={() => {
+          setOpen(false);
+        }}
+      >
+        Sign in
+      </Link>
+    </>
+  );
   return (
-    <header className="site-header">
-      <div className="shell nav-wrap">
+    <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
         <Logo />
-        <button
-          className="menu-button"
+        <nav className="hidden items-center gap-6 md:flex" aria-label="Main navigation">
+          {links}
+          <Button asChild size="sm">
+            <Link
+              to="/login"
+              onClick={() => {
+                setOpen(false);
+              }}
+            >
+              Check my visibility <ArrowRight className="size-3.5" />
+            </Link>
+          </Button>
+        </nav>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          aria-label="Toggle navigation"
+          aria-expanded={open}
           onClick={() => {
             setOpen(!open);
           }}
-          aria-expanded={open}
-          aria-label="Toggle navigation"
         >
-          {open ? <X /> : <Menu />}
-        </button>
-        <nav className={open ? 'nav open' : 'nav'} aria-label="Main navigation">
-          <Link to="/demo">Demo</Link>
-          <Link to="/pricing">Pricing</Link>
-          <Link to="/login">Sign in</Link>
-          <Link className="button small" to="/login">
-            Check my visibility <ArrowRight size={15} />
-          </Link>
-        </nav>
+          {open ? <X className="size-4" /> : <Menu className="size-4" />}
+        </Button>
       </div>
+      {open && (
+        <nav
+          className="flex flex-col gap-1 border-t bg-background px-4 py-3 md:hidden"
+          aria-label="Main navigation"
+        >
+          {links}
+          <Button asChild size="sm" className="mt-2">
+            <Link
+              to="/login"
+              onClick={() => {
+                setOpen(false);
+              }}
+            >
+              Check my visibility <ArrowRight className="size-3.5" />
+            </Link>
+          </Button>
+        </nav>
+      )}
     </header>
   );
 }
 
-function Sparkline() {
-  const points = visibility
-    .map(
-      (value, index) => `${String((index / (visibility.length - 1)) * 600)},${String(145 - value)}`,
-    )
-    .join(' ');
+function Footer() {
   return (
-    <div className="chart">
+    <footer className="border-t">
+      <div className="mx-auto max-w-6xl px-4 py-8">
+        <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
+          <div>
+            <Logo />
+            <p className="mt-2 text-xs text-muted-foreground">
+              AI visibility observations from the Perplexity API.
+            </p>
+          </div>
+          <nav className="flex flex-wrap items-center gap-x-6 gap-y-2" aria-label="Footer">
+            <Link to="/privacy" className="text-sm text-muted-foreground hover:text-foreground">
+              Privacy
+            </Link>
+            <Link to="/terms" className="text-sm text-muted-foreground hover:text-foreground">
+              Terms
+            </Link>
+            <a
+              href="mailto:support@cite-scout.com"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Support
+            </a>
+          </nav>
+        </div>
+        <Separator className="my-6" />
+        <div className="flex flex-col justify-between gap-2 text-xs text-muted-foreground sm:flex-row">
+          <span>© {String(new Date().getUTCFullYear())} CiteScout. All rights reserved.</span>
+          <span className="text-muted-foreground/60">Built for The Build Games</span>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+/* --- Interactive demo dashboard (real components, fixture data) --- */
+
+const demoPromptRows = [
+  {
+    prompt: 'Best scheduling tool for independent consultants',
+    status: 'recommended',
+    position: 2,
+  },
+  { prompt: 'Alternatives to Calendly for freelancers', status: 'mentioned', position: 3 },
+  { prompt: 'Simple client booking software', status: 'absent', position: null },
+  { prompt: 'Scheduling tools with client intake forms', status: 'recommended', position: 1 },
+] as const;
+
+const demoCitations = [
+  { source: 'Reddit', icon: RedditIcon, domain: 'reddit.com', count: 34 },
+  { source: 'Wikipedia', icon: WikipediaIcon, domain: 'wikipedia.org', count: 21 },
+  { source: 'YouTube', icon: YoutubeIcon, domain: 'youtube.com', count: 14 },
+  { source: 'X', icon: XIcon, domain: 'x.com', count: 9 },
+] as const;
+
+function DemoSparkline() {
+  const width = 560;
+  const height = 160;
+  const values = visibility;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const coords = values.map((value, index) => {
+    const x = (index / (values.length - 1)) * width;
+    const y = height - ((value - min) / span) * height;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  return (
+    <div>
       <svg
-        viewBox="0 0 600 150"
+        viewBox={`0 0 ${String(width)} ${String(height)}`}
+        className="h-40 w-full"
         role="img"
         aria-label="Example visibility score rising from 42 to 84 over fourteen days"
       >
-        <defs>
-          <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#145cff" stopOpacity=".22" />
-            <stop offset="1" stopColor="#145cff" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <polygon points={`0,150 ${points} 600,150`} fill="url(#fill)" />
+        {[0.25, 0.5, 0.75].map((fraction) => (
+          <line
+            key={fraction}
+            x1="0"
+            x2={String(width)}
+            y1={String(height * fraction)}
+            y2={String(height * fraction)}
+            stroke="var(--border)"
+            strokeWidth="1"
+            strokeDasharray="3,3"
+          />
+        ))}
+        <polygon
+          points={`0,${String(height)} ${coords.join(' ')} ${String(width)},${String(height)}`}
+          fill="var(--chart-1)"
+          opacity="0.07"
+        />
         <polyline
-          points={points}
+          points={coords.join(' ')}
           fill="none"
-          stroke="#145cff"
-          strokeWidth="3"
+          stroke="var(--chart-1)"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
         />
       </svg>
-      <div className="chart-axis">
+      <div className="mt-1.5 flex justify-between text-xs tabular-nums text-muted-foreground">
         <span>{relativeDayLabel(13)}</span>
         <span>{relativeDayLabel(0)}</span>
       </div>
@@ -96,98 +251,167 @@ function Sparkline() {
   );
 }
 
-function DashboardPreview({ demo = false }: { demo?: boolean }) {
+function DemoDashboard({ compact = false }: { compact?: boolean }) {
   return (
-    <section className="dashboard" aria-label="Example visibility dashboard">
-      <div className="dash-top">
-        <div>
-          <p className="eyebrow">{demo ? 'Illustrative demo data' : 'Example dashboard'}</p>
-          <h2>OrbitCal visibility</h2>
-        </div>
-        <div className="period">
-          Last 14 days <span>UTC</span>
-        </div>
-      </div>
-      <div className="metric-strip">
-        <div className="score">
-          <span>Visibility score</span>
-          <strong>84.2</strong>
-          <small>+8.4 vs previous period</small>
-        </div>
-        <div>
-          <span>Mention rate</span>
-          <strong>70%</strong>
-          <small>7 of 10 prompts</small>
-        </div>
-        <div>
-          <span>Share of voice</span>
-          <strong>31%</strong>
-          <small>Across tracked entities</small>
-        </div>
-        <div>
-          <span>Coverage</span>
-          <strong>90%</strong>
-          <small>1 source timed out</small>
-        </div>
-      </div>
-      <div className="dash-grid">
-        <div className="trend">
-          <div className="section-heading">
-            <h3>Visibility trend</h3>
-            <span className="status">
-              <CircleDot size={13} /> Partial scan
-            </span>
-          </div>
-          <Sparkline />
-        </div>
-        <div className="share">
-          <h3>Share of voice</h3>
-          {(
-            [
-              ['OrbitCal', 31],
-              ['Calendly', 38],
-              ['Cal.com', 19],
-              ['SavvyCal', 12],
-            ] as const
-          ).map(([name, value]) => (
-            <div className="bar-row" key={name}>
-              <div>
-                <span>{name}</span>
-                <b>{value}%</b>
-              </div>
-              <div className="bar">
-                <i style={{ width: `${String(value)}%` }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="result-head">
-        <h3>Prompt observations</h3>
-        <span>Perplexity Agent API · fast preset</span>
-      </div>
-      <div className="results">
-        <div className="result-row header">
-          <span>Prompt</span>
-          <span>Brand status</span>
-          <span>First mention</span>
-        </div>
-        <div className="result-row">
-          <span>Best scheduling tool for independent consultants</span>
-          <span className="positive">
-            <Check size={14} /> Recommended
+    <Card className="overflow-hidden py-0 shadow-sm">
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="flex size-6 items-center justify-center rounded bg-primary text-[10px] font-bold italic text-primary-foreground">
+            O
           </span>
-          <span>#2</span>
+          <span className="text-sm font-semibold">OrbitCal</span>
         </div>
-        <div className="result-row">
-          <span>Calendly alternatives for solo consultants</span>
-          <span className="neutral">Mentioned</span>
-          <span>#3</span>
+        <Badge variant="secondary" className="font-normal">
+          Last 14 days · UTC
+        </Badge>
+      </div>
+
+      <Tabs defaultValue="overview">
+        <div className="border-b px-4 pt-2">
+          <TabsList className="bg-transparent p-0">
+            <TabsTrigger
+              value="overview"
+              className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
+            >
+              Overview
+            </TabsTrigger>
+            <TabsTrigger
+              value="prompts"
+              className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
+            >
+              Prompts
+            </TabsTrigger>
+            <TabsTrigger
+              value="citations"
+              className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
+            >
+              Citations
+            </TabsTrigger>
+          </TabsList>
         </div>
-        <div className="result-row">
-          <span>Simple client booking software</span>
-          <span className="absent">Absent</span>
-          <span>—</span>
+
+        <TabsContent value="overview" className="mt-0 p-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {(
+              [
+                ['Visibility score', '84.2', '+8.4'],
+                ['Mention rate', '70%', '+20%'],
+                ['Share of voice', '31%', '+5%'],
+                ['Coverage', '90%', '1 timed out'],
+              ] as const
+            ).map(([label, value, delta]) => (
+              <div key={label} className="rounded-md border p-3">
+                <p className="text-[11px] text-muted-foreground">{label}</p>
+                <p className="mt-0.5 text-xl font-bold tabular-nums tracking-tight">{value}</p>
+                <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                  {!delta.includes('timed') && (
+                    <TrendingUp className="size-3 text-emerald-600" aria-hidden="true" />
+                  )}
+                  <span className={delta.includes('timed') ? '' : 'text-emerald-700'}>{delta}</span>
+                </p>
+              </div>
+            ))}
+          </div>
+          {!compact && (
+            <div className="mt-4">
+              <DemoSparkline />
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="prompts" className="mt-0 p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-4">Prompt</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="pr-4 text-right">Position</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {demoPromptRows.map((row) => (
+                <TableRow key={row.prompt}>
+                  <TableCell className="max-w-xs pl-4 text-sm">
+                    <span className="line-clamp-1">{row.prompt}</span>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge classification={row.status} />
+                  </TableCell>
+                  <TableCell className="pr-4 text-right text-sm tabular-nums">
+                    {row.position === null ? '—' : `#${String(row.position)}`}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TabsContent>
+
+        <TabsContent value="citations" className="mt-0 p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {demoCitations.map(({ source, icon: Icon, domain, count }) => (
+              <div key={source} className="flex items-center gap-3 rounded-md border p-3">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                  <Icon className="size-4 text-foreground/70" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{source}</p>
+                  <p className="truncate text-xs text-muted-foreground">{domain}</p>
+                </div>
+                <span className="text-sm font-semibold tabular-nums text-muted-foreground">
+                  {String(count)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Sources most frequently cited in the AI answers CiteScout observed.
+          </p>
+        </TabsContent>
+      </Tabs>
+    </Card>
+  );
+}
+
+/* --- Landing sections --- */
+
+function Hero() {
+  return (
+    <section className="border-b">
+      <div className="mx-auto max-w-6xl px-4 pb-12 pt-16 lg:pb-16 lg:pt-24">
+        <div className="mx-auto max-w-3xl text-center">
+          <Badge variant="secondary" className="mb-4 font-normal text-muted-foreground">
+            AI search visibility · Perplexity monitoring
+          </Badge>
+          <h1 className="font-display text-4xl leading-tight sm:text-5xl lg:text-6xl">
+            When founders ask AI for your category,{' '}
+            <span className="text-muted-foreground">who gets recommended?</span>
+          </h1>
+          <p className="mx-auto mt-5 max-w-xl text-base text-muted-foreground lg:text-lg">
+            CiteScout tracks how your brand appears in Perplexity answers over time, compares
+            competitors, and keeps every source auditable.
+          </p>
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Button asChild size="lg">
+              <Link to="/login">
+                Check my visibility <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
+              <Link to="/demo">
+                Explore the live demo <ExternalLink className="size-4" />
+              </Link>
+            </Button>
+          </div>
+          <p className="mt-4 text-xs text-muted-foreground">
+            One genuine trial scan. No card required. Monitoring starts at $19/month.
+          </p>
+        </div>
+
+        <div className="mx-auto mt-12 max-w-4xl lg:mt-16">
+          <p className="mb-3 text-center text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Example dashboard — click through the tabs
+          </p>
+          <DemoDashboard />
         </div>
       </div>
     </section>
@@ -214,19 +438,150 @@ function HowItWorks() {
   ] as const;
 
   return (
-    <section className="how-it-works shell" aria-labelledby="how-it-works-heading">
-      <p className="eyebrow" id="how-it-works-heading">
-        How CiteScout works
-      </p>
-      <ol className="steps-row">
-        {steps.map((step) => (
-          <li key={step.number}>
-            <span>{step.number}</span>
-            <h3>{step.title}</h3>
-            <p>{step.body}</p>
-          </li>
-        ))}
-      </ol>
+    <section className="border-b" aria-labelledby="how-it-works-heading">
+      <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
+        <p
+          className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+          id="how-it-works-heading"
+        >
+          How CiteScout works
+        </p>
+        <div className="mt-8 grid gap-8 md:grid-cols-3">
+          {steps.map((step) => (
+            <div key={step.number} className="border-t pt-4">
+              <span className="text-xs font-semibold text-chart-1">{step.number}</span>
+              <h3 className="mt-3 text-base font-semibold tracking-tight">{step.title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Integrations() {
+  const sources = [
+    { label: 'Perplexity answers', icon: PerplexityIcon, note: 'Observed daily' },
+    { label: 'Reddit citations', icon: RedditIcon, note: 'Tracked' },
+    { label: 'X citations', icon: XIcon, note: 'Tracked' },
+    { label: 'YouTube citations', icon: YoutubeIcon, note: 'Tracked' },
+    { label: 'Wikipedia citations', icon: WikipediaIcon, note: 'Tracked' },
+    { label: 'Google Search', icon: GoogleIcon, note: 'Complements' },
+    { label: 'Notion', icon: NotionIcon, note: 'Where teams document' },
+  ] as const;
+
+  return (
+    <section className="border-b">
+      <div className="mx-auto max-w-6xl px-4 py-10">
+        <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-5">
+          {sources.map(({ label, icon: Icon, note }) => (
+            <div key={label} className="flex items-center gap-2.5" title={note}>
+              <Icon className="size-5 text-muted-foreground/50" />
+              <span className="text-sm text-muted-foreground/70">{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Features() {
+  return (
+    <section className="border-b">
+      <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          The useful difference
+        </p>
+        <h2 className="font-display mt-3 max-w-xl text-3xl lg:text-4xl">
+          One answer is an anecdote. Fourteen days is a signal.
+        </h2>
+        <div className="mt-10 grid gap-8 md:grid-cols-3">
+          <div className="border-t pt-4">
+            <h3 className="text-base font-semibold tracking-tight">Track movement</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+              See whether your brand is gaining visibility, losing ground, or appearing
+              inconsistently across buyer-style prompts.
+            </p>
+          </div>
+          <div className="border-t pt-4">
+            <h3 className="text-base font-semibold tracking-tight">Watch competitors</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+              Compare share of voice and first-mention order against the products prospects see
+              alongside yours.
+            </p>
+          </div>
+          <div className="border-t pt-4">
+            <h3 className="text-base font-semibold tracking-tight">Audit the evidence</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+              Open the stored answer and every returned citation. No mysterious score without the
+              underlying observation.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Honesty() {
+  return (
+    <section className="border-b bg-muted/40">
+      <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
+        <div className="grid gap-10 lg:grid-cols-2">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Honest by design
+            </p>
+            <h2 className="font-display mt-3 text-3xl lg:text-4xl">
+              Directional intelligence, not a fabricated ranking.
+            </h2>
+          </div>
+          <div className="flex flex-col justify-center">
+            <p className="text-sm leading-relaxed text-muted-foreground lg:text-base">
+              AI answers are nondeterministic. CiteScout records observations from the supported
+              Perplexity Agent API. It does not claim to reproduce the Perplexity consumer app,
+              ChatGPT, Claude, or Google AI Overviews.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PricingCta() {
+  return (
+    <section className="border-b">
+      <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
+        <div className="grid items-center gap-10 lg:grid-cols-2">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Focused and affordable
+            </p>
+            <h2 className="font-display mt-3 text-3xl lg:text-4xl">
+              Replace the spreadsheet ritual, not your entire SEO stack.
+            </h2>
+          </div>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-baseline gap-2">
+                <span className="text-4xl font-bold tabular-nums tracking-tight">$19</span>
+                <span className="text-sm text-muted-foreground">/ month</span>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                10 daily prompts · 3 competitors · full history
+              </p>
+              <Button asChild className="mt-5 w-full">
+                <Link to="/pricing">
+                  See what is included <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </section>
   );
 }
@@ -237,109 +592,12 @@ function Landing() {
     <>
       <Header />
       <main id="main">
-        <section className="hero shell">
-          <div className="hero-copy">
-            <p className="eyebrow">AI search visibility, without the enterprise contract</p>
-            <h1>
-              When founders ask AI for your category, <em>who gets recommended?</em>
-            </h1>
-            <p className="lede">
-              Track how your brand appears in Perplexity answers over time, compare competitors, and
-              inspect every source.
-            </p>
-            <div className="actions">
-              <Link className="button" to="/login">
-                Check my visibility <ArrowRight size={17} />
-              </Link>
-              <Link className="text-link" to="/demo">
-                Explore the live demo <ExternalLink size={15} />
-              </Link>
-            </div>
-            <p className="fine">
-              One genuine trial scan. No card required. Monitoring starts at $19/month.
-            </p>
-          </div>
-          <div className="hero-note">
-            <span>Not another one-off AI answer</span>
-            <p>
-              CiteScout builds a daily evidence trail: what appeared, what disappeared, and which
-              sources shaped the response.
-            </p>
-          </div>
-        </section>
-        <div className="preview-wrap shell">
-          <DashboardPreview />
-        </div>
+        <Hero />
+        <Integrations />
         <HowItWorks />
-        <section className="manifesto shell">
-          <p className="eyebrow">The useful difference</p>
-          <h2>
-            One answer is an anecdote.
-            <br />
-            Fourteen days is a signal.
-          </h2>
-          <div className="feature-columns">
-            <article>
-              <span>01</span>
-              <h3>Track movement</h3>
-              <p>
-                See whether your brand is gaining visibility, losing ground, or appearing
-                inconsistently across buyer-style prompts.
-              </p>
-            </article>
-            <article>
-              <span>02</span>
-              <h3>Watch competitors</h3>
-              <p>
-                Compare share of voice and first-mention order against the products prospects see
-                alongside yours.
-              </p>
-            </article>
-            <article>
-              <span>03</span>
-              <h3>Audit the evidence</h3>
-              <p>
-                Open the stored answer and every returned citation. No mysterious score without the
-                underlying observation.
-              </p>
-            </article>
-          </div>
-        </section>
-        <section className="honesty">
-          <div className="shell honesty-grid">
-            <p className="eyebrow">Honest by design</p>
-            <div>
-              <h2>
-                Directional intelligence,
-                <br />
-                not a fabricated ranking.
-              </h2>
-              <p>
-                AI answers are nondeterministic. CiteScout records observations from the supported
-                Perplexity Agent API. It does not claim to reproduce the Perplexity consumer app,
-                ChatGPT, Claude, or Google AI Overviews.
-              </p>
-            </div>
-          </div>
-        </section>
-        <section className="price-cta shell">
-          <div>
-            <p className="eyebrow">Focused and affordable</p>
-            <h2>
-              Replace the spreadsheet ritual,
-              <br />
-              not your entire SEO stack.
-            </h2>
-          </div>
-          <div className="price">
-            <strong>$19</strong>
-            <span>/ month</span>
-            <p>10 daily prompts · 3 competitors · full history</p>
-            <Link className="button" to="/pricing">
-              See what is included <ArrowRight size={16} />
-            </Link>
-          </div>
-        </section>
+        <Features />
+        <Honesty />
+        <PricingCta />
       </main>
       <Footer />
     </>
@@ -351,21 +609,23 @@ function Demo() {
   return (
     <>
       <Header />
-      <main className="page shell" id="main">
-        <div className="page-title">
-          <p className="eyebrow">Illustrative demo data</p>
-          <h1>
-            See the pattern,
-            <br />
-            not just the snapshot.
+      <main id="main" className="mx-auto max-w-6xl px-4 py-12 lg:py-16">
+        <div className="mx-auto max-w-2xl text-center">
+          <Badge variant="secondary" className="font-normal text-muted-foreground">
+            Illustrative demo data
+          </Badge>
+          <h1 className="font-display mt-4 text-3xl lg:text-4xl">
+            See the pattern, not just the snapshot.
           </h1>
-          <p>
+          <p className="mt-3 text-sm text-muted-foreground lg:text-base">
             OrbitCal is a fictional scheduling product. This dashboard demonstrates fourteen days of
             changing AI-search visibility and never calls Perplexity.
           </p>
         </div>
-        <DashboardPreview demo />
-        <p className="fine">
+        <div className="mx-auto mt-10 max-w-4xl">
+          <DemoDashboard />
+        </div>
+        <p className="mx-auto mt-8 max-w-2xl text-center text-xs leading-relaxed text-muted-foreground">
           Illustrative demo data only. CiteScout observes the Perplexity Agent API and does not
           claim to reproduce the Perplexity consumer application, ChatGPT, Claude, or Google AI
           Overviews. AI answers are nondeterministic, so these numbers are directional observations
@@ -413,37 +673,42 @@ const pricingFaq = [
 function Faq() {
   const [open, setOpen] = useState<number | null>(0);
   return (
-    <section className="faq" aria-labelledby="faq-heading">
-      <div className="shell">
-        <p className="eyebrow" id="faq-heading">
-          Frequently asked questions
-        </p>
-        <div className="faq-list">
-          {pricingFaq.map((item, index) => {
-            const isOpen = open === index;
-            return (
-              <div className="faq-item" key={item.question}>
-                <h3>
-                  <button
-                    type="button"
-                    aria-expanded={isOpen}
-                    onClick={() => {
-                      setOpen(isOpen ? null : index);
-                    }}
-                  >
-                    {item.question}
-                    <ChevronDown
-                      size={16}
-                      aria-hidden="true"
-                      className={isOpen ? 'faq-chevron open' : 'faq-chevron'}
-                    />
-                  </button>
-                </h3>
-                {isOpen && <p>{item.answer}</p>}
-              </div>
-            );
-          })}
-        </div>
+    <section className="mx-auto max-w-3xl px-4 pb-16 lg:pb-20" aria-labelledby="faq-heading">
+      <p
+        className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+        id="faq-heading"
+      >
+        Frequently asked questions
+      </p>
+      <div className="mt-6 border-t">
+        {pricingFaq.map((item, index) => {
+          const isOpen = open === index;
+          return (
+            <div key={item.question} className="border-b">
+              <h3>
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  className="flex w-full items-center justify-between gap-4 py-4 text-left text-sm font-medium hover:text-muted-foreground"
+                  onClick={() => {
+                    setOpen(isOpen ? null : index);
+                  }}
+                >
+                  {item.question}
+                  <ChevronDown
+                    className={`size-4 shrink-0 text-muted-foreground transition-transform ${
+                      isOpen ? 'rotate-180' : ''
+                    }`}
+                    aria-hidden="true"
+                  />
+                </button>
+              </h3>
+              {isOpen && (
+                <p className="pb-4 text-sm leading-relaxed text-muted-foreground">{item.answer}</p>
+              )}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -454,43 +719,78 @@ function Pricing() {
   return (
     <>
       <Header />
-      <main className="page shell narrow" id="main">
-        <p className="eyebrow">One plan. Predictable cost.</p>
-        <h1>
-          Useful monitoring
-          <br />
-          without a sales call.
-        </h1>
-        <div className="pricing-panel">
-          <div>
-            <span>CiteScout Monitor</span>
-            <strong>
-              $19 <small>USD / month</small>
-            </strong>
-            <p>For founders and small teams who need evidence, not another enterprise dashboard.</p>
+      <main id="main">
+        <div className="mx-auto max-w-6xl px-4 pb-12 pt-16 lg:pt-20">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              One plan. Predictable cost.
+            </p>
+            <h1 className="font-display mt-3 text-4xl lg:text-5xl">
+              Useful monitoring without a sales call.
+            </h1>
           </div>
-          <ul>
-            {[
-              'One active project',
-              '10 enabled prompts',
-              '3 tracked competitors',
-              'One observation per prompt per UTC day',
-              'Historical trends and raw answer archive',
-              'Secure self-serve billing',
-              'Cancel anytime, keep your history',
-            ].map((item) => (
-              <li key={item}>
-                <Check size={16} />
-                {item}
-              </li>
-            ))}
-          </ul>
-          <Link className="button" to="/login">
-            Start with a trial scan <ArrowRight size={16} />
-          </Link>
+
+          <Card className="mx-auto mt-10 max-w-2xl">
+            <CardContent className="p-6 lg:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">CiteScout Monitor</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    For founders and small teams who need evidence, not another enterprise
+                    dashboard.
+                  </p>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-4xl font-bold tabular-nums tracking-tight">$19</span>
+                  <span className="text-sm text-muted-foreground">USD / month</span>
+                </div>
+              </div>
+              <Separator className="my-6" />
+              <ul className="grid gap-2.5 text-sm sm:grid-cols-2">
+                {[
+                  'One active project',
+                  '10 enabled prompts',
+                  '3 tracked competitors',
+                  'One observation per prompt per UTC day',
+                  'Historical trends and raw answer archive',
+                  'Secure self-serve billing',
+                  'Cancel anytime, keep your history',
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-2.5">
+                    <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-hidden="true" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <Button asChild size="lg" className="mt-6 w-full">
+                <Link to="/login">
+                  Start with a trial scan <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                No card required for the trial scan.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+        <Faq />
+      </main>
+      <Footer />
+    </>
+  );
+}
+
+function Legal({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <>
+      <Header />
+      <main id="main" className="mx-auto max-w-2xl px-4 py-12 lg:py-16">
+        <p className="text-xs text-muted-foreground">Effective September 16, 2026</p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight">{title}</h1>
+        <div className="mt-8 space-y-5 text-sm leading-relaxed text-muted-foreground">
+          {children}
         </div>
       </main>
-      <Faq />
       <Footer />
     </>
   );
@@ -514,11 +814,17 @@ function Privacy() {
       </p>
       <p>
         Questions, data-access requests, or deletion help:{' '}
-        <a href="mailto:support@cite-scout.com">support@cite-scout.com</a>
+        <a
+          href="mailto:support@cite-scout.com"
+          className="text-foreground underline underline-offset-4"
+        >
+          support@cite-scout.com
+        </a>
       </p>
     </Legal>
   );
 }
+
 function Terms() {
   usePageTitle('Terms of service');
   return (
@@ -540,42 +846,15 @@ function Terms() {
         on our side, email support@cite-scout.com and we will make it right.
       </p>
       <p>
-        Contact: <a href="mailto:support@cite-scout.com">support@cite-scout.com</a>
+        Contact:{' '}
+        <a
+          href="mailto:support@cite-scout.com"
+          className="text-foreground underline underline-offset-4"
+        >
+          support@cite-scout.com
+        </a>
       </p>
     </Legal>
-  );
-}
-function Legal({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <>
-      <Header />
-      <main className="page shell narrow legal" id="main">
-        <p className="eyebrow">Effective September 16, 2026</p>
-        <h1>{title}</h1>
-        <div>{children}</div>
-      </main>
-      <Footer />
-    </>
-  );
-}
-
-function Footer() {
-  return (
-    <footer>
-      <div className="shell footer-grid">
-        <Logo />
-        <p>AI visibility observations from the Perplexity API.</p>
-        <nav aria-label="Footer">
-          <Link to="/privacy">Privacy</Link>
-          <Link to="/terms">Terms</Link>
-          <a href="mailto:support@cite-scout.com">Support</a>
-        </nav>
-      </div>
-      <div className="shell footer-credits">
-        <span>© {String(new Date().getUTCFullYear())} CiteScout. All rights reserved.</span>
-        <span className="footer-buildgames">Built for The Build Games</span>
-      </div>
-    </footer>
   );
 }
 
@@ -584,19 +863,21 @@ function MarketingNotFound() {
   return (
     <>
       <Header />
-      <main className="page shell narrow" id="main">
-        <p className="eyebrow">404</p>
-        <h1>Page not found</h1>
-        <p className="lede">
+      <main id="main" className="mx-auto max-w-lg px-4 py-24 text-center">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">404</p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight">Page not found</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
           That page does not exist. It may have moved, or the link you followed is out of date.
         </p>
-        <div className="actions">
-          <Link className="button" to="/">
-            Back to home <ArrowRight size={16} />
-          </Link>
-          <Link className="text-link" to="/demo">
-            Explore the demo
-          </Link>
+        <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+          <Button asChild>
+            <Link to="/">
+              Back to home <ArrowRight className="size-4" />
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/demo">Explore the demo</Link>
+          </Button>
         </div>
       </main>
       <Footer />
