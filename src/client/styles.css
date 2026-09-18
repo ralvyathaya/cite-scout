@@ -1326,3 +1326,182 @@ footer {
   color: #8a3631;
   font-weight: 650;
 }
+/* --- How it works, FAQ, footer credits, offline banner --- */
+.how-it-works {
+  padding: 90px 0 20px;
+}
+.steps-row {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 45px;
+  margin: 60px 0 0;
+  border-top: 1px solid var(--ink);
+  counter-reset: steps;
+}
+.steps-row li {
+  padding-top: 16px;
+}
+.steps-row span {
+  font-size: 11px;
+  color: var(--blue);
+  font-weight: 750;
+}
+.steps-row h3 {
+  font-family: 'Plus Jakarta Sans Variable', sans-serif;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 22px 0 8px;
+}
+.steps-row p {
+  font-size: 14px;
+  line-height: 1.65;
+  color: #5c5a53;
+  margin: 0;
+}
+.faq {
+  padding: 80px 0;
+}
+.faq-list {
+  margin-top: 45px;
+  border-top: 1px solid var(--ink);
+}
+.faq-item {
+  border-bottom: 1px solid var(--line);
+}
+.faq-item h3 {
+  margin: 0;
+}
+.faq-item h3 button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 22px 0;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-align: left;
+  cursor: pointer;
+}
+.faq-item h3 button:hover {
+  color: var(--blue);
+}
+.faq-chevron {
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+  color: #77756c;
+}
+.faq-chevron.open {
+  transform: rotate(180deg);
+}
+.faq-item p {
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: #5c5a53;
+  margin: 0 0 22px;
+  max-width: 760px;
+}
+.footer-credits {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding-top: 18px;
+  border-top: 1px solid #e2dfd7;
+  margin-top: 26px;
+  font-size: 11px;
+  color: #8a877e;
+}
+.footer-credits .footer-buildgames {
+  color: #a3a097;
+}
+.offline-banner {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: #8a3631;
+  color: #fff;
+  text-align: center;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+}
+@media (max-width: 760px) {
+  .steps-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 25px;
+  }
+  .steps-row h3 {
+    margin-top: 14px;
+  }
+  .footer-credits {
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+/* --- Sidebar account identity --- */
+.sidebar-account {
+  margin-top: auto;
+  padding: 11px;
+  border: 1px solid #3a3a33;
+  margin-bottom: 10px;
+}
+.sidebar-account-label {
+  display: block;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #77756c;
+  margin-bottom: 4px;
+}
+.sidebar-account-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+  color: #efede6;
+  overflow-wrap: anywhere;
+}
+/* --- Metric definitions --- */
+.metric-label {
+  font-size: 11px;
+  color: #65635b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+}
+.metric-help {
+  border: 0;
+  background: none;
+  padding: 2px;
+  cursor: pointer;
+  color: #9a988f;
+  display: inline-flex;
+}
+.metric-help:hover,
+.metric-help:focus-visible {
+  color: var(--blue);
+}
+.metric-definition {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  background: var(--ink);
+  color: #f6f3eb;
+  font-size: 11px;
+  line-height: 1.55;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 11px 13px;
+  max-width: 270px;
+  font-weight: 400;
+  box-shadow: 0 10px 30px rgba(33, 31, 25, 0.3);
+}

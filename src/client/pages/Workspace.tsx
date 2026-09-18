@@ -2,6 +2,7 @@
 import { Link } from 'react-router';
 import { PageState } from './AppShell';
 import { useDashboardContext } from './dashboard-context';
+import { usePageTitle } from '../use-page-title';
 
 const RECOMMENDED = 'recommended';
 const MENTIONED = 'mentioned';
@@ -56,6 +57,7 @@ function usePrompts() {
 
 export function PromptsPage() {
   const dashboard = useDashboardContext();
+  usePageTitle('Prompts');
   const list = usePrompts();
   const [newText, setNewText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -380,6 +382,7 @@ interface ArchiveResponse {
 
 export function ResponsesPage() {
   const dashboard = useDashboardContext();
+  usePageTitle('Responses');
   const [page, setPage] = useState<ArchiveResponse | null>(null);
   const [extra, setExtra] = useState<ResponseRow[]>([]);
   const [open, setOpen] = useState<string | null>(null);

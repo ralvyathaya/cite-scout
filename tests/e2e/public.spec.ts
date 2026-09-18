@@ -6,9 +6,21 @@ test.describe('public visitor', () => {
 
     await expect(page.getByRole('heading', { level: 1 })).toContainText('who gets recommended');
     await expect(page.getByText('Perplexity answers over time')).toBeVisible();
-    // The accuracy disclaimer must be present in public copy.
     await expect(page.getByText(/nondeterministic/)).toBeVisible();
     await expect(page.getByText(/does not claim to reproduce/i)).toBeVisible();
+  });
+
+  test('landing shows how it works in three steps and an example dashboard', async ({ page }) => {
+    await page.goto('/');
+
+    await expect(page.getByText('How CiteScout works')).toBeVisible();
+    await expect(page.getByText('Configure your prompts')).toBeVisible();
+    await expect(page.getByText('We observe daily')).toBeVisible();
+    await expect(page.getByText('Inspect the evidence')).toBeVisible();
+
+    // The preview must be labelled as an example, never as live data.
+    await expect(page.getByText('Example dashboard')).toBeVisible();
+    await expect(page.getByText('Live observation preview')).toHaveCount(0);
   });
 
   test('demo dashboard is labelled and shows no provider calls', async ({ page }) => {
@@ -26,32 +38,107 @@ test.describe('public visitor', () => {
     expect(providerCalls).toEqual([]);
   });
 
-  test('pricing exposes one $19 plan without fabricated proof', async ({ page }) => {
+  test('pricing exposes one $19 plan with an honest FAQ', async ({ page }) => {
     await page.goto('/pricing');
 
     await expect(page.getByRole('heading', { level: 1 })).toContainText('without a sales call');
-    await expect(page.getByText('$19')).toBeVisible();
-    await expect(page.getByText('10 enabled prompts')).toBeVisible();
+    await expect(page.getByText('$19').first()).toBeVisible();
+    await expect(page.getByText('Secure self-serve billing')).toBeVisible();
+    await expect(page.getByText('Cancel anytime, keep your history')).toBeVisible();
+
+    await expect(page.getByText('Frequently asked questions')).toBeVisible();
+    await expect(
+      page.getByText('Does CiteScout monitor ChatGPT, Claude, or Google AI Overviews?'),
+    ).toBeVisible();
+    await expect(page.getByText('What is the free trial, exactly?')).toBeVisible();
 
     const body = await page.locator('body').innerText();
-    for (const forbidden of ['trusted by', 'customers', 'testimonial', '99.9%', 'rated']) {
+    for (const forbidden of ['trusted by', 'testimonial', '99.9%', 'rated']) {
       expect(body.toLowerCase()).not.toContain(forbidden);
     }
   });
 
-  test('legal pages render real terms rather than placeholders', async ({ page }) => {
+  test('FAQ answers expand and collapse', async ({ page }) => {
+    await page.goto('/pricing');
+
+    const question = page.getByRole('button', { name: /Can I cancel anytime\?/ });
+    await expect(question).toHaveAttribute('aria-expanded', 'false');
+    await question.click();
+    await expect(question).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByText('from the self-serve billing portal')).toBeVisible();
+  });
+
+  test('legal pages render real terms with contact and refund policy', async ({ page }) => {
     await page.goto('/privacy');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Privacy policy');
-    await expect(page.getByText(/Lemon Squeezy/)).toBeVisible();
+    await expect(page.getByRole('link', { name: 'support@cite-scout.com' }).first()).toBeVisible();
 
     await page.goto('/terms');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Terms of service');
-    await expect(page.getByText(/nondeterministic/)).toBeVisible();
+    await expect(page.getByText(/Cancelling stops future charges/i)).toBeVisible();
+    await expect(page.getByText(/not refundable/i)).toBeVisible();
   });
 
-  test('unknown routes show a real not-found page', async ({ page }) => {
+  test('footer carries copyright, support link, and small Build Games credit', async ({ page }) => {
+    await page.goto('/');
+
+    const footer = page.getByRole('contentinfo');
+    await expect(footer.getByText(/© \d{4} CiteScout/)).toBeVisible();
+    await expect(footer.getByRole('link', { name: 'Support' })).toBeVisible();
+    await expect(footer.getByText('Built for The Build Games')).toHaveCSS('font-size', /1[01]px/);
+  });
+
+  test('unknown routes show a marketing 404 with way home', async ({ page }) => {
     await page.goto('/this-route-does-not-exist');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found');
+    await expect(page.getByRole('link', { name: 'Back to home' })).toBeVisible();
+    await expect(page.getByRole('contentinfo')).toBeVisible();
+  });
+});
+
+test.describe('document metadata', () => {
+  test('favicon and social meta are served', async ({ page, request }) => {
+    await page.goto('/');
+
+    const icon = page.locator('link[rel="icon"]');
+    await expect(icon).toHaveAttribute('href', '/favicon.svg');
+    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+      'content',
+      'https://cite-scout.com/og-image.png',
+    );
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute(
+      'content',
+      'summary_large_image',
+    );
+
+    const iconResponse = await request.get('/favicon.svg');
+    expect(iconResponse.status()).toBe(200);
+
+    const ogResponse = await request.get('/og-image.png');
+    expect(ogResponse.status()).toBe(200);
+  });
+
+  test('each public route sets its own tab title', async ({ page }) => {
+    await page.goto('/');
+    await expect(page).toHaveTitle('CiteScout');
+
+    await page.goto('/pricing');
+    await expect(page).toHaveTitle('Pricing — CiteScout');
+
+    await page.goto('/demo');
+    await expect(page).toHaveTitle('Demo — CiteScout');
+
+    await page.goto('/login');
+    await expect(page).toHaveTitle('Sign in — CiteScout');
+  });
+
+  test('robots.txt and sitemap are reachable', async ({ request }) => {
+    const robots = await request.get('/robots.txt');
+    expect(robots.status()).toBe(200);
+    expect(await robots.text()).toContain('Disallow: /app/');
+
+    const sitemap = await request.get('/sitemap.xml');
+    expect(sitemap.status()).toBe(200);
   });
 });
 
@@ -79,8 +166,6 @@ test.describe('accessibility and keyboard', () => {
     await expect(email).toBeVisible();
     await expect(email).toHaveAttribute('type', 'email');
     await expect(email).toHaveAttribute('autocomplete', 'email');
-
-    // In local development mode a token is injected, so submit becomes enabled.
     await expect(page.getByRole('button', { name: /Email my secure link/ })).toBeEnabled();
   });
 
@@ -115,6 +200,14 @@ test.describe('mobile', () => {
     );
     expect(overflow).toBe(false);
   });
+
+  test('pricing with FAQ has no horizontal overflow', async ({ page }) => {
+    await page.goto('/pricing');
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth + 1,
+    );
+    expect(overflow).toBe(false);
+  });
 });
 
 test.describe('authenticated workspace', () => {
@@ -122,14 +215,17 @@ test.describe('authenticated workspace', () => {
     await page.goto('/app/overview');
     await expect(page.getByText('Session expired')).toBeVisible();
 
-    // The application sidebar must offer sign in, never sign out, for an anonymous visitor.
     const sidebar = page.getByRole('complementary');
     await expect(sidebar.getByRole('link', { name: 'Sign in' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign out' })).toHaveCount(0);
   });
 
+  test('visiting /app redirects to the overview', async ({ page }) => {
+    await page.goto('/app');
+    await expect(page).toHaveURL(/\/app\/overview$/);
+  });
+
   test('a checkout redirect alone does not unlock paid access', async ({ page }) => {
-    // Simulate landing back from hosted checkout without any verified webhook.
     await page.goto('/app/billing?checkout=complete');
     await expect(page.getByText('Session expired')).toBeVisible();
     await expect(page.getByText(/CiteScout Monitor/)).toHaveCount(0);
@@ -154,5 +250,14 @@ test.describe('authenticated workspace', () => {
     });
     expect(response.status()).toBe(403);
     expect(await response.json()).toMatchObject({ error: { code: 'TURNSTILE_REQUIRED' } });
+  });
+
+  test('health endpoint stays clean and public', async ({ request }) => {
+    const response = await request.get('/api/health');
+    expect(response.status()).toBe(200);
+    const text = await response.text();
+    for (const leaked of ['DB', 'database_id', 'PERPLEXITY', 'BETTER_AUTH', 'OPERATOR']) {
+      expect(text).not.toContain(leaked);
+    }
   });
 });

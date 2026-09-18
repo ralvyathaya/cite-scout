@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router';
 import { PageState } from './AppShell';
 import { useDashboardContext } from './dashboard-context';
 import { fmtPercent } from './dashboard-view';
+import { usePageTitle } from '../use-page-title';
 
 interface BillingStatus {
   subscription: {
@@ -147,6 +148,7 @@ function ConfirmingSubscription({ onVerified }: { onVerified: () => void }) {
 
 export function BillingPage() {
   const dashboard = useDashboardContext();
+  usePageTitle('Billing');
   const [params, setParams] = useSearchParams();
   const [load, setLoad] = useState<BillingLoad>({ status: 'loading' });
   const [busy, setBusy] = useState(false);
@@ -371,6 +373,7 @@ function DeleteAccountDialog({
 
 export function SettingsPage() {
   const dashboard = useDashboardContext();
+  usePageTitle('Settings');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [confirming, setConfirming] = useState(false);

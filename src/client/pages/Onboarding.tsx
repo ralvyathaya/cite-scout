@@ -1,8 +1,10 @@
 import { useState, type SyntheticEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useDashboardContext } from './dashboard-context';
+import { usePageTitle } from '../use-page-title';
 
 export function Onboarding() {
+  usePageTitle('Project setup');
   const navigate = useNavigate();
   const { reload } = useDashboardContext();
   const [error, setError] = useState('');

@@ -26,6 +26,9 @@ export function AppShell() {
   const { state, reload } = useDashboard();
   const signedOut = state.status === 'unauthenticated';
 
+  const accountLabel =
+    state.status === 'ready' ? state.data.brandName : signedOut ? null : 'Loading…';
+
   return (
     <div className="app-frame">
       <aside className="sidebar">
@@ -40,6 +43,12 @@ export function AppShell() {
             </NavLink>
           ))}
         </nav>
+        {accountLabel !== null && (
+          <div className="sidebar-account">
+            <span className="sidebar-account-label">Project</span>
+            <span className="sidebar-account-name">{accountLabel}</span>
+          </div>
+        )}
         {signedOut ? (
           <Link className="sidebar-signin" to="/login">
             <LogOut size={15} aria-hidden="true" />

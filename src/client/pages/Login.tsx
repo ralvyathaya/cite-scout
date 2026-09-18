@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { Link } from 'react-router';
+import { usePageTitle } from '../use-page-title';
 
 interface LoginResponse {
   data?: { accepted: boolean; message: string };
   error?: { message: string };
 }
 export function Login() {
+  usePageTitle('Sign in');
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [message, setMessage] = useState('');
@@ -99,7 +101,7 @@ export function Login() {
           />
           <div ref={widget} className="turnstile-placeholder">
             {turnstileToken === 'local-development'
-              ? 'Local development: external verification is disabled.'
+              ? 'Verification is being prepared. If this message persists, email support@cite-scout.com.'
               : 'Security verification'}
           </div>
           <button className="button" disabled={status === 'sending' || !turnstileToken}>

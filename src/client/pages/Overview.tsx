@@ -1,13 +1,40 @@
-﻿import { ArrowUpRight, CircleDot } from 'lucide-react';
+﻿import { ArrowUpRight, CircleDot, Info } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { PageState } from './AppShell';
 import { useDashboardContext } from './dashboard-context';
 import { fmtDelta, fmtPercent, fmtPosition, fmtScore } from './dashboard-view';
 import type { DashboardPayload } from './dashboard-view';
+import { usePageTitle } from '../use-page-title';
 
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${String(count)} ${count === 1 ? singular : plural}`;
+}
+
+/** A metric label with a plain-language definition, revealed on demand. */
+function MetricLabel({ label, definition }: { label: string; definition: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="metric-label">
+      {label}
+      <button
+        type="button"
+        className="metric-help"
+        aria-expanded={open}
+        aria-label={`What does ${label} mean?`}
+        onClick={() => {
+          setOpen(!open);
+        }}
+      >
+        <Info size={12} aria-hidden="true" />
+      </button>
+      {open && (
+        <span className="metric-definition" role="note">
+          {definition}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function formatLastSuccess(iso: string): string {
@@ -169,6 +196,7 @@ function RunScanButton({ data, onDone }: { data: DashboardPayload; onDone: () =>
 
 export function AppOverview() {
   const { state, reload } = useDashboardContext();
+  usePageTitle('Overview');
 
   if (state.status !== 'ready') return <PageState state={state} onRetry={reload} />;
   const data = state.data;
@@ -220,22 +248,34 @@ export function AppOverview() {
           <section className="dashboard" aria-label="Current visibility metrics">
             <div className="metric-strip">
               <div className="score">
-                <span>Visibility score</span>
+                <MetricLabel
+                  label="Visibility score"
+                  definition="100 × (0.7 × mention rate + 0.3 × average position quality). Rises when more successful answers mention you, and when you appear earlier among tracked products."
+                />
                 <strong>{fmtScore(data.current.visibilityScore)}</strong>
                 <small>{fmtDelta(data.delta.visibilityScore, 'score')} vs previous day</small>
               </div>
               <div>
-                <span>Mention rate</span>
+                <MetricLabel
+                  label="Mention rate"
+                  definition="Successful prompts that mention your brand ÷ successful prompts. Counts a prompt once even if your brand appears several times."
+                />
                 <strong>{fmtPercent(data.current.mentionRate)}</strong>
                 <small>{fmtDelta(data.delta.mentionRate, 'percent')} vs previous day</small>
               </div>
               <div>
-                <span>Share of voice</span>
+                <MetricLabel
+                  label="Share of voice"
+                  definition="Your mentions ÷ all tracked brand and competitor mentions. Each tracked entity counts at most once per answer."
+                />
                 <strong>{fmtPercent(data.current.shareOfVoice)}</strong>
                 <small>{fmtDelta(data.delta.shareOfVoice, 'percent')} vs previous day</small>
               </div>
               <div>
-                <span>Avg. mention position</span>
+                <MetricLabel
+                  label="Avg. mention position"
+                  definition="Where your brand first appears among tracked products in each answer, averaged over answers where you appeared."
+                />
                 <strong>{fmtPosition(data.current.averageMentionPosition)}</strong>
                 <small>Coverage {fmtPercent(data.current.coverage)}</small>
               </div>
