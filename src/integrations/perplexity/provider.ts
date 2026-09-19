@@ -90,9 +90,13 @@ export class PerplexityProvider implements ObservationProvider {
     };
   }
   private async fetchWithRetry(body: unknown): Promise<Response> {
+    // NOTE: invoke the fetcher unbound. Web API `fetch` implementations
+    // (workerd, undici) throw "Illegal invocation" when called as a method of
+    // another object (`this.fetcher(...)`), so destructure it first.
+    const fetcher = this.fetcher;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        const response = await this.fetcher('https://api.perplexity.ai/v1/agent', {
+        const response = await fetcher('https://api.perplexity.ai/v1/agent', {
           method: 'POST',
           headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(body),

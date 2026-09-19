@@ -205,7 +205,26 @@ export async function runScan(env: CloudflareBindings, input: ScanRequest): Prom
         env.DB.prepare(completeReservation.sql).bind(...completeReservation.params),
       ]);
       successful += 1;
-    } catch {
+    } catch (error) {
+      // Failures must stay debuggable: record the error name plus a short,
+      // printable-ASCII-only message. Never log prompts, raw answers, tokens,
+      // or provider internals here.
+      const rawName = error instanceof Error ? error.name : 'UNKNOWN';
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const printable = (value: string): string =>
+        Array.from(value, (char) => {
+          const code = char.codePointAt(0) ?? 0;
+          return code >= 32 && code < 127 ? char : '';
+        }).join('');
+      console.error(
+        JSON.stringify({
+          event: 'scan_prompt_failed',
+          scanRunId: runId,
+          trigger: input.trigger,
+          errorName: printable(rawName).slice(0, 40),
+          errorMessage: printable(rawMessage).slice(0, 160),
+        }),
+      );
       await db
         .update(providerCallReservations)
         .set({ status: 'failed', completedAt: new Date() })

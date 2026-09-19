@@ -36,11 +36,13 @@ export class LemonSqueezyClient {
     private readonly fetcher: typeof fetch = fetch,
   ) {}
   private async request(path: string, init?: RequestInit): Promise<Response> {
+    // NOTE: see PerplexityProvider — never call the fetcher as a method.
+    const fetcher = this.fetcher;
     const headers = new Headers(init?.headers);
     headers.set('Authorization', `Bearer ${this.apiKey}`);
     headers.set('Accept', 'application/vnd.api+json');
     headers.set('Content-Type', 'application/vnd.api+json');
-    const response = await this.fetcher(`https://api.lemonsqueezy.com/v1${path}`, {
+    const response = await fetcher(`https://api.lemonsqueezy.com/v1${path}`, {
       ...init,
       headers,
       signal: AbortSignal.timeout(15_000),
