@@ -17,8 +17,11 @@ const responseSchema = z.looseObject({
   model: z.string(),
   output: z.array(z.looseObject({ type: z.string() })),
   usage: usageSchema.optional(),
+  // The live Agent API returns `"error": null` on success, so the field must
+  // explicitly accept null rather than merely being optional.
   error: z
     .object({ message: z.string(), code: z.string().optional(), type: z.string().optional() })
+    .nullable()
     .optional(),
 });
 
