@@ -6,41 +6,41 @@
 /* --- Design tokens: neutral zinc, near-black primary, data blue accent --- */
 :root {
   --radius: 0.5rem;
-  --background: #fafafa;
+  --background: #ffffff;
   --foreground: #09090b;
   --card: #ffffff;
   --card-foreground: #09090b;
   --popover: #ffffff;
   --popover-foreground: #09090b;
-  --primary: #18181b;
-  --primary-foreground: #fafafa;
+  --primary: #09090b;
+  --primary-foreground: #ffffff;
   --secondary: #f4f4f5;
-  --secondary-foreground: #18181b;
+  --secondary-foreground: #09090b;
   --muted: #f4f4f5;
   --muted-foreground: #71717a;
   --accent: #f4f4f5;
-  --accent-foreground: #18181b;
+  --accent-foreground: #09090b;
   --destructive: #dc2626;
-  --destructive-foreground: #fafafa;
+  --destructive-foreground: #ffffff;
   --border: #e4e4e7;
   --input: #e4e4e7;
-  --ring: #a1a1aa;
-  /* data accent: used ONLY for charts, links, and active data marks */
-  --chart-1: #2563eb;
-  --chart-2: #71717a;
-  --chart-3: #a1a1aa;
+  --ring: #71717a;
+  /* neutral high-taste palette: deep charcoal/slate for charts and signals, no harsh blue */
+  --chart-1: #09090b;
+  --chart-2: #52525b;
+  --chart-3: #71717a;
   --chart-4: #d4d4d8;
   --chart-5: #e4e4e7;
   --success: #16a34a;
   --warning: #d97706;
   --sidebar: #ffffff;
   --sidebar-foreground: #3f3f46;
-  --sidebar-primary: #18181b;
-  --sidebar-primary-foreground: #fafafa;
+  --sidebar-primary: #09090b;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f4f4f5;
-  --sidebar-accent-foreground: #18181b;
+  --sidebar-accent-foreground: #09090b;
   --sidebar-border: #e4e4e7;
-  --sidebar-ring: #a1a1aa;
+  --sidebar-ring: #71717a;
 }
 
 @theme inline {

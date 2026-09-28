@@ -115,6 +115,19 @@ export function AppShell() {
               <p className="truncate text-sm font-medium">{accountLabel}</p>
             </div>
           )}
+          {state.status === 'onboarding' && (
+            <div className="px-2.5 py-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Project
+              </p>
+              <Link
+                to="/app/onboarding"
+                className="mt-0.5 inline-flex items-center text-xs font-medium text-amber-800 hover:text-amber-950"
+              >
+                Setup pending →
+              </Link>
+            </div>
+          )}
           <Separator className="my-1" />
           {signedOut ? (
             <Link
@@ -169,6 +182,25 @@ export function AppShell() {
           </Button>
           <Logo />
         </header>
+        {!signedOut && state.status === 'onboarding' && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-amber-50/50 px-4 py-2 text-xs text-amber-900 sm:px-6">
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-amber-500" aria-hidden="true" />
+              <span>
+                <strong>Project setup pending:</strong> Add your brand and buyer prompts to begin
+                measuring AI search visibility.
+              </span>
+            </div>
+            <Button
+              asChild
+              size="sm"
+              variant="outline"
+              className="h-7 border-amber-300 bg-white text-xs text-amber-950 hover:bg-amber-50"
+            >
+              <Link to="/app/onboarding">Complete setup (2 min) →</Link>
+            </Button>
+          </div>
+        )}
         <main className="min-w-0 flex-1">
           {signedOut ? (
             <PageState state={state} onRetry={reload} />

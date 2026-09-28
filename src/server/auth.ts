@@ -17,6 +17,16 @@ export function createAuth(env: CloudflareBindings) {
     trustedOrigins: [new URL(env.APP_URL).origin],
     emailAndPassword: { enabled: false },
     advanced: { useSecureCookies: config.APP_ENV === 'production' },
+    socialProviders: {
+      ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+        ? {
+            google: {
+              clientId: env.GOOGLE_CLIENT_ID,
+              clientSecret: env.GOOGLE_CLIENT_SECRET,
+            },
+          }
+        : {}),
+    },
     plugins: [
       magicLink({
         expiresIn: 600,

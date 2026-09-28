@@ -333,6 +333,68 @@ export function AppOverview() {
   const { state, reload } = useDashboardContext();
   usePageTitle('Overview');
 
+  if (state.status === 'onboarding') {
+    return (
+      <div className="p-6 lg:p-8">
+        <div id="main" className="sr-only">
+          Visibility overview
+        </div>
+        <div className="mb-8">
+          <p className="text-sm text-muted-foreground">Getting started with CiteScout</p>
+          <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Set up your brand monitoring</h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            Complete your brand profile to start observing how Perplexity answers evaluate your
+            product against competitors.
+          </p>
+        </div>
+
+        <div className="grid max-w-4xl gap-6 md:grid-cols-3">
+          <Card className="flex flex-col justify-between p-5">
+            <div>
+              <span className="text-xs font-mono font-semibold text-muted-foreground">STEP 01</span>
+              <h3 className="mt-2 text-base font-semibold">Brand & domain</h3>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Define your brand name and canonical website URL so CiteScout knows what to detect
+                in AI answers.
+              </p>
+            </div>
+          </Card>
+
+          <Card className="flex flex-col justify-between p-5">
+            <div>
+              <span className="text-xs font-mono font-semibold text-muted-foreground">STEP 02</span>
+              <h3 className="mt-2 text-base font-semibold">Tracked competitors</h3>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Add up to 3 competitors to compare share-of-voice and recommendation positioning
+                side by side.
+              </p>
+            </div>
+          </Card>
+
+          <Card className="flex flex-col justify-between p-5">
+            <div>
+              <span className="text-xs font-mono font-semibold text-muted-foreground">STEP 03</span>
+              <h3 className="mt-2 text-base font-semibold">Buyer prompts</h3>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Configure the real search prompts your potential buyers ask Perplexity when
+                evaluating tools.
+              </p>
+            </div>
+          </Card>
+        </div>
+
+        <div className="mt-8 flex flex-wrap items-center gap-4">
+          <Button asChild size="lg">
+            <Link to="/app/onboarding">Start project setup (2 min) →</Link>
+          </Button>
+          <Button asChild variant="outline" size="lg">
+            <Link to="/demo">Explore sample demo dashboard</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (state.status !== 'ready') return <PageState state={state} onRetry={reload} />;
   const data = state.data;
 

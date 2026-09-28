@@ -23,6 +23,7 @@ import {
 import { Input } from '@/client/components/ui/input';
 import { Label } from '@/client/components/ui/label';
 import { Separator } from '@/client/components/ui/separator';
+import { Skeleton } from '@/client/components/ui/skeleton';
 import { usePageTitle } from '@/client/use-page-title';
 import { PageState } from './AppShell';
 import { useDashboardContext } from './dashboard-context';
@@ -224,8 +225,18 @@ export function BillingPage() {
     }
   }
 
-  if (dashboard.state.status !== 'ready')
+  if (dashboard.state.status === 'loading') {
+    return (
+      <div className="p-6 lg:p-8">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="mt-4 h-64 max-w-2xl" />
+      </div>
+    );
+  }
+
+  if (dashboard.state.status === 'unauthenticated' || dashboard.state.status === 'error') {
     return <PageState state={dashboard.state} onRetry={dashboard.reload} />;
+  }
 
   const checkoutComplete = params.get('checkout') === 'complete';
   const hasSubscription = load.status === 'ready' && load.data.subscription !== null;
@@ -368,7 +379,7 @@ export function BillingPage() {
         </p>
       )}
 
-      {dashboard.state.data.totalObservations > 0 && (
+      {dashboard.state.status === 'ready' && dashboard.state.data.totalObservations > 0 && (
         <p className="mt-4 text-xs text-muted-foreground">
           Stored observations retained on this account:{' '}
           {String(dashboard.state.data.totalObservations)}. Recent coverage:{' '}
@@ -386,9 +397,20 @@ export function SettingsPage() {
   const [confirming, setConfirming] = useState(false);
   const [typed, setTyped] = useState('');
 
-  if (dashboard.state.status !== 'ready')
+  if (dashboard.state.status === 'loading') {
+    return (
+      <div className="p-6 lg:p-8">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="mt-4 h-64 max-w-2xl" />
+      </div>
+    );
+  }
+
+  if (dashboard.state.status === 'unauthenticated' || dashboard.state.status === 'error') {
     return <PageState state={dashboard.state} onRetry={dashboard.reload} />;
-  const data = dashboard.state.data;
+  }
+
+  const data = dashboard.state.status === 'ready' ? dashboard.state.data : null;
 
   async function deleteAccount() {
     setBusy(true);
@@ -428,33 +450,44 @@ export function SettingsPage() {
             <CardTitle className="text-base">Tracked identity</CardTitle>
           </CardHeader>
           <CardContent>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+            {data ? (
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Brand</dt>
+                  <dd className="mt-0.5 truncate text-sm font-medium">{data.brandName}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Canonical domain</dt>
+                  <dd className="mt-0.5 truncate text-sm font-medium">{data.canonicalDomain}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Competitors</dt>
+                  <dd className="mt-0.5 truncate text-sm font-medium">
+                    {data.shareOfVoiceByEntity
+                      .filter((entity) => entity.key !== 'brand')
+                      .map((entity) => entity.label)
+                      .join(', ') || 'None'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Provider</dt>
+                  <dd className="mt-0.5 truncate text-sm font-medium">
+                    {data.provider
+                      ? `${data.provider.name} · ${data.provider.model ?? 'unknown model'}`
+                      : 'No calls yet'}
+                  </dd>
+                </div>
+              </dl>
+            ) : (
               <div>
-                <dt className="text-xs text-muted-foreground">Brand</dt>
-                <dd className="mt-0.5 truncate text-sm font-medium">{data.brandName}</dd>
+                <p className="text-sm text-muted-foreground">
+                  No brand has been configured yet. Set up your brand identity to begin monitoring.
+                </p>
+                <Button asChild size="sm" className="mt-4">
+                  <Link to="/app/onboarding">Start project setup (2 min) →</Link>
+                </Button>
               </div>
-              <div>
-                <dt className="text-xs text-muted-foreground">Canonical domain</dt>
-                <dd className="mt-0.5 truncate text-sm font-medium">{data.canonicalDomain}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-muted-foreground">Competitors</dt>
-                <dd className="mt-0.5 truncate text-sm font-medium">
-                  {data.shareOfVoiceByEntity
-                    .filter((entity) => entity.key !== 'brand')
-                    .map((entity) => entity.label)
-                    .join(', ') || 'None'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-muted-foreground">Provider</dt>
-                <dd className="mt-0.5 truncate text-sm font-medium">
-                  {data.provider
-                    ? `${data.provider.name} · ${data.provider.model ?? 'unknown model'}`
-                    : 'No calls yet'}
-                </dd>
-              </div>
-            </dl>
+            )}
           </CardContent>
         </Card>
 
@@ -464,9 +497,9 @@ export function SettingsPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              Stored observations: {String(data.totalObservations)}. Cost controls are enforced
-              server-side, including a global daily cap, a per-user monthly cap, and a maximum
-              number of provider calls per cron invocation.
+              Stored observations: {data ? String(data.totalObservations) : '0'}. Cost controls are
+              enforced server-side, including a global daily cap, a per-user monthly cap, and a
+              maximum number of provider calls per cron invocation.
             </p>
           </CardContent>
         </Card>

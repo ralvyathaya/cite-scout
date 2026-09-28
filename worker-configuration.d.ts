@@ -25,6 +25,8 @@ interface __BaseEnv_CloudflareBindings {
 	RESEND_API_KEY: string;
 	TURNSTILE_SECRET_KEY: string;
 	OPERATOR_SECRET: string;
+	GOOGLE_CLIENT_ID?: string;
+	GOOGLE_CLIENT_SECRET?: string;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
@@ -54,6 +56,8 @@ declare namespace Cloudflare {
 		RESEND_API_KEY: string;
 		TURNSTILE_SECRET_KEY: string;
 		OPERATOR_SECRET: string;
+		GOOGLE_CLIENT_ID?: string;
+		GOOGLE_CLIENT_SECRET?: string;
 	}
 	interface Env extends __BaseEnv_CloudflareBindings {}
 }

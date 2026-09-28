@@ -15,10 +15,15 @@ import {
 } from '@/client/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/client/components/ui/tabs';
 import {
+  G2Icon,
+  GithubIcon,
   GoogleIcon,
+  LinkedinIcon,
   NotionIcon,
   PerplexityIcon,
+  ProductHuntIcon,
   RedditIcon,
+  SubstackIcon,
   WikipediaIcon,
   XIcon,
   YoutubeIcon,
@@ -192,8 +197,12 @@ const demoPromptRows = [
 const demoCitations = [
   { source: 'Reddit', icon: RedditIcon, domain: 'reddit.com', count: 34 },
   { source: 'Wikipedia', icon: WikipediaIcon, domain: 'wikipedia.org', count: 21 },
+  { source: 'Product Hunt', icon: ProductHuntIcon, domain: 'producthunt.com', count: 19 },
+  { source: 'G2 Reviews', icon: G2Icon, domain: 'g2.com', count: 16 },
   { source: 'YouTube', icon: YoutubeIcon, domain: 'youtube.com', count: 14 },
+  { source: 'GitHub', icon: GithubIcon, domain: 'github.com', count: 11 },
   { source: 'X', icon: XIcon, domain: 'x.com', count: 9 },
+  { source: 'Substack', icon: SubstackIcon, domain: 'substack.com', count: 6 },
 ] as const;
 
 function DemoSparkline() {
@@ -253,17 +262,28 @@ function DemoSparkline() {
 
 function DemoDashboard({ compact = false }: { compact?: boolean }) {
   return (
-    <Card className="overflow-hidden py-0 shadow-sm">
-      <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+    <Card className="overflow-hidden py-0 shadow-md border-border/80">
+      {/* Mock browser header frame */}
+      <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <span className="flex size-6 items-center justify-center rounded bg-primary text-[10px] font-bold italic text-primary-foreground">
+          <div className="flex gap-1.5" aria-hidden="true">
+            <span className="size-2.5 rounded-full bg-zinc-300/80" />
+            <span className="size-2.5 rounded-full bg-zinc-300/80" />
+            <span className="size-2.5 rounded-full bg-zinc-300/80" />
+          </div>
+          <span className="ml-2 hidden rounded-md bg-background px-2.5 py-0.5 font-mono text-[11px] text-muted-foreground border sm:inline-block">
+            app.citescout.com/overview · OrbitCal
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="flex size-5 items-center justify-center rounded bg-primary text-[9px] font-bold italic text-primary-foreground">
             O
           </span>
-          <span className="text-sm font-semibold">OrbitCal</span>
+          <span className="text-xs font-semibold">OrbitCal</span>
+          <Badge variant="secondary" className="text-[10px] font-normal h-5 px-1.5">
+            Last 14 days · UTC
+          </Badge>
         </div>
-        <Badge variant="secondary" className="font-normal">
-          Last 14 days · UTC
-        </Badge>
       </div>
 
       <Tabs defaultValue="overview">
@@ -462,23 +482,33 @@ function HowItWorks() {
 
 function Integrations() {
   const sources = [
-    { label: 'Perplexity answers', icon: PerplexityIcon, note: 'Observed daily' },
-    { label: 'Reddit citations', icon: RedditIcon, note: 'Tracked' },
-    { label: 'X citations', icon: XIcon, note: 'Tracked' },
-    { label: 'YouTube citations', icon: YoutubeIcon, note: 'Tracked' },
-    { label: 'Wikipedia citations', icon: WikipediaIcon, note: 'Tracked' },
-    { label: 'Google Search', icon: GoogleIcon, note: 'Complements' },
-    { label: 'Notion', icon: NotionIcon, note: 'Where teams document' },
+    { label: 'Perplexity AI', icon: PerplexityIcon, note: 'Observed daily' },
+    { label: 'Reddit', icon: RedditIcon, note: 'Citations tracked' },
+    { label: 'Product Hunt', icon: ProductHuntIcon, note: 'Launch references' },
+    { label: 'G2 Reviews', icon: G2Icon, note: 'B2B sentiment' },
+    { label: 'Wikipedia', icon: WikipediaIcon, note: 'Knowledge graph citations' },
+    { label: 'YouTube', icon: YoutubeIcon, note: 'Video citations' },
+    { label: 'GitHub', icon: GithubIcon, note: 'Developer discussions' },
+    { label: 'X (Twitter)', icon: XIcon, note: 'Social recommendations' },
+    { label: 'Substack', icon: SubstackIcon, note: 'Newsletter citations' },
+    { label: 'Notion', icon: NotionIcon, note: 'Team workspace' },
   ] as const;
 
   return (
-    <section className="border-b">
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-5">
+    <section className="border-b bg-background">
+      <div className="mx-auto max-w-6xl px-4 py-8">
+        <p className="mb-4 text-center text-xs font-medium uppercase tracking-wider text-muted-foreground/80">
+          Tracking citations across authoritative consumer & B2B platforms
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4">
           {sources.map(({ label, icon: Icon, note }) => (
-            <div key={label} className="flex items-center gap-2.5" title={note}>
-              <Icon className="size-5 text-muted-foreground/50" />
-              <span className="text-sm text-muted-foreground/70">{label}</span>
+            <div
+              key={label}
+              className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
+              title={note}
+            >
+              <Icon className="size-4 shrink-0 opacity-70" />
+              <span className="text-xs font-medium">{label}</span>
             </div>
           ))}
         </div>
@@ -689,7 +719,7 @@ function Faq() {
                 <button
                   type="button"
                   aria-expanded={isOpen}
-                  className="flex w-full items-center justify-between gap-4 py-4 text-left text-sm font-medium hover:text-muted-foreground"
+                  className="flex w-full items-center justify-between gap-4 py-4 text-left text-sm font-medium transition-colors hover:text-foreground"
                   onClick={() => {
                     setOpen(isOpen ? null : index);
                   }}

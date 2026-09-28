@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { Link } from 'react-router';
+import { GoogleColorIcon } from '@/client/components/brand-icons';
 import { Button } from '@/client/components/ui/button';
 import {
   Card,
@@ -21,9 +22,35 @@ export function Login() {
   usePageTitle('Sign in');
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [turnstileToken, setTurnstileToken] = useState('');
   const widget = useRef<HTMLDivElement>(null);
+
+  async function handleGoogleSignIn() {
+    setGoogleLoading(true);
+    setStatus('idle');
+    setMessage('');
+    try {
+      const response = await fetch('/api/auth/sign-in/social', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'google',
+          callbackURL: '/app/overview',
+        }),
+      });
+      const body = (await response.json()) as { url?: string; error?: { message?: string } };
+      if (!response.ok || !body.url) {
+        throw new Error(body.error?.message ?? 'Google sign-in is not configured or unavailable.');
+      }
+      window.location.href = body.url;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Google sign-in failed.');
+      setStatus('error');
+      setGoogleLoading(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -96,10 +123,27 @@ export function Login() {
             <h1 className="text-xl font-bold tracking-tight">Sign in to CiteScout</h1>
           </CardTitle>
           <CardDescription>
-            We&apos;ll email you a single-use magic link. No password required.
+            Choose your preferred sign-in method to continue.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={googleLoading || status === 'sending'}
+            onClick={() => {
+              void handleGoogleSignIn();
+            }}
+            className="flex w-full items-center justify-center gap-2.5 font-medium shadow-xs hover:bg-accent"
+          >
+            <GoogleColorIcon className="size-4 shrink-0" />
+            <span>{googleLoading ? 'Connecting to Google…' : 'Continue with Google'}</span>
+          </Button>
+
+          <div className="relative my-0.5 text-center text-xs text-muted-foreground after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">
+            <span className="relative z-10 bg-card px-2">or continue with work email</span>
+          </div>
+
           <form
             className="flex flex-col gap-4"
             onSubmit={(event) => {
@@ -129,7 +173,7 @@ export function Login() {
               )}
             </div>
 
-            <Button type="submit" disabled={status === 'sending' || !turnstileToken}>
+            <Button type="submit" disabled={status === 'sending' || googleLoading || !turnstileToken}>
               {status === 'sending' ? 'Sending…' : 'Email my secure link'}
             </Button>
 

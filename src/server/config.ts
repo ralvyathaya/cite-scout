@@ -16,6 +16,8 @@ const configSchema = z.object({
   TURNSTILE_SITE_KEY: z.string().min(1),
   RESEND_FROM_EMAIL: z.string().min(1),
   OPERATOR_SECRET: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
 });
 
 export function getConfig(env: CloudflareBindings) {

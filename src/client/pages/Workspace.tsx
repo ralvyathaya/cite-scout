@@ -1,7 +1,8 @@
-import { Plus } from 'lucide-react';
+import { ExternalLink, FileText, ListChecks, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
+import { getDomainIcon } from '@/client/components/brand-icons';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -83,6 +84,41 @@ export function PromptsPage() {
 
   const reload = dashboard.reload;
   const state = dashboard.state;
+
+  if (state.status === 'onboarding') {
+    return (
+      <div className="p-6 lg:p-8">
+        <div id="main" className="sr-only">
+          Tracked prompts
+        </div>
+        <div className="mb-6">
+          <p className="text-sm text-muted-foreground">
+            Buyer-intent prompts · Perplexity monitoring
+          </p>
+          <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Tracked Prompts</h1>
+        </div>
+        <Card className="mx-auto max-w-xl text-center">
+          <CardHeader>
+            <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+              <ListChecks className="size-6 text-muted-foreground" />
+            </div>
+            <CardTitle className="mt-3 text-lg">
+              Define your brand to start tracking prompts
+            </CardTitle>
+            <CardDescription>
+              CiteScout needs your brand name and competitors to measure visibility and citation
+              rates across search prompts.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link to="/app/onboarding">Complete project setup (2 min) →</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (state.status !== 'ready') return <PageState state={state} onRetry={reload} />;
   const data = state.data;
@@ -475,6 +511,37 @@ export function ResponsesPage() {
     };
   }, [ready, load]);
 
+  if (dashboard.state.status === 'onboarding') {
+    return (
+      <div className="p-6 lg:p-8">
+        <div id="main" className="sr-only">
+          Response archive
+        </div>
+        <div className="mb-6">
+          <p className="text-sm text-muted-foreground">Auditable archive · newest first</p>
+          <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Response archive</h1>
+        </div>
+        <Card className="mx-auto max-w-xl text-center">
+          <CardHeader>
+            <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+              <FileText className="size-6 text-muted-foreground" />
+            </div>
+            <CardTitle className="mt-3 text-lg">No responses archived yet</CardTitle>
+            <CardDescription>
+              Raw Perplexity answers, mention positions, and cited URLs will be permanently archived
+              here once your initial project setup is complete.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link to="/app/onboarding">Complete setup to run trial scan →</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (!ready) return <PageState state={dashboard.state} onRetry={dashboard.reload} />;
 
   const items = extra.length > 0 ? extra : (page?.items ?? []);
@@ -573,7 +640,10 @@ export function ResponsesPage() {
                       <p className="whitespace-pre-wrap text-sm leading-relaxed">
                         {highlight(row.rawResponseText ?? '', terms).map((part, index) =>
                           part.marked ? (
-                            <mark key={index} className="bg-blue-50 px-0.5 text-inherit">
+                            <mark
+                              key={index}
+                              className="rounded bg-muted px-1.5 py-0.5 font-medium text-foreground"
+                            >
                               {part.text}
                             </mark>
                           ) : (
@@ -594,20 +664,38 @@ export function ResponsesPage() {
                         No citations were returned for this answer.
                       </p>
                     ) : (
-                      <ol className="mt-1.5 list-decimal space-y-1 pl-5 text-sm">
-                        {citations.map((citation) => (
-                          <li key={`${String(citation.id)}-${citation.url}`}>
-                            <a
-                              href={citation.url}
-                              target="_blank"
-                              rel="noreferrer noopener"
-                              className="break-all text-chart-1 underline-offset-4 hover:underline"
+                      <ul className="mt-2 space-y-2 text-sm">
+                        {citations.map((citation) => {
+                          const DomainIcon = getDomainIcon(citation.url);
+                          return (
+                            <li
+                              key={`${String(citation.id)}-${citation.url}`}
+                              className="flex items-center gap-2.5 rounded-md border bg-muted/20 px-3 py-2 text-xs sm:text-sm"
                             >
-                              {citation.title ?? citation.url}
-                            </a>
-                          </li>
-                        ))}
-                      </ol>
+                              <span className="flex size-6 shrink-0 items-center justify-center rounded bg-muted">
+                                {DomainIcon ? (
+                                  <DomainIcon className="size-3.5 text-foreground/70" />
+                                ) : (
+                                  <ExternalLink className="size-3 text-muted-foreground" />
+                                )}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <a
+                                  href={citation.url}
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  className="block truncate font-medium text-foreground underline-offset-4 hover:underline"
+                                >
+                                  {citation.title ?? citation.url}
+                                </a>
+                                <p className="truncate text-[11px] text-muted-foreground">
+                                  {citation.url}
+                                </p>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
                     )}
                   </div>
                 )}

@@ -28,10 +28,15 @@ app.use(
   secureHeaders({
     contentSecurityPolicy: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
+      scriptSrc: ["'self'", 'https://challenges.cloudflare.com', 'https://cloud.umami.is'],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'", 'https://challenges.cloudflare.com'],
+      connectSrc: [
+        "'self'",
+        'https://challenges.cloudflare.com',
+        'https://cloud.umami.is',
+        'https://api-gateway.umami.dev',
+      ],
       frameSrc: ['https://challenges.cloudflare.com'],
       fontSrc: ["'self'", 'data:'],
       objectSrc: ["'none'"],
