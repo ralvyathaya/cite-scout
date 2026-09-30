@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import {
   competitors,
@@ -12,6 +12,7 @@ import {
 import { getEntitlement } from '../domain/entitlements';
 import { analyzeMentions } from '../domain/mentions';
 import { utcDate } from '../domain/normalization';
+import { monthBounds, paidProjectSql } from './scan-policy';
 import {
   neutralResearchInstruction,
   PerplexityProvider,
@@ -28,10 +29,13 @@ export interface ScanRequest {
 }
 export interface ScanSummary {
   scanRunId: string;
-  status: 'completed' | 'partial' | 'failed' | 'deferred';
+  status: 'completed' | 'partial' | 'failed' | 'deferred' | 'already_observed';
   attempted: number;
   successful: number;
   failed: number;
+  deferred: number;
+  skipped: number;
+  reason: string | null;
 }
 
 export async function runScan(env: CloudflareBindings, input: ScanRequest): Promise<ScanSummary> {
@@ -53,48 +57,109 @@ export async function runScan(env: CloudflareBindings, input: ScanRequest): Prom
     subscription ? { status: subscription.status, endsAt: subscription.endsAt } : null,
     now,
   ).canScan;
+  if (input.promptIds.length === 0 || new Set(input.promptIds).size !== input.promptIds.length)
+    throw new Error('INVALID_PROMPTS');
   if (input.trigger === 'trial') {
-    if (paid || input.promptIds.length === 0 || input.promptIds.length > 3)
-      throw new Error('TRIAL_INVALID');
-    const reservation = await db
-      .update(projects)
-      .set({ trialScanReservedAt: now })
-      .where(and(eq(projects.id, project.id), sql`${projects.trialScanReservedAt} is null`))
-      .returning({ id: projects.id });
-    if (reservation.length === 0) throw new Error('TRIAL_ALREADY_USED');
+    if (paid || input.promptIds.length > 3) throw new Error('TRIAL_INVALID');
+    if (project.trialScanReservedAt) throw new Error('TRIAL_ALREADY_USED');
   } else if (!paid) throw new Error('PAID_ACCESS_REQUIRED');
-  if (input.trigger === 'manual') {
-    const manual = await db
-      .update(projects)
-      .set({ manualScanLastUsedOn: date })
-      .where(
-        and(
-          eq(projects.id, project.id),
-          sql`${projects.manualScanLastUsedOn} is null or ${projects.manualScanLastUsedOn} <> ${date}`,
-        ),
-      )
-      .returning({ id: projects.id });
-    if (manual.length === 0) throw new Error('MANUAL_SCAN_ALREADY_USED');
-  }
+  if (input.trigger === 'manual' && project.manualScanLastUsedOn === date)
+    throw new Error('MANUAL_SCAN_ALREADY_USED');
   const selected = await db
     .select()
     .from(prompts)
     .where(and(eq(prompts.projectId, project.id), eq(prompts.enabled, true)));
-  const allowed = selected
-    .filter((item) => input.promptIds.includes(item.id))
-    .slice(0, paid ? 10 : 3);
+  const allowed = selected.filter((item) => input.promptIds.includes(item.id));
+  if (allowed.length !== input.promptIds.length || allowed.length > (paid ? 10 : 3))
+    throw new Error('INVALID_PROMPTS');
   const runId = crypto.randomUUID();
-  await db.insert(scanRuns).values({
-    id: runId,
-    projectId: project.id,
-    triggerType: input.trigger,
-    provider: 'perplexity',
-    status: 'running',
-    observationDate: date,
-    startedAt: now,
-    attemptedCount: allowed.length,
-    createdAt: now,
-  });
+  const [monthStart, monthEnd] = monthBounds(now);
+  const run = db
+    .insert(scanRuns)
+    .values({
+      id: runId,
+      projectId: project.id,
+      triggerType: input.trigger,
+      provider: 'perplexity',
+      status: 'running',
+      observationDate: date,
+      startedAt: now,
+      attemptedCount: 0,
+      createdAt: now,
+    })
+    .toSQL();
+  const gate =
+    input.trigger === 'trial'
+      ? `NOT ${paidProjectSql} AND p.trial_scan_reserved_at IS NULL`
+      : `${paidProjectSql}${input.trigger === 'manual' ? ' AND (p.manual_scan_last_used_on IS NULL OR p.manual_scan_last_used_on <> ?)' : ''}`;
+  const claimStatements = allowed.map((prompt) =>
+    env.DB.prepare(
+      `
+    INSERT INTO provider_call_reservations
+      (id,idempotency_key,user_id,project_id,prompt_id,scan_run_id,provider,usage_date,status,reserved_at)
+    SELECT ?,?,p.user_id,p.id,?,?,'perplexity',?,'reserved',? FROM projects p
+    WHERE p.id = ? AND p.user_id = ? AND ${gate}
+      AND EXISTS (SELECT 1 FROM prompts WHERE id = ? AND project_id = p.id AND enabled = 1)
+      AND (SELECT count(*) FROM provider_call_reservations WHERE provider = 'perplexity' AND usage_date = ?) < ?
+      AND (SELECT count(*) FROM provider_call_reservations WHERE user_id = p.user_id AND usage_date >= ? AND usage_date < ?) < ?
+      AND (SELECT count(*) FROM provider_call_reservations WHERE project_id = p.id AND usage_date = ?) < 10
+    ON CONFLICT(idempotency_key) DO NOTHING RETURNING id, prompt_id
+  `,
+    ).bind(
+      crypto.randomUUID(),
+      `perplexity:${project.id}:${prompt.id}:${date}`,
+      prompt.id,
+      runId,
+      date,
+      now.getTime(),
+      project.id,
+      input.userId,
+      now.getTime(),
+      ...(input.trigger === 'manual' ? [date] : []),
+      prompt.id,
+      date,
+      Number(env.GLOBAL_DAILY_PROVIDER_CALL_CAP),
+      monthStart,
+      monthEnd,
+      Number(env.PER_USER_MONTHLY_PROVIDER_CALL_CAP),
+      date,
+    ),
+  );
+  const gateUpdate =
+    input.trigger === 'scheduled'
+      ? []
+      : [
+          env.DB.prepare(
+            `
+    UPDATE projects SET ${input.trigger === 'trial' ? 'trial_scan_reserved_at' : 'manual_scan_last_used_on'} = ?
+    WHERE id = ? AND EXISTS (SELECT 1 FROM provider_call_reservations WHERE scan_run_id = ?)
+  `,
+          ).bind(input.trigger === 'trial' ? now.getTime() : date, project.id, runId),
+        ];
+  const reserved = await env.DB.batch<{ id: string; prompt_id: string }>([
+    env.DB.prepare(run.sql).bind(...run.params),
+    ...claimStatements,
+    ...gateUpdate,
+  ]);
+  const claims = reserved.slice(1, allowed.length + 1).flatMap((result) => result.results);
+  const existing = await db
+    .select({
+      promptId: providerCallReservations.promptId,
+      status: providerCallReservations.status,
+    })
+    .from(providerCallReservations)
+    .where(
+      and(
+        eq(providerCallReservations.projectId, project.id),
+        eq(providerCallReservations.usageDate, date),
+      ),
+    );
+  const claimedIds = new Set(claims.map((claim) => claim.prompt_id));
+  const skipped = allowed.filter(
+    (prompt) => !claimedIds.has(prompt.id) && existing.some((item) => item.promptId === prompt.id),
+  ).length;
+  const deferred = allowed.length - claims.length - skipped;
+  await db.update(scanRuns).set({ attemptedCount: claims.length }).where(eq(scanRuns.id, runId));
   const trackedCompetitors = await db
     .select()
     .from(competitors)
@@ -102,60 +167,17 @@ export async function runScan(env: CloudflareBindings, input: ScanRequest): Prom
   let successful = 0;
   let failed = 0;
   const provider = input.provider ?? new PerplexityProvider(env.PERPLEXITY_API_KEY);
-  for (const prompt of allowed) {
-    const monthStart = `${date.slice(0, 7)}-01`;
-    const globalCount = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(providerCallReservations)
-      .where(
-        and(
-          eq(providerCallReservations.provider, 'perplexity'),
-          eq(providerCallReservations.usageDate, date),
-        ),
-      )
-      .get();
-    const userCount = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(providerCallReservations)
-      .where(
-        and(
-          eq(providerCallReservations.userId, input.userId),
-          gte(providerCallReservations.usageDate, monthStart),
-        ),
-      )
-      .get();
-    if (
-      (globalCount?.count ?? 0) >= Number(env.GLOBAL_DAILY_PROVIDER_CALL_CAP) ||
-      (userCount?.count ?? 0) >= Number(env.PER_USER_MONTHLY_PROVIDER_CALL_CAP)
-    ) {
-      failed += 1;
-      continue;
-    }
-    const idempotencyKey = `perplexity:${project.id}:${prompt.id}:${date}`;
-    const reservationId = crypto.randomUUID();
-    const claimed = await db
-      .insert(providerCallReservations)
-      .values({
-        id: reservationId,
-        idempotencyKey,
-        userId: input.userId,
-        projectId: project.id,
-        promptId: prompt.id,
-        scanRunId: runId,
-        provider: 'perplexity',
-        usageDate: date,
-        status: 'reserved',
-        reservedAt: now,
-      })
-      .onConflictDoNothing()
-      .returning({ id: providerCallReservations.id });
-    if (claimed.length === 0) continue;
+  for (const claim of claims) {
+    const prompt = allowed.find((item) => item.id === claim.prompt_id);
+    if (!prompt) throw new Error('RESERVATION_PROMPT_MISMATCH');
+    const reservationId = claim.id;
     try {
       const observation = await provider.runObservation({
         prompt: prompt.text,
         neutralInstruction: neutralResearchInstruction,
         maxOutputTokens: 700,
       });
+      if (!observation.text.trim()) throw new Error('EMPTY_PROVIDER_ANSWER');
       const analysis = analyzeMentions(
         observation.text,
         { key: 'brand', name: project.brandName, domain: project.canonicalDomain },
@@ -233,13 +255,17 @@ export async function runScan(env: CloudflareBindings, input: ScanRequest): Prom
     }
   }
   const status =
-    successful === allowed.length
+    successful > 0 && successful === claims.length && deferred === 0
       ? 'completed'
       : successful > 0
         ? 'partial'
         : failed > 0
           ? 'failed'
-          : 'deferred';
+          : allowed.every((prompt) =>
+                existing.some((item) => item.promptId === prompt.id && item.status === 'succeeded'),
+              )
+            ? 'already_observed'
+            : 'deferred';
   await db
     .update(scanRuns)
     .set({ status, successfulCount: successful, failedCount: failed, completedAt: new Date() })
@@ -249,5 +275,19 @@ export async function runScan(env: CloudflareBindings, input: ScanRequest): Prom
       .update(projects)
       .set({ trialScanCompletedAt: new Date() })
       .where(eq(projects.id, project.id));
-  return { scanRunId: runId, status, attempted: allowed.length, successful, failed };
+  return {
+    scanRunId: runId,
+    status,
+    attempted: claims.length,
+    successful,
+    failed,
+    deferred,
+    skipped,
+    reason:
+      deferred > 0
+        ? 'Scanning is deferred by the usage limit or scan eligibility. No unreserved calls were made.'
+        : claims.length === 0
+          ? 'These prompts have already been reserved today. They will not be replayed.'
+          : null,
+  };
 }

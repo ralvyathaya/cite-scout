@@ -1,81 +1,38 @@
 import { and, asc, desc, eq, gte, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
-import { competitors, projects, prompts, scanResults, scanRuns, subscriptions } from '../db/schema';
+import {
+  competitors,
+  projects,
+  prompts,
+  scanResults,
+  scanRuns,
+  subscriptions,
+  providerCallReservations,
+} from '../db/schema';
 import { getEntitlement } from '../domain/entitlements';
-import { calculateMetrics, metricDelta, type MetricObservation } from '../domain/metrics';
+import { calculateMetrics, metricDelta } from '../domain/metrics';
+import {
+  citationOpportunities,
+  observationInsight,
+  stringArray,
+  successfulObservation,
+} from '../domain/insights';
 import { utcDate } from '../domain/normalization';
+import type { DashboardSnapshot, DailyPoint } from '../shared/dashboard';
+import { monthBounds, type ScanAvailability } from './scan-policy';
 
-export interface DailyPoint {
-  date: string;
-  visibilityScore: number | null;
-  mentionRate: number | null;
-  shareOfVoice: number | null;
-  coverage: number | null;
-  successful: number;
-  attempted: number;
-}
-
-export interface DashboardSnapshot {
-  projectId: string;
-  brandName: string;
-  canonicalDomain: string;
-  observationDate: string;
-  current: {
-    visibilityScore: number | null;
-    mentionRate: number | null;
-    shareOfVoice: number | null;
-    averageMentionPosition: number | null;
-    coverage: number | null;
-  };
-  delta: {
-    visibilityScore: number | null;
-    mentionRate: number | null;
-    shareOfVoice: number | null;
-  };
-  entityKeys: string[];
-  shareOfVoiceByEntity: { key: string; label: string; share: number | null; mentions: number }[];
-  series: DailyPoint[];
-  prompts: {
-    promptId: string;
-    text: string;
-    classified: string | null;
-    brandPosition: number | null;
-    observationDate: string | null;
-  }[];
-  scanRuns: {
-    id: string;
-    triggerType: string;
-    status: string;
-    observationDate: string;
-    successfulCount: number;
-    failedCount: number;
-    attemptedCount: number;
-  }[];
-  lastSuccessfulAt: string | null;
-  provider: { name: string; model: string | null; preset: string | null } | null;
-}
-
-function average(values: number[]): number | null {
-  return values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-/**
- * Builds the whole dashboard payload from persisted scan results only.
- * Every number here is derived from `scan_results`; nothing is hard-coded.
- */
 export async function buildDashboard(
   binding: D1Database,
   userId: string,
   days = 14,
+  now = new Date(),
 ): Promise<DashboardSnapshot | null> {
   const db = drizzle(binding);
   const project = await db.select().from(projects).where(eq(projects.userId, userId)).get();
   if (!project) return null;
-
-  const today = utcDate();
-  const from = utcDate(new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000));
-
-  const [projectCompetitors, projectPrompts] = await Promise.all([
+  const today = utcDate(now);
+  const from = utcDate(new Date(now.getTime() - (days - 1) * 86_400_000));
+  const [projectCompetitors, projectPrompts, rows, reservations, runs] = await Promise.all([
     db
       .select()
       .from(competitors)
@@ -86,112 +43,97 @@ export async function buildDashboard(
       .from(prompts)
       .where(eq(prompts.projectId, project.id))
       .orderBy(asc(prompts.createdAt)),
+    db
+      .select()
+      .from(scanResults)
+      .where(
+        and(
+          eq(scanResults.projectId, project.id),
+          gte(scanResults.observationDate, from),
+          eq(scanResults.provider, 'perplexity'),
+        ),
+      )
+      .orderBy(asc(scanResults.observationDate), asc(scanResults.createdAt)),
+    db
+      .select()
+      .from(providerCallReservations)
+      .where(
+        and(
+          eq(providerCallReservations.projectId, project.id),
+          gte(providerCallReservations.usageDate, from),
+        ),
+      )
+      .orderBy(asc(providerCallReservations.reservedAt)),
+    db
+      .select()
+      .from(scanRuns)
+      .where(eq(scanRuns.projectId, project.id))
+      .orderBy(desc(scanRuns.createdAt))
+      .limit(10),
   ]);
-
-  const rows = await db
-    .select()
-    .from(scanResults)
-    .where(
-      and(
-        eq(scanResults.projectId, project.id),
-        gte(scanResults.observationDate, from),
-        eq(scanResults.provider, 'perplexity'),
-      ),
-    )
-    .orderBy(asc(scanResults.observationDate));
-
-  const runs = await db
-    .select()
-    .from(scanRuns)
-    .where(eq(scanRuns.projectId, project.id))
-    .orderBy(desc(scanRuns.createdAt))
-    .limit(10);
-
-  const brandKey = 'brand';
-  const labelFor = (key: string): string =>
-    key === brandKey
-      ? project.brandName
-      : (projectCompetitors.find((competitor) => competitor.id === key)?.name ?? 'Unknown');
-
-  const byDate = new Map<string, typeof rows>();
-  for (const row of rows) {
-    const bucket = byDate.get(row.observationDate);
-    if (bucket) bucket.push(row);
-    else byDate.set(row.observationDate, [row]);
-  }
-
-  const attemptedByDate = new Map<string, number>();
-  for (const run of runs) {
-    const current = attemptedByDate.get(run.observationDate) ?? 0;
-    attemptedByDate.set(run.observationDate, Math.max(current, run.attemptedCount));
-  }
-
-  const series: DailyPoint[] = [];
-  for (const [date, dayRows] of [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    const observations: MetricObservation[] = dayRows.map((row) => ({
-      success: row.errorCode === null && row.rawResponseText !== null,
-      brandPosition: row.brandPosition,
-      mentionedEntities: [brandKey, ...parseKeys(row.competitorMentionsJson)],
-    }));
-    const metrics = calculateMetrics(observations, brandKey);
-    const attempted = attemptedByDate.get(date) ?? dayRows.length;
-    const succeeded = observations.filter((observation) => observation.success).length;
-    series.push({
+  const names = new Map(projectCompetitors.map((item) => [item.id, item.name]));
+  const promptNames = new Map(projectPrompts.map((item) => [item.id, item.text]));
+  const present = (row: (typeof rows)[number]) => [
+    ...(row.brandMentioned ? ['brand'] : []),
+    ...stringArray(row.competitorMentionsJson),
+  ];
+  const series: DailyPoint[] = Array.from({ length: days }, (_, index) => {
+    const date = utcDate(new Date(now.getTime() - (days - 1 - index) * 86_400_000));
+    const dayRows = rows.filter(
+      (row) => row.observationDate === date && successfulObservation(row),
+    );
+    const metrics = calculateMetrics(
+      dayRows.map((row) => ({
+        success: true,
+        brandPosition: row.brandMentioned ? row.brandPosition : null,
+        mentionedEntities: present(row),
+      })),
+      'brand',
+    );
+    const attempted = reservations.filter((item) => item.usageDate === date).length;
+    return {
       date,
       visibilityScore: metrics.visibilityScore,
       mentionRate: metrics.mentionRate,
       shareOfVoice: metrics.shareOfVoice,
-      coverage: attempted === 0 ? null : succeeded / attempted,
-      successful: succeeded,
+      averageMentionPosition: metrics.averageMentionPosition,
+      coverage: attempted === 0 ? null : dayRows.length / attempted,
+      successful: dayRows.length,
       attempted,
-    });
-  }
-
-  const latest = series.at(-1) ?? null;
-  const previous = series.at(-2) ?? null;
-
-  const entityKeys = [brandKey, ...projectCompetitors.map((competitor) => competitor.id)];
-  const shareOfVoiceByEntity = entityKeys.map((key) => {
-    let mentioned = 0;
-    let total = 0;
-    for (const row of rows) {
-      if (row.errorCode !== null) continue;
-      const present = new Set([brandKey, ...parseKeys(row.competitorMentionsJson)]);
-      total += present.size;
-      if (present.has(key)) mentioned += 1;
-    }
-    return {
-      key,
-      label: labelFor(key),
-      mentions: mentioned,
-      share: total === 0 ? null : mentioned / total,
     };
   });
-
-  const latestPerPrompt = new Map<string, (typeof rows)[number]>();
-  for (const row of rows) {
-    const existing = latestPerPrompt.get(row.promptId);
-    if (!existing || row.observationDate > existing.observationDate)
-      latestPerPrompt.set(row.promptId, row);
-  }
-
-  const providerRow = [...rows].reverse().find((row) => row.providerModel);
-  const lastSuccess = [...rows].reverse().find((row) => row.errorCode === null && row.createdAt);
-
+  const observed = series.filter((point) => point.successful > 0);
+  const latest = observed.at(-1);
+  const previous = observed.at(-2);
+  const currentRows = rows.filter(
+    (row) => row.observationDate === latest?.date && successfulObservation(row),
+  );
+  const entityKeys = [
+    ...new Set([
+      'brand',
+      ...names.keys(),
+      ...currentRows.flatMap((row) => stringArray(row.competitorMentionsJson)),
+    ]),
+  ];
+  const totalMentions = currentRows.reduce((sum, row) => sum + new Set(present(row)).size, 0);
+  const lastSuccess = rows.filter(successfulObservation).at(-1);
   return {
     projectId: project.id,
     brandName: project.brandName,
     canonicalDomain: project.canonicalDomain,
     observationDate: today,
-    current: {
-      visibilityScore: latest?.visibilityScore ?? null,
-      mentionRate: latest?.mentionRate ?? null,
-      shareOfVoice: latest?.shareOfVoice ?? null,
-      averageMentionPosition: average(
-        rows.flatMap((row) => (row.brandPosition === null ? [] : [row.brandPosition])),
-      ),
-      coverage: latest?.coverage ?? null,
-    },
+    latestObservationDate: latest?.date ?? null,
+    windowDays: days,
+    current: latest ??
+      series.filter((point) => point.attempted > 0).at(-1) ?? {
+        visibilityScore: null,
+        mentionRate: null,
+        shareOfVoice: null,
+        averageMentionPosition: null,
+        coverage: null,
+        successful: 0,
+        attempted: 0,
+      },
     delta: {
       visibilityScore: metricDelta(
         latest?.visibilityScore ?? null,
@@ -200,19 +142,45 @@ export async function buildDashboard(
       mentionRate: metricDelta(latest?.mentionRate ?? null, previous?.mentionRate ?? null),
       shareOfVoice: metricDelta(latest?.shareOfVoice ?? null, previous?.shareOfVoice ?? null),
     },
-    entityKeys,
-    shareOfVoiceByEntity,
+    shareOfVoiceByEntity: entityKeys.map((key) => {
+      const mentions = currentRows.filter((row) => present(row).includes(key)).length;
+      return {
+        key,
+        label: key === 'brand' ? project.brandName : (names.get(key) ?? 'Unknown competitor'),
+        mentions,
+        share: totalMentions === 0 ? null : mentions / totalMentions,
+      };
+    }),
     series,
     prompts: projectPrompts.map((prompt) => {
-      const row = latestPerPrompt.get(prompt.id);
+      const row = rows.filter((item) => item.promptId === prompt.id).at(-1);
+      const attempt = reservations.filter((item) => item.promptId === prompt.id).at(-1);
       return {
         promptId: prompt.id,
         text: prompt.text,
+        enabled: prompt.enabled,
         classified: row?.contextClassification ?? null,
         brandPosition: row?.brandPosition ?? null,
+        observationId: row?.id ?? null,
         observationDate: row?.observationDate ?? null,
+        insight: row
+          ? observationInsight(row, names)
+          : {
+              status: 'unknown' as const,
+              context: 'unknown' as const,
+              displacedCompetitors: [],
+              explanation: null,
+            },
+        attemptStatus: attempt?.status ?? null,
       };
     }),
+    citationOpportunities: citationOpportunities(
+      rows.map((row) => ({
+        ...row,
+        promptText: promptNames.get(row.promptId) ?? 'Deleted prompt',
+      })),
+      names,
+    ),
     scanRuns: runs.map((run) => ({
       id: run.id,
       triggerType: run.triggerType,
@@ -222,23 +190,23 @@ export async function buildDashboard(
       failedCount: run.failedCount,
       attemptedCount: run.attemptedCount,
     })),
-    lastSuccessfulAt: lastSuccess?.createdAt ? new Date(lastSuccess.createdAt).toISOString() : null,
-    provider: providerRow
+    lastSuccessfulAt: lastSuccess?.createdAt.toISOString() ?? null,
+    provider: lastSuccess
       ? {
-          name: providerRow.provider,
-          model: providerRow.providerModel,
-          preset: providerRow.providerPreset,
+          name: lastSuccess.provider,
+          model: lastSuccess.providerModel,
+          preset: lastSuccess.providerPreset,
         }
       : null,
   };
 }
 
 export async function getEntitlementSnapshot(
-  binding: D1Database,
+  env: CloudflareBindings,
   userId: string,
   now = new Date(),
 ) {
-  const db = drizzle(binding);
+  const db = drizzle(env.DB);
   const subscription = await db
     .select()
     .from(subscriptions)
@@ -251,6 +219,67 @@ export async function getEntitlementSnapshot(
     .where(eq(projects.userId, userId))
     .get();
 
+  const project = await db.select().from(projects).where(eq(projects.userId, userId)).get();
+  const entitlement = getEntitlement(
+    subscription ? { status: subscription.status, endsAt: subscription.endsAt } : null,
+    now,
+  );
+  const date = utcDate(now);
+  const [monthStart, monthEnd] = monthBounds(now);
+  const counts = await env.DB.prepare(
+    `SELECT
+    (SELECT count(*) FROM provider_call_reservations WHERE provider = 'perplexity' AND usage_date = ?) AS globalCount,
+    (SELECT count(*) FROM provider_call_reservations WHERE user_id = ? AND usage_date >= ? AND usage_date < ?) AS userCount,
+    (SELECT count(*) FROM provider_call_reservations WHERE project_id = ? AND usage_date = ?) AS projectCount`,
+  )
+    .bind(date, userId, monthStart, monthEnd, project?.id ?? '', date)
+    .first<{ globalCount: number; userCount: number; projectCount: number }>();
+  const eligible = project
+    ? await env.DB.prepare(
+        `SELECT id FROM prompts WHERE project_id = ? AND enabled = 1
+    AND NOT EXISTS (SELECT 1 FROM provider_call_reservations r WHERE r.idempotency_key = 'perplexity:' || prompts.project_id || ':' || prompts.id || ':' || ?)
+    ORDER BY created_at, id`,
+      )
+        .bind(project.id, date)
+        .all<{ id: string }>()
+    : { results: [] };
+  const budget = Boolean(
+    counts &&
+    counts.globalCount < Number(env.GLOBAL_DAILY_PROVIDER_CALL_CAP) &&
+    counts.userCount < Number(env.PER_USER_MONTHLY_PROVIDER_CALL_CAP) &&
+    counts.projectCount < 10,
+  );
+  const eligiblePromptIds = eligible.results.map((item) => item.id);
+  const trialAvailable = Boolean(
+    project &&
+    !entitlement.canScan &&
+    !project.trialScanReservedAt &&
+    budget &&
+    eligiblePromptIds.length,
+  );
+  const manualAvailable = Boolean(
+    project &&
+    entitlement.canScan &&
+    project.manualScanLastUsedOn !== date &&
+    budget &&
+    eligiblePromptIds.length,
+  );
+  const scanAvailability: ScanAvailability = {
+    trialAvailable,
+    manualAvailable,
+    eligiblePromptIds,
+    reason: !project
+      ? 'Complete project setup to scan.'
+      : !budget
+        ? 'Usage limit reached. Scanning resumes when the allowance resets.'
+        : !entitlement.canScan && project.trialScanReservedAt
+          ? 'Your trial has been consumed. Upgrade for daily monitoring; contact support if it returned no results.'
+          : project.manualScanLastUsedOn === date && entitlement.canScan
+            ? 'Your manual scan has been used today. Daily monitoring continues automatically.'
+            : eligiblePromptIds.length === 0
+              ? 'No enabled prompts remain available today. Reserved calls are not replayed.'
+              : null,
+  };
   return {
     subscription: subscription
       ? {
@@ -268,16 +297,6 @@ export async function getEntitlementSnapshot(
       now,
     ),
     totalObservations: countRow?.count ?? 0,
+    scanAvailability,
   };
-}
-
-function parseKeys(json: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(json);
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === 'string')
-      : [];
-  } catch {
-    return [];
-  }
 }

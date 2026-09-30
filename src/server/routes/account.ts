@@ -1,10 +1,8 @@
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/d1';
 import { Hono } from 'hono';
-import { subscriptions, users } from '../../db/schema';
-import { getEntitlement } from '../../domain/entitlements';
+import { z } from 'zod';
 import { createAuth } from '../auth';
-import { requireSession } from '../http';
+import { readJson, requireSession } from '../http';
+import { deleteAccountData } from '../account-deletion';
 
 export const accountRoutes = new Hono<{ Bindings: CloudflareBindings }>();
 accountRoutes.delete('/', async (c) => {
@@ -12,8 +10,8 @@ accountRoutes.delete('/', async (c) => {
   const session = await requireSession(c, auth);
   if (!session)
     return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
-  const updatedAt = new Date(session.session.updatedAt).getTime();
-  if (Date.now() - updatedAt > 15 * 60 * 1000)
+  const signedInAt = new Date(session.session.createdAt).getTime();
+  if (Date.now() - signedInAt > 15 * 60 * 1000)
     return c.json(
       {
         error: {
@@ -23,28 +21,51 @@ accountRoutes.delete('/', async (c) => {
       },
       403,
     );
-  const db = drizzle(c.env.DB);
-  const subscription = await db
-    .select()
-    .from(subscriptions)
-    .where(eq(subscriptions.userId, session.user.id))
-    .get();
-  if (
-    getEntitlement(
-      subscription ? { status: subscription.status, endsAt: subscription.endsAt } : null,
-      new Date(),
-    ).canScan
-  )
+  const confirmation = z
+    .object({ confirmation: z.literal('DELETE'), forfeitRemainingAccess: z.literal(true) })
+    .safeParse(await readJson(c.req.raw));
+  if (!confirmation.success)
     return c.json(
       {
         error: {
-          code: 'ACTIVE_SUBSCRIPTION',
-          message:
-            'Cancel the active subscription in the billing portal before deleting your account.',
+          code: 'CONFIRMATION_REQUIRED',
+          message: 'Confirm permanent data removal and forfeiture of remaining access.',
         },
       },
-      409,
+      422,
     );
-  await db.delete(users).where(eq(users.id, session.user.id));
-  return c.json({ data: { deleted: true } });
+  try {
+    const deleted = await deleteAccountData(c.env, session.user.id);
+    if (!deleted)
+      return c.json(
+        {
+          error: {
+            code: 'ACCOUNT_CHANGED',
+            message: 'Your billing state changed. Review it and try again.',
+          },
+        },
+        409,
+      );
+    return c.json({ data: { deleted: true } });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'ACTIVE_SUBSCRIPTION')
+      return c.json(
+        {
+          error: {
+            code: 'ACTIVE_SUBSCRIPTION',
+            message: 'Cancel renewal in the billing portal before deleting your account.',
+          },
+        },
+        409,
+      );
+    return c.json(
+      {
+        error: {
+          code: 'BILLING_VERIFICATION_FAILED',
+          message: 'Could not verify cancellation. Your account was not deleted. Try again.',
+        },
+      },
+      503,
+    );
+  }
 });

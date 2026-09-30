@@ -23,5 +23,10 @@ export async function readJson(request: Request, maxBytes = 16_384): Promise<unk
   const raw = await request.text();
   if (new TextEncoder().encode(raw).byteLength > maxBytes) throw new BodyTooLargeError();
 
-  return JSON.parse(raw) as unknown;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    // Let each route's input schema report a validation error for malformed or empty JSON.
+    return undefined;
+  }
 }

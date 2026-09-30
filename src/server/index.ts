@@ -104,6 +104,7 @@ app.get('/api/public-config', (c) =>
   c.json({
     data: {
       turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
+      googleOAuthAvailable: Boolean(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET),
       integrationsEnabled: getConfig(c.env).EXTERNAL_INTEGRATIONS_ENABLED === 'true',
     },
   }),

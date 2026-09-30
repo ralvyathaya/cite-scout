@@ -1,4 +1,4 @@
-﻿import { and, eq } from 'drizzle-orm';
+﻿import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -126,13 +126,4 @@ projectRoutes.post('/', async (c) => {
     ].map(({ sql, params }) => c.env.DB.prepare(sql).bind(...params)),
   );
   return c.json({ data: { id: projectId, promptIds: promptRows.map((row) => row.id) } }, 201);
-});
-projectRoutes.delete('/', async (c) => {
-  const auth = createAuth(c.env);
-  const session = await requireSession(c, auth);
-  if (!session)
-    return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
-  const db = drizzle(c.env.DB);
-  await db.delete(projects).where(and(eq(projects.userId, session.user.id)));
-  return c.json({ data: { deleted: true } });
 });

@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { Hono } from 'hono';
-import { billingWebhookReceipts, subscriptions, users } from '../../db/schema';
+import { billingWebhookReceipts, subscriptions } from '../../db/schema';
 import { getEntitlement } from '../../domain/entitlements';
 import { safeRedirect } from '../../domain/redirects';
 import { LemonSqueezyClient } from '../../integrations/lemonsqueezy/client';
@@ -12,6 +12,7 @@ import {
 } from '../../integrations/lemonsqueezy/webhook';
 import { createAuth } from '../auth';
 import { getConfig } from '../config';
+import { billingConfigured, subscriptionEnded, syncSubscription } from '../billing-sync';
 import { requireSession } from '../http';
 
 export const billingRoutes = new Hono<{ Bindings: CloudflareBindings }>();
@@ -29,6 +30,12 @@ billingRoutes.get('/status', async (c) => {
   return c.json({
     data: {
       subscription: subscription ?? null,
+      checkoutAvailable:
+        billingConfigured(c.env) && (!subscription || subscriptionEnded(subscription)),
+      portalAvailable: billingConfigured(c.env) && Boolean(subscription),
+      availabilityMessage: billingConfigured(c.env)
+        ? null
+        : 'Billing is not available yet. Contact support@cite-scout.com for help.',
       entitlement: getEntitlement(
         subscription ? { status: subscription.status, endsAt: subscription.endsAt } : null,
         new Date(),
@@ -42,12 +49,12 @@ billingRoutes.post('/checkout', async (c) => {
   const session = await requireSession(c, createAuth(c.env));
   if (!session)
     return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
-  if (config.EXTERNAL_INTEGRATIONS_ENABLED !== 'true')
+  if (!billingConfigured(c.env))
     return c.json(
       {
         error: {
           code: 'INTEGRATION_DISABLED',
-          message: 'Checkout is unavailable in local development.',
+          message: 'Checkout is not configured yet. Contact support@cite-scout.com for help.',
         },
       },
       503,
@@ -58,15 +65,12 @@ billingRoutes.post('/checkout', async (c) => {
     .from(subscriptions)
     .where(eq(subscriptions.userId, session.user.id))
     .get();
-  if (
-    getEntitlement(current ? { status: current.status, endsAt: current.endsAt } : null, new Date())
-      .canScan
-  )
+  if (current && !subscriptionEnded(current))
     return c.json(
       {
         error: {
           code: 'ALREADY_SUBSCRIBED',
-          message: 'Your subscription already includes monitoring.',
+          message: 'Manage your existing subscription in the billing portal.',
         },
       },
       409,
@@ -77,6 +81,7 @@ billingRoutes.post('/checkout', async (c) => {
     variantId: c.env.LEMON_SQUEEZY_VARIANT_ID,
     email: session.user.email,
     userId: session.user.id,
+    testMode: config.LEMON_SQUEEZY_TEST_MODE === 'true',
     redirectUrl: safeRedirect('/app/billing?checkout=complete', c.env.APP_URL),
   });
   return c.json({ data: { url } });
@@ -87,6 +92,11 @@ billingRoutes.post('/portal', async (c) => {
   const session = await requireSession(c, createAuth(c.env));
   if (!session)
     return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
+  if (!billingConfigured(c.env))
+    return c.json(
+      { error: { code: 'BILLING_UNAVAILABLE', message: 'Billing is not available yet.' } },
+      503,
+    );
   const db = drizzle(c.env.DB);
   const owned = await db
     .select()
@@ -135,17 +145,25 @@ export async function handleLemonWebhook(
       { error: { code: 'INVALID_SIGNATURE', message: 'Invalid webhook signature.' } },
       { status: 401 },
     );
-  const parsed = lemonWebhookSchema.safeParse(JSON.parse(new TextDecoder().decode(raw)));
+  let payload: unknown;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(raw)) as unknown;
+  } catch {
+    return Response.json(
+      { error: { code: 'INVALID_PAYLOAD', message: 'Invalid webhook payload.' } },
+      { status: 422 },
+    );
+  }
+  const parsed = lemonWebhookSchema.safeParse(payload);
   if (!parsed.success)
     return Response.json(
       { error: { code: 'INVALID_PAYLOAD', message: 'Invalid webhook payload.' } },
       { status: 422 },
     );
   const event = parsed.data;
-  const expectedTest = config.LEMON_SQUEEZY_TEST_MODE === 'true';
   if (
     String(event.data.attributes.store_id) !== env.LEMON_SQUEEZY_STORE_ID ||
-    event.data.attributes.test_mode !== expectedTest
+    event.data.attributes.test_mode !== (config.LEMON_SQUEEZY_TEST_MODE === 'true')
   )
     return Response.json(
       {
@@ -156,120 +174,55 @@ export async function handleLemonWebhook(
       },
       { status: 422 },
     );
-  const isSubscription = event.data.type === 'subscriptions';
+  const payment = event.meta.event_name.startsWith('subscription_payment_');
   if (
-    isSubscription &&
-    (String(event.data.attributes.product_id) !== env.LEMON_SQUEEZY_PRODUCT_ID ||
-      String(event.data.attributes.variant_id) !== env.LEMON_SQUEEZY_VARIANT_ID)
+    payment
+      ? event.data.type !== 'subscription-invoices' || !event.data.attributes.subscription_id
+      : event.data.type !== 'subscriptions'
   )
     return Response.json(
       {
-        error: { code: 'BILLING_PRODUCT_MISMATCH', message: 'Webhook product is not configured.' },
+        error: { code: 'INVALID_PAYLOAD', message: 'Webhook resource does not match event type.' },
       },
       { status: 422 },
     );
+  const id = payment ? String(event.data.attributes.subscription_id) : event.data.id;
   const fingerprint = await sha256(raw);
-  const db = drizzle(env.DB);
-  const now = new Date();
-  const claim = await db
-    .insert(billingWebhookReceipts)
-    .values({
-      fingerprint,
-      eventName: event.meta.event_name,
-      resourceType: event.data.type,
-      resourceId: event.data.id,
-      receivedAt: now,
-    })
-    .onConflictDoNothing()
-    .returning({ fingerprint: billingWebhookReceipts.fingerprint });
-  if (claim.length === 0) {
-    const receipt = await db
-      .select({ processedAt: billingWebhookReceipts.processedAt })
-      .from(billingWebhookReceipts)
-      .where(eq(billingWebhookReceipts.fingerprint, fingerprint))
-      .get();
-    if (receipt?.processedAt) return Response.json({ data: { duplicate: true } });
-    // Continue an earlier verified delivery that claimed the fingerprint but did not complete.
-  }
-  if (isSubscription) {
-    const attributes = event.data.attributes;
-    const full = zSubscription(attributes);
-    const owner = await db
-      .select()
-      .from(subscriptions)
-      .where(eq(subscriptions.lemonSqueezySubscriptionId, event.data.id))
-      .get();
-    if (!owner) {
-      const userId = event.meta.custom_data?.user_id;
-      if (!userId)
-        return Response.json(
-          { error: { code: 'MISSING_OWNER', message: 'Subscription owner is missing.' } },
-          { status: 422 },
-        );
-      const user = await db.select({ id: users.id }).from(users).where(eq(users.id, userId)).get();
-      if (!user)
-        return Response.json(
-          { error: { code: 'UNKNOWN_OWNER', message: 'Subscription owner does not exist.' } },
-          { status: 422 },
-        );
-      await db.insert(subscriptions).values({
-        id: crypto.randomUUID(),
-        userId,
-        lemonSqueezySubscriptionId: event.data.id,
-        ...full,
-        createdAt: now,
-        updatedAt: now,
+  const receipt = await drizzle(env.DB)
+    .select()
+    .from(billingWebhookReceipts)
+    .where(eq(billingWebhookReceipts.fingerprint, fingerprint))
+    .get();
+  if (receipt?.processedAt) return Response.json({ data: { duplicate: true } });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const result = await syncSubscription(env, id, event.meta.custom_data?.user_id, {
+        fingerprint,
+        eventName: event.meta.event_name,
       });
-    } else {
-      await db
-        .update(subscriptions)
-        .set({ ...full, updatedAt: now })
-        .where(eq(subscriptions.id, owner.id));
+      return Response.json({ data: { processed: true, ...result } });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : 'BILLING_SYNC_FAILED';
+      if (code === 'BILLING_SYNC_CONFLICT' && attempt === 0) continue;
+      const rejected = [
+        'BILLING_CONFIGURATION_MISMATCH',
+        'BILLING_ID_MISMATCH',
+        'BILLING_OWNER_MISMATCH',
+        'MISSING_OWNER',
+        'SUBSCRIPTION_REPLACEMENT_REFUSED',
+      ].includes(code);
+      return Response.json(
+        {
+          error: {
+            code: rejected ? code : 'BILLING_SYNC_FAILED',
+            message: rejected
+              ? 'Subscription verification was rejected.'
+              : 'Subscription verification is temporarily unavailable.',
+          },
+        },
+        { status: rejected ? 422 : 503 },
+      );
     }
   }
-  await db
-    .update(billingWebhookReceipts)
-    .set({ processedAt: new Date() })
-    .where(eq(billingWebhookReceipts.fingerprint, fingerprint));
-  return Response.json({ data: { processed: true } });
+  return Response.json({ error: { code: 'BILLING_SYNC_FAILED' } }, { status: 503 });
 }
-
-function zSubscription(attributes: Record<string, unknown>) {
-  const schema = z.object({
-    customer_id: z.number(),
-    order_id: z.number().nullable(),
-    store_id: z.number(),
-    product_id: z.number(),
-    variant_id: z.number(),
-    status: z.enum(['on_trial', 'active', 'paused', 'past_due', 'unpaid', 'cancelled', 'expired']),
-    cancelled: z.boolean(),
-    renews_at: z.string().nullable(),
-    ends_at: z.string().nullable(),
-    trial_ends_at: z.string().nullable(),
-    payment_processor: z.string().nullable(),
-    card_brand: z.string().nullable(),
-    card_last_four: z.string().nullable(),
-    test_mode: z.boolean(),
-    updated_at: z.string(),
-  });
-  const value = schema.parse(attributes);
-  return {
-    lemonSqueezyCustomerId: String(value.customer_id),
-    lemonSqueezyOrderId: value.order_id ? String(value.order_id) : null,
-    lemonSqueezyStoreId: String(value.store_id),
-    lemonSqueezyProductId: String(value.product_id),
-    lemonSqueezyVariantId: String(value.variant_id),
-    status: value.status,
-    cancelled: value.cancelled,
-    renewsAt: value.renews_at ? new Date(value.renews_at) : null,
-    endsAt: value.ends_at ? new Date(value.ends_at) : null,
-    trialEndsAt: value.trial_ends_at ? new Date(value.trial_ends_at) : null,
-    paymentProcessor: value.payment_processor,
-    cardBrand: value.card_brand,
-    cardLastFour: value.card_last_four,
-    testMode: value.test_mode,
-    providerUpdatedAt: new Date(value.updated_at),
-  };
-}
-
-import { z } from 'zod';

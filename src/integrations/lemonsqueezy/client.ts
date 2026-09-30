@@ -15,7 +15,8 @@ const subscriptionAttributesSchema = z.object({
   card_brand: z.string().nullable(),
   card_last_four: z.string().nullable(),
   test_mode: z.boolean(),
-  updated_at: z.string(),
+  created_at: z.iso.datetime(),
+  updated_at: z.iso.datetime(),
   urls: z.object({ customer_portal: z.url() }),
 });
 const subscriptionDocumentSchema = z.object({
@@ -56,6 +57,7 @@ export class LemonSqueezyClient {
     email: string;
     userId: string;
     redirectUrl: string;
+    testMode: boolean;
   }): Promise<string> {
     const response = await this.request('/checkouts', {
       method: 'POST',
@@ -68,7 +70,7 @@ export class LemonSqueezyClient {
               enabled_variants: [Number(input.variantId)],
             },
             checkout_data: { email: input.email, custom: { user_id: input.userId } },
-            test_mode: false,
+            test_mode: input.testMode,
           },
           relationships: {
             store: { data: { type: 'stores', id: input.storeId } },

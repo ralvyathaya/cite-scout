@@ -36,6 +36,32 @@ function firstMatch(text: string, entity: TrackedEntity): { index: number; term:
   return first;
 }
 
+/** Conservative context for one historical matched term, without borrowing another brand's praise. */
+export function classifyMentionContext(
+  answer: string,
+  brandTerm: string,
+  otherTerms: readonly string[] = [],
+): ContextClassification {
+  const matches = (clause: string, term: string) =>
+    firstMatch(normalizeText(clause), { key: 'term', name: term }) !== null;
+  // ponytail: deterministic clause heuristic; expand against labeled examples, never infer rankings.
+  // Keep dots inside domains; split sentences and contrastive clauses before normalization.
+  const clause = answer
+    .split(/(?<=[.!?])\s+|[;\n]|,?\s+(?:while|whereas|but)\s+/iu)
+    .find((part) => matches(part, brandTerm));
+  if (!clause || otherTerms.some((term) => matches(clause, term))) return 'mentioned';
+  const text = normalizeText(clause);
+  if (
+    /\b(?:not|never|isnt|isn t|dont|don t|cannot|can t|avoid(?:ing)?|against|poor|weak|drawback|problem)\b/u.test(
+      text,
+    )
+  )
+    return 'negative';
+  return /\b(?:recommend|recommended|best|strong choice|top pick|ideal|excellent)\b/u.test(text)
+    ? 'recommended'
+    : 'mentioned';
+}
+
 export function analyzeMentions(
   answer: string,
   brand: TrackedEntity,
@@ -63,14 +89,11 @@ export function analyzeMentions(
     : null;
   let classification: ContextClassification = brandMatch ? 'mentioned' : 'absent';
   if (brandMatch) {
-    const around = text.slice(
-      Math.max(0, brandMatch.index - 70),
-      brandMatch.index + normalizeText(brandMatch.term).length + 90,
+    classification = classifyMentionContext(
+      answer,
+      brandMatch.term,
+      found.filter((item) => item.entity.key !== brand.key).map((item) => item.term),
     );
-    if (/\b(avoid|poor|weak|not recommended|drawback|problem)\b/u.test(around))
-      classification = 'negative';
-    else if (/\b(recommend|best|strong choice|top pick|ideal|excellent)\b/u.test(around))
-      classification = 'recommended';
   }
   return {
     brandMentioned: Boolean(brandMatch),

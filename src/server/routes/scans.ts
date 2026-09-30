@@ -35,9 +35,24 @@ for (const [path, trigger] of [
       );
     } catch (error) {
       const code = error instanceof Error ? error.message : 'SCAN_FAILED';
+      const messages: Record<string, string> = {
+        PROJECT_NOT_FOUND: 'Project not found.',
+        INVALID_PROMPTS: 'Select unique, enabled prompts from your project.',
+        TRIAL_INVALID: 'The free trial supports up to three prompts on an unpaid account.',
+        TRIAL_ALREADY_USED: 'Your free trial has already been consumed.',
+        MANUAL_SCAN_ALREADY_USED: 'Your manual scan has already been used today.',
+        PAID_ACCESS_REQUIRED: 'An active subscription is required to scan.',
+      };
       return c.json(
-        { error: { code, message: 'The scan could not be started.' } },
-        code.includes('ALREADY') ? 409 : 403,
+        {
+          error: {
+            code: messages[code] ? code : 'SCAN_FAILED',
+            message:
+              messages[code] ??
+              'The scan could not be started. Refresh to check its status before retrying.',
+          },
+        },
+        code.includes('ALREADY') ? 409 : messages[code] ? 403 : 503,
       );
     }
   });
