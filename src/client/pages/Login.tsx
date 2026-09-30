@@ -22,6 +22,7 @@ export function Login() {
   usePageTitle('Sign in');
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [googleAvailable, setGoogleAvailable] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [turnstileToken, setTurnstileToken] = useState('');
@@ -58,11 +59,16 @@ export function Login() {
       .then(
         (response) =>
           response.json() as Promise<{
-            data: { turnstileSiteKey: string; integrationsEnabled: boolean };
+            data: {
+              turnstileSiteKey: string;
+              integrationsEnabled: boolean;
+              googleOAuthAvailable: boolean;
+            };
           }>,
       )
       .then(({ data }) => {
         if (!active) return;
+        setGoogleAvailable(data.googleOAuthAvailable);
         if (!data.integrationsEnabled) {
           setTurnstileToken('local-development');
           return;
@@ -76,6 +82,12 @@ export function Login() {
               setTurnstileToken('');
             },
           });
+      })
+      .catch(() => {
+        if (active) {
+          setStatus('error');
+          setMessage('Could not load sign-in options. Refresh to try again.');
+        }
       });
     return () => {
       active = false;
@@ -122,28 +134,29 @@ export function Login() {
           <CardTitle className="text-xl font-bold tracking-tight">
             <h1 className="text-xl font-bold tracking-tight">Sign in to CiteScout</h1>
           </CardTitle>
-          <CardDescription>
-            Choose your preferred sign-in method to continue.
-          </CardDescription>
+          <CardDescription>Sign in securely to monitor your brand visibility.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={googleLoading || status === 'sending'}
-            onClick={() => {
-              void handleGoogleSignIn();
-            }}
-            className="flex w-full items-center justify-center gap-2.5 font-medium shadow-xs hover:bg-accent"
-          >
-            <GoogleColorIcon className="size-4 shrink-0" />
-            <span>{googleLoading ? 'Connecting to Google…' : 'Continue with Google'}</span>
-          </Button>
+          {googleAvailable && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={googleLoading || status === 'sending'}
+                onClick={() => {
+                  void handleGoogleSignIn();
+                }}
+                className="flex w-full items-center justify-center gap-2.5 font-medium shadow-none hover:bg-accent"
+              >
+                <GoogleColorIcon className="size-4 shrink-0" />
+                <span>{googleLoading ? 'Connecting to Google…' : 'Continue with Google'}</span>
+              </Button>
 
-          <div className="relative my-0.5 text-center text-xs text-muted-foreground after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">
-            <span className="relative z-10 bg-card px-2">or continue with work email</span>
-          </div>
-
+              <div className="relative my-0.5 text-center text-xs text-muted-foreground after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">
+                <span className="relative z-10 bg-card px-2">or continue with work email</span>
+              </div>
+            </>
+          )}
           <form
             className="flex flex-col gap-4"
             onSubmit={(event) => {
@@ -173,7 +186,10 @@ export function Login() {
               )}
             </div>
 
-            <Button type="submit" disabled={status === 'sending' || googleLoading || !turnstileToken}>
+            <Button
+              type="submit"
+              disabled={status === 'sending' || googleLoading || !turnstileToken}
+            >
               {status === 'sending' ? 'Sending…' : 'Email my secure link'}
             </Button>
 

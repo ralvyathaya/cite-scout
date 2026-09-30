@@ -161,18 +161,29 @@ export function AnthropicIcon(props: IconProps) {
   );
 }
 
-/** Helper to match citation URLs with official brand icons */
-export function getDomainIcon(url: string) {
-  const lower = url.toLowerCase();
-  if (lower.includes('reddit.com')) return RedditIcon;
-  if (lower.includes('wikipedia.org')) return WikipediaIcon;
-  if (lower.includes('youtube.com') || lower.includes('youtu.be')) return YoutubeIcon;
-  if (lower.includes('twitter.com') || lower.includes('x.com')) return XIcon;
-  if (lower.includes('producthunt.com')) return ProductHuntIcon;
-  if (lower.includes('g2.com')) return G2Icon;
-  if (lower.includes('github.com')) return GithubIcon;
-  if (lower.includes('substack.com')) return SubstackIcon;
-  if (lower.includes('notion.so') || lower.includes('notion.site')) return NotionIcon;
-  if (lower.includes('linkedin.com')) return LinkedinIcon;
-  return null;
+/** Match exact source hostnames, never a URL path or lookalike hostname. */
+export function DomainIcon({ url, ...props }: IconProps & { url: string }) {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^www\./u, '');
+  } catch {
+    return null;
+  }
+  const icons = [
+    ['reddit.com', RedditIcon],
+    ['wikipedia.org', WikipediaIcon],
+    ['youtube.com', YoutubeIcon],
+    ['youtu.be', YoutubeIcon],
+    ['twitter.com', XIcon],
+    ['x.com', XIcon],
+    ['producthunt.com', ProductHuntIcon],
+    ['g2.com', G2Icon],
+    ['github.com', GithubIcon],
+    ['substack.com', SubstackIcon],
+    ['notion.so', NotionIcon],
+    ['notion.site', NotionIcon],
+    ['linkedin.com', LinkedinIcon],
+  ] as const;
+  const Icon = icons.find(([domain]) => host === domain || host.endsWith(`.${domain}`))?.[1];
+  return Icon ? <Icon {...props} /> : null;
 }

@@ -1,8 +1,8 @@
-import { ExternalLink, FileText, ListChecks, Plus } from 'lucide-react';
+import { FileText, ListChecks, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router';
-import { getDomainIcon } from '@/client/components/brand-icons';
+import { Link, useSearchParams } from 'react-router';
+import { DomainIcon } from '@/client/components/brand-icons';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,7 +33,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/client/components/ui/table';
-import { StatusBadge } from '@/client/components/status-badge';
+import { ObservationSignal } from '@/client/components/status-badge';
+import { ScanAction } from '@/client/components/scan-action';
+import { returnedSources, type ObservationInsight } from '@/domain/insights';
 import { usePageTitle } from '@/client/use-page-title';
 import { PageState } from './AppShell';
 import { useDashboardContext } from './dashboard-context';
@@ -50,15 +52,17 @@ function usePrompts() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    const response = await fetch('/api/prompts');
-    if (!response.ok) {
+    setError('');
+    try {
+      const response = await fetch('/api/prompts');
+      if (!response.ok) throw new Error('Could not load prompts.');
+      const body = (await response.json()) as { data: PromptRow[] };
+      setRows(body.data);
+    } catch {
       setError('Could not load prompts. Check your connection and try again.');
+    } finally {
       setLoading(false);
-      return;
     }
-    const body = (await response.json()) as { data: PromptRow[] };
-    setRows(body.data);
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -79,7 +83,9 @@ export function PromptsPage() {
   const list = usePrompts();
   const [newText, setNewText] = useState('');
   const [busy, setBusy] = useState(false);
-  const [trialBusy, setTrialBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [pendingIds, setPendingIds] = useState<string[]>([]);
+  const [deleteError, setDeleteError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<PromptRow | null>(null);
 
   const reload = dashboard.reload;
@@ -88,9 +94,6 @@ export function PromptsPage() {
   if (state.status === 'onboarding') {
     return (
       <div className="p-6 lg:p-8">
-        <div id="main" className="sr-only">
-          Tracked prompts
-        </div>
         <div className="mb-6">
           <p className="text-sm text-muted-foreground">
             Buyer-intent prompts · Perplexity monitoring
@@ -128,28 +131,35 @@ export function PromptsPage() {
       .filter((prompt) => prompt.observationDate === data.observationDate)
       .map((prompt) => prompt.promptId),
   );
-  const trialAvailable = data.totalObservations === 0;
 
   async function confirmDelete() {
     if (deleteTarget === null) return;
     const target = deleteTarget;
-    setDeleteTarget(null);
+    setDeleting(true);
+    setDeleteError('');
     try {
       const response = await fetch(`/api/prompts/${target.id}`, { method: 'DELETE' });
       if (!response.ok) {
         const body = (await response.json()) as { error?: { message: string } };
+        setDeleteError(body.error?.message ?? 'Could not delete the prompt.');
         toast.error(body.error?.message ?? 'Could not delete the prompt.');
         return;
       }
+      setDeleteTarget(null);
       toast.success('Prompt deleted.');
+      document.getElementById('new-prompt')?.focus();
       await list.load();
       reload();
     } catch {
+      setDeleteError('Network error while deleting the prompt.');
       toast.error('Network error while deleting the prompt.');
+    } finally {
+      setDeleting(false);
     }
   }
 
   async function togglePrompt(row: PromptRow) {
+    setPendingIds((ids) => [...ids, row.id]);
     try {
       const response = await fetch(`/api/prompts/${row.id}`, {
         method: 'PATCH',
@@ -162,72 +172,28 @@ export function PromptsPage() {
         return;
       }
       await list.load();
+      reload();
+      toast.success(row.enabled ? 'Prompt disabled.' : 'Prompt enabled.');
     } catch {
       toast.error('Network error while updating the prompt.');
+    } finally {
+      setPendingIds((ids) => ids.filter((id) => id !== row.id));
     }
   }
 
   return (
     <div className="p-6 lg:p-8">
-      <div id="main" className="sr-only">
-        Monitored prompts
-      </div>
       <div className="mb-6">
         <p className="text-sm text-muted-foreground">
-          {String(data.prompts.length)}/10 enabled ·{' '}
+          {String(list.rows.filter((row) => row.enabled).length)}/10 enabled ·{' '}
           {data.entitlement.canScan ? 'monitoring active' : 'read-only'}
         </p>
         <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Monitored prompts</h1>
       </div>
 
-      {trialAvailable && (
-        <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border px-4 py-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">One lifetime trial scan is available</p>
-            <p className="text-xs text-muted-foreground">
-              Covers up to three prompts and is consumed once the provider is contacted.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            className="ml-auto"
-            disabled={trialBusy || data.prompts.length === 0}
-            onClick={() => {
-              setTrialBusy(true);
-              void fetch('/api/scans/trial', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  projectId: data.projectId,
-                  promptIds: data.prompts.slice(0, 3).map((prompt) => prompt.promptId),
-                }),
-              })
-                .then(async (response) => {
-                  const body = (await response.json()) as {
-                    data?: { successful: number; failed: number };
-                    error?: { message: string };
-                  };
-                  if (response.ok) {
-                    toast.success(
-                      `Trial scan finished: ${String(body.data?.successful ?? 0)} observed, ${String(body.data?.failed ?? 0)} failed.`,
-                    );
-                    reload();
-                  } else {
-                    toast.error(body.error?.message ?? 'Trial scan failed.');
-                  }
-                })
-                .catch(() => {
-                  toast.error('Network error while running the trial scan.');
-                })
-                .finally(() => {
-                  setTrialBusy(false);
-                });
-            }}
-          >
-            {trialBusy ? 'Running trial scan…' : 'Run one-time trial scan'}
-          </Button>
-        </div>
-      )}
+      <div className="mb-6">
+        <ScanAction data={data} onDone={reload} />
+      </div>
 
       <Card className="mb-6">
         <CardHeader>
@@ -304,7 +270,7 @@ export function PromptsPage() {
             No prompts yet. Add between three and ten buyer-style questions.
           </p>
         ) : (
-          <Table>
+          <Table className="observation-table" aria-label="Tracked prompts">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="pl-5">Prompt</TableHead>
@@ -319,17 +285,40 @@ export function PromptsPage() {
                 return (
                   <TableRow key={row.id}>
                     <TableCell className="max-w-md pl-5">
-                      <span className="line-clamp-1">{row.text}</span>
+                      <span className="block min-w-40 whitespace-normal wrap-anywhere">
+                        {row.text}
+                      </span>
+                      {promptState?.observationId && (
+                        <Link
+                          className="mt-1 block text-xs underline underline-offset-4"
+                          to={`/app/responses?observation=${encodeURIComponent(promptState.observationId)}`}
+                        >
+                          View evidence · {promptState.observationDate}
+                        </Link>
+                      )}
                       {scannedToday.has(row.id) && (
                         <span className="text-xs text-muted-foreground"> · observed today</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <StatusBadge classification={promptState?.classified ?? null} />
+                    <TableCell className="whitespace-normal">
+                      <ObservationSignal
+                        insight={
+                          promptState?.insight ?? {
+                            status: 'unknown',
+                            context: 'unknown',
+                            displacedCompetitors: [],
+                            explanation: null,
+                          }
+                        }
+                        attemptStatus={promptState?.attemptStatus}
+                      />
                     </TableCell>
                     <TableCell className="text-center">
+                      <span className="mr-2 text-xs text-muted-foreground sm:hidden">Enabled</span>
                       <Switch
                         checked={row.enabled}
+                        disabled={pendingIds.includes(row.id)}
+                        aria-busy={pendingIds.includes(row.id)}
                         aria-label={row.enabled ? `Disable ${row.text}` : `Enable ${row.text}`}
                         onCheckedChange={() => {
                           void togglePrompt(row);
@@ -342,6 +331,7 @@ export function PromptsPage() {
                         size="sm"
                         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => {
+                          setDeleteError('');
                           setDeleteTarget(row);
                         }}
                       >
@@ -363,7 +353,7 @@ export function PromptsPage() {
       <AlertDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
+          if (!open && !deleting) setDeleteTarget(null);
         }}
       >
         <AlertDialogContent>
@@ -374,15 +364,23 @@ export function PromptsPage() {
               be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteError && (
+            <p role="alert" className="text-sm text-destructive">
+              {deleteError}
+            </p>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
-              onClick={() => {
+              disabled={deleting}
+              aria-busy={deleting}
+              onClick={(event) => {
+                event.preventDefault();
                 void confirmDelete();
               }}
             >
-              Delete prompt
+              {deleting ? 'Deleting…' : 'Delete prompt'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -392,6 +390,7 @@ export function PromptsPage() {
 }
 
 interface ResponseRow {
+  insight: ObservationInsight;
   id: string;
   promptId: string;
   promptText: string;
@@ -408,37 +407,6 @@ interface ResponseRow {
   citationDataJson: string | null;
   matchedTermsJson: string;
   errorCode: string | null;
-}
-
-interface Citation {
-  id: number;
-  url: string;
-  title: string | null;
-}
-
-function parseCitationData(json: string | null): Citation[] {
-  if (!json) return [];
-  try {
-    const parsed: unknown = JSON.parse(json);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((item) => {
-      if (typeof item !== 'object' || item === null) return [];
-      const record = item as Record<string, unknown>;
-      const rawUrl: unknown = record.url;
-      if (typeof rawUrl !== 'string' || !rawUrl.startsWith('https://')) return [];
-      const rawId: unknown = record.id;
-      const rawTitle: unknown = record.title;
-      return [
-        {
-          id: typeof rawId === 'number' ? rawId : 0,
-          url: rawUrl,
-          title: typeof rawTitle === 'string' ? rawTitle : null,
-        },
-      ];
-    });
-  } catch {
-    return [];
-  }
 }
 
 function parseTerms(json: string): string[] {
@@ -471,6 +439,10 @@ interface ArchiveResponse {
 export function ResponsesPage() {
   const dashboard = useDashboardContext();
   usePageTitle('Responses');
+  const [params] = useSearchParams();
+  const observationId = params.get('observation');
+  const [selected, setSelected] = useState<ResponseRow | null>(null);
+  const [selectionError, setSelectionError] = useState('');
   const [page, setPage] = useState<ArchiveResponse | null>(null);
   const [extra, setExtra] = useState<ResponseRow[]>([]);
   const [open, setOpen] = useState<string | null>(null);
@@ -484,7 +456,7 @@ export function ResponsesPage() {
     setLoadError(false);
     try {
       const response = await fetch(
-        `/api/dashboard/responses?limit=10${before === null ? '' : `&before=${before}`}`,
+        `/api/dashboard/responses?limit=10${before === null ? '' : `&before=${encodeURIComponent(before)}`}`,
       );
       if (!response.ok) {
         setLoadError(true);
@@ -492,8 +464,11 @@ export function ResponsesPage() {
       }
       const body = (await response.json()) as { data: ArchiveResponse };
       setPage(body.data);
-      if (append) setExtra((current) => [...current, ...body.data.items]);
-      else setExtra([]);
+      setExtra((current) =>
+        append
+          ? [...new Map([...current, ...body.data.items].map((item) => [item.id, item])).values()]
+          : body.data.items,
+      );
     } catch {
       setLoadError(true);
     } finally {
@@ -511,12 +486,38 @@ export function ResponsesPage() {
     };
   }, [ready, load]);
 
+  useEffect(() => {
+    if (!ready || !observationId) return;
+    const controller = new AbortController();
+    void fetch(`/api/dashboard/responses/${encodeURIComponent(observationId)}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('That response is unavailable or was deleted.');
+        const body = (await response.json()) as { data: ResponseRow };
+        if (!controller.signal.aborted) {
+          setSelected(body.data);
+          setOpen(body.data.id);
+          setSelectionError('');
+        }
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted)
+          setSelectionError(
+            error instanceof Error ? error.message : 'Could not load the selected answer.',
+          );
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [ready, observationId]);
+  useEffect(() => {
+    if (selected?.id === observationId) document.getElementById(`answer-${selected.id}`)?.focus();
+  }, [selected, observationId]);
+
   if (dashboard.state.status === 'onboarding') {
     return (
       <div className="p-6 lg:p-8">
-        <div id="main" className="sr-only">
-          Response archive
-        </div>
         <div className="mb-6">
           <p className="text-sm text-muted-foreground">Auditable archive · newest first</p>
           <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Response archive</h1>
@@ -528,7 +529,7 @@ export function ResponsesPage() {
             </div>
             <CardTitle className="mt-3 text-lg">No responses archived yet</CardTitle>
             <CardDescription>
-              Raw Perplexity answers, mention positions, and cited URLs will be permanently archived
+              Raw Perplexity answers, first-mention positions, and returned sources will be archived
               here once your initial project setup is complete.
             </CardDescription>
           </CardHeader>
@@ -544,18 +545,28 @@ export function ResponsesPage() {
 
   if (!ready) return <PageState state={dashboard.state} onRetry={dashboard.reload} />;
 
-  const items = extra.length > 0 ? extra : (page?.items ?? []);
+  const items =
+    selected?.id === observationId
+      ? [selected, ...extra.filter((item) => item.id !== selected.id)]
+      : extra;
 
   return (
     <div className="p-6 lg:p-8">
-      <div id="main" className="sr-only">
-        Response archive
-      </div>
       <div className="mb-6">
         <p className="text-sm text-muted-foreground">Auditable archive · newest first</p>
         <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Response archive</h1>
       </div>
 
+      {selectionError && (
+        <p role="alert" className="mb-4 text-sm text-destructive">
+          {selectionError}
+        </p>
+      )}
+      {loadError && items.length > 0 && (
+        <p role="alert" className="mb-4 text-sm text-destructive">
+          Could not load older responses. Your current results are retained; try again.
+        </p>
+      )}
       {loading && items.length === 0 ? (
         <div className="space-y-4">
           {Array.from({ length: 3 }).map((_, index) => (
@@ -586,7 +597,7 @@ export function ResponsesPage() {
           <CardHeader>
             <CardTitle>No stored responses yet</CardTitle>
             <CardDescription>
-              Run the trial scan to collect the first genuine provider answer.
+              Run an available scan from your prompts to collect a genuine provider answer.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -598,11 +609,16 @@ export function ResponsesPage() {
       ) : (
         <div className="space-y-4" aria-label="Stored provider responses">
           {items.map((row) => {
-            const citations = parseCitationData(row.citationDataJson);
+            const citations = returnedSources(row.citationDataJson);
             const terms = parseTerms(row.matchedTermsJson);
             const expanded = open === row.id;
             return (
-              <Card key={row.id} className="gap-0 py-0">
+              <Card
+                key={row.id}
+                id={`answer-${row.id}`}
+                tabIndex={-1}
+                className="gap-0 py-0 focus-visible:outline-2 focus-visible:outline-ring"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium leading-snug">{row.promptText}</p>
@@ -614,11 +630,11 @@ export function ResponsesPage() {
                       {row.outputTokens === null ? '' : ` / ${String(row.outputTokens)} out`}
                     </p>
                   </div>
-                  <StatusBadge classification={row.contextClassification} />
+                  <ObservationSignal insight={row.insight} />
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2 px-5 pb-4 pt-2">
-                  <p className="text-xs text-muted-foreground">
-                    Brand position{' '}
+                  <p className="min-w-0 wrap-anywhere text-xs text-muted-foreground">
+                    First-mention position{' '}
                     {row.brandPosition === null ? '—' : `#${String(row.brandPosition)}`}
                     {row.providerRequestId === null ? '' : ` · request ${row.providerRequestId}`}
                   </p>
@@ -626,18 +642,19 @@ export function ResponsesPage() {
                     variant="ghost"
                     size="sm"
                     aria-expanded={expanded}
+                    className="h-auto max-w-full whitespace-normal text-left"
                     onClick={() => {
                       setOpen(expanded ? null : row.id);
                     }}
                   >
-                    {expanded ? 'Hide raw answer' : 'Inspect raw answer and citations'}
+                    {expanded ? 'Hide raw answer' : 'Inspect raw answer and returned sources'}
                   </Button>
                 </div>
 
                 {expanded && (
                   <div className="border-t px-5 py-4">
                     {row.errorCode === null ? (
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                      <p className="whitespace-pre-wrap wrap-anywhere text-sm leading-relaxed">
                         {highlight(row.rawResponseText ?? '', terms).map((part, index) =>
                           part.marked ? (
                             <mark
@@ -657,27 +674,25 @@ export function ResponsesPage() {
                       </p>
                     )}
                     <h3 className="mt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Citations
+                      Returned sources
                     </h3>
                     {citations.length === 0 ? (
                       <p className="mt-1.5 text-xs text-muted-foreground">
-                        No citations were returned for this answer.
+                        No sources were returned for this answer.
                       </p>
                     ) : (
                       <ul className="mt-2 space-y-2 text-sm">
                         {citations.map((citation) => {
-                          const DomainIcon = getDomainIcon(citation.url);
                           return (
                             <li
                               key={`${String(citation.id)}-${citation.url}`}
                               className="flex items-center gap-2.5 rounded-md border bg-muted/20 px-3 py-2 text-xs sm:text-sm"
                             >
                               <span className="flex size-6 shrink-0 items-center justify-center rounded bg-muted">
-                                {DomainIcon ? (
-                                  <DomainIcon className="size-3.5 text-foreground/70" />
-                                ) : (
-                                  <ExternalLink className="size-3 text-muted-foreground" />
-                                )}
+                                <DomainIcon
+                                  url={citation.url}
+                                  className="size-3.5 text-foreground/70"
+                                />
                               </span>
                               <div className="min-w-0 flex-1">
                                 <a

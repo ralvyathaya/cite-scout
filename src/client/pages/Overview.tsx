@@ -1,6 +1,7 @@
-import { ArrowUpRight, Info, TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowUpRight, Check, Copy, Info, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
+import { toast } from 'sonner';
 import { Badge } from '@/client/components/ui/badge';
 import { Button } from '@/client/components/ui/button';
 import {
@@ -20,51 +21,44 @@ import {
   TableRow,
 } from '@/client/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/client/components/ui/tooltip';
-import { StatusBadge } from '@/client/components/status-badge';
+import { ObservationSignal } from '@/client/components/status-badge';
+import { ScanAction } from '@/client/components/scan-action';
 import { cn } from '@/client/lib/utils';
+import { sourceGuidance } from '@/domain/insights';
 import { usePageTitle } from '@/client/use-page-title';
 import { PageState } from './AppShell';
 import { useDashboardContext } from './dashboard-context';
 import type { DashboardPayload } from './dashboard-view';
 import { fmtDelta, fmtPercent, fmtPosition, fmtScore } from './dashboard-view';
 
-function pluralize(count: number, singular: string, plural = `${singular}s`): string {
-  return `${String(count)} ${count === 1 ? singular : plural}`;
+function pluralize(count: number, singular: string) {
+  return `${String(count)} ${singular}${count === 1 ? '' : 's'}`;
 }
-
-function formatLastSuccess(iso: string): string {
-  const date = new Date(iso);
-  return `${date.toISOString().slice(0, 10)} ${date.toISOString().slice(11, 16)} UTC`;
-}
-
 const metricDefinitions = {
   visibilityScore:
-    '100 × (0.7 × mention rate + 0.3 × average position quality). Rises when more successful answers mention you, and when you appear earlier among tracked products.',
+    '100 × (0.7 × mention rate + 0.3 × average position quality). Based on first appearance among tracked products, not a recommendation ranking.',
   mentionRate:
-    'Successful prompts that mention your brand ÷ successful prompts. Counts a prompt once even if your brand appears several times.',
+    'Successful answers mentioning your brand ÷ successful answers. Each answer counts once.',
   shareOfVoice:
-    'Your mentions ÷ all tracked brand and competitor mentions. Each tracked entity counts at most once per answer.',
+    'Your mentions ÷ all tracked brand and competitor mentions. Each entity counts once per answer.',
   avgPosition:
-    'Where your brand first appears among tracked products in each answer, averaged over answers where you appeared.',
-} as const;
+    'First appearance among tracked products, averaged only over successful answers mentioning your brand.',
+};
 
 function MetricCard({
   label,
   value,
   delta,
-  deltaKind,
   definition,
   footer,
 }: {
   label: string;
   value: string;
-  delta?: string | null;
-  deltaKind?: 'score' | 'percent';
+  delta?: string;
   definition: string;
   footer?: string;
 }) {
-  const improving =
-    delta === undefined || delta === null ? null : !delta.startsWith('-') || delta === '0';
+  const neutral = !delta || delta === 'Not enough data' || /^[-+]?0(?:\.0)?(?: pp)?$/u.test(delta);
   return (
     <Card className="gap-0 py-0">
       <CardContent className="px-4 py-4">
@@ -74,8 +68,8 @@ function MetricCard({
             <TooltipTrigger asChild>
               <button
                 type="button"
-                className="text-muted-foreground/60 hover:text-foreground"
                 aria-label={`What does ${label} mean?`}
+                className="rounded text-muted-foreground hover:text-foreground"
               >
                 <Info className="size-3.5" aria-hidden="true" />
               </button>
@@ -85,28 +79,27 @@ function MetricCard({
             </TooltipContent>
           </Tooltip>
         </div>
-        <p className="mt-1.5 text-2xl font-bold tracking-tight tabular-nums">{value}</p>
-        {delta !== undefined && (
-          <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-            {delta !== null && delta !== 'Not enough data' && (
-              <>
-                {improving ? (
-                  <TrendingUp className="size-3.5 text-emerald-600" aria-hidden="true" />
-                ) : (
-                  <TrendingDown className="size-3.5 text-red-600" aria-hidden="true" />
-                )}
-                <span className={improving ? 'text-emerald-700' : 'text-red-700'}>{delta}</span>
-              </>
-            )}
-            {(delta === null || delta === 'Not enough data') && (
-              <span>{delta ?? 'Not enough data'}</span>
-            )}
-            {deltaKind !== undefined && delta !== null && delta !== 'Not enough data' && (
-              <span>vs yesterday</span>
-            )}
+        <p
+          className={cn(
+            'mt-2 font-semibold tracking-tight tabular-nums',
+            value === 'Not enough data' ? 'text-lg text-muted-foreground' : 'text-3xl',
+          )}
+        >
+          {value}
+        </p>
+        {delta && (
+          <p className="mt-2 flex flex-wrap gap-x-1 text-xs text-muted-foreground">
+            <span
+              className={cn(
+                !neutral && (delta.startsWith('-') ? 'text-red-700' : 'text-emerald-700'),
+              )}
+            >
+              {delta}
+            </span>
+            {delta !== 'Not enough data' && <span>vs previous observed day</span>}
           </p>
         )}
-        {footer !== undefined && <p className="mt-1 text-xs text-muted-foreground">{footer}</p>}
+        {footer && <p className="mt-2 text-xs text-muted-foreground">{footer}</p>}
       </CardContent>
     </Card>
   );
@@ -114,470 +107,517 @@ function MetricCard({
 
 function TrendChart({ series }: { series: DashboardPayload['series'] }) {
   const points = series.filter((point) => point.visibilityScore !== null);
-  if (points.length < 2)
-    return (
-      <div className="flex h-48 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-        <p className="max-w-72 px-6 text-center">
-          <strong className="text-foreground">Not enough data</strong> — a trend needs at least two
-          completed daily observations.
-        </p>
-      </div>
-    );
-
-  const width = 600;
-  const height = 180;
-  const values = points.map((point) => point.visibilityScore ?? 0);
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, 100);
-  const span = max - min || 1;
-  const coords = points.map((point, index) => {
-    const x = (index / (points.length - 1)) * width;
-    const y = height - (((point.visibilityScore ?? 0) - min) / span) * height;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  const last = values.at(-1) ?? 0;
-  const direction = last >= (values[0] ?? 0) ? 'improving' : 'declining';
-
+  const width = 600,
+    height = 180;
+  const coords = series.map((point, index) =>
+    point.visibilityScore === null
+      ? null
+      : {
+          x: (index / Math.max(series.length - 1, 1)) * width,
+          y: height - (point.visibilityScore / 100) * height,
+        },
+  );
+  const path = coords
+    .map((point, index) =>
+      point === null
+        ? ''
+        : `${index === 0 || coords[index - 1] === null ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`,
+    )
+    .join(' ');
   return (
     <div>
-      <svg
-        viewBox={`0 0 ${String(width)} ${String(height)}`}
-        className="h-48 w-full"
-        role="img"
-        aria-label={`Visibility score is ${direction}, from ${(values[0] ?? 0).toFixed(1)} to ${last.toFixed(1)} across ${pluralize(points.length, 'observed day')}.`}
-      >
-        {[0.25, 0.5, 0.75].map((fraction) => (
-          <line
-            key={fraction}
-            x1="0"
-            x2={String(width)}
-            y1={String(height * fraction)}
-            y2={String(height * fraction)}
-            stroke="var(--border)"
-            strokeWidth="1"
-            strokeDasharray="3,3"
-          />
-        ))}
-        <polygon
-          points={`0,${String(height)} ${coords.join(' ')} ${String(width)},${String(height)}`}
-          fill="var(--chart-1)"
-          opacity="0.07"
-        />
-        <polyline
-          points={coords.join(' ')}
-          fill="none"
-          stroke="var(--chart-1)"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-        {points.length > 0 && (
-          <circle
-            cx={String(width)}
-            cy={String(height - ((last - min) / span) * height)}
-            r="4"
-            fill="var(--chart-1)"
-          />
-        )}
-      </svg>
-      <div className="mt-1.5 flex justify-between text-xs tabular-nums text-muted-foreground">
-        <span>{points[0]?.date}</span>
-        <span>{points.at(-1)?.date}</span>
-      </div>
-      <table className="sr-only">
-        <caption>Visibility score by observed date</caption>
-        <thead>
-          <tr>
-            <th scope="col">Date</th>
-            <th scope="col">Visibility score</th>
-            <th scope="col">Coverage</th>
-          </tr>
-        </thead>
-        <tbody>
-          {points.map((point) => (
-            <tr key={point.date}>
-              <th scope="row">{point.date}</th>
-              <td>{point.visibilityScore?.toFixed(1) ?? 'n/a'}</td>
-              <td>{fmtPercent(point.coverage)}</td>
-            </tr>
+      {points.length === 0 ? (
+        <div className="flex h-48 items-center justify-center rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+          No successful observations in this period.
+        </div>
+      ) : (
+        <svg
+          viewBox={`-5 -5 ${String(width + 10)} ${String(height + 10)}`}
+          className="h-48 w-full"
+          role="img"
+          aria-label={`Visibility scores over ${String(series.length)} calendar days; ${String(points.length)} days observed. Gaps mean no successful observations.`}
+        >
+          {[0.25, 0.5, 0.75].map((fraction) => (
+            <line
+              key={fraction}
+              x1="0"
+              x2={width}
+              y1={height * fraction}
+              y2={height * fraction}
+              stroke="var(--border)"
+              strokeDasharray="3,3"
+            />
           ))}
-        </tbody>
-      </table>
+          <path
+            d={path}
+            fill="none"
+            stroke="var(--chart-1)"
+            strokeWidth="2.5"
+            vectorEffect="non-scaling-stroke"
+          />
+          {coords.map(
+            (point, index) =>
+              point && (
+                <circle
+                  key={series[index]?.date}
+                  cx={point.x}
+                  cy={point.y}
+                  r="3"
+                  fill="var(--chart-1)"
+                />
+              ),
+          )}
+        </svg>
+      )}
+      <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+        <span>{series[0]?.date}</span>
+        <span>{series.at(-1)?.date}</span>
+      </div>
+      <div className="sr-only">
+        <table>
+          <caption>Visibility score by date</caption>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Score</th>
+              <th scope="col">Coverage</th>
+            </tr>
+          </thead>
+          <tbody>
+            {series.map((point) => (
+              <tr key={point.date}>
+                <th scope="row">{point.date}</th>
+                <td>{point.visibilityScore?.toFixed(1) ?? 'No observation'}</td>
+                <td>
+                  {point.successful}/{point.attempted} attempted
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
 function ShareOfVoice({ entities }: { entities: DashboardPayload['shareOfVoiceByEntity'] }) {
-  if (entities.length === 0)
+  if (entities.every((entity) => entity.share === null))
     return (
-      <p className="py-6 text-center text-sm text-muted-foreground">
-        Share of voice appears once tracked entities are mentioned in stored answers.
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        No tracked entities were mentioned on the metric date.
       </p>
     );
-  const maxShare = Math.max(...entities.map((entity) => entity.share ?? 0), 0.01);
   return (
-    <div className="flex flex-col gap-3.5">
-      {entities.map((entity) => (
-        <div key={entity.key}>
-          <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
-            <span className={cn('truncate', entity.key === 'brand' && 'font-semibold')}>
-              {entity.label}
-            </span>
-            <span className="tabular-nums text-muted-foreground">{fmtPercent(entity.share)}</span>
-          </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${String(Math.min(((entity.share ?? 0) / maxShare) * 100, 100))}%`,
-                background: entity.key === 'brand' ? 'var(--chart-1)' : 'var(--chart-2)',
-              }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function RunScanButton({ data, onDone }: { data: DashboardPayload; onDone: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-
-  const runnable = data.prompts.filter((prompt) => prompt.observationDate !== data.observationDate);
-
-  if (!data.entitlement.canScan)
-    return (
-      <Button asChild>
-        <Link to="/app/billing">Upgrade to keep scanning</Link>
-      </Button>
-    );
-
-  if (data.totalObservations === 0)
-    return (
-      <Button asChild>
-        <Link to="/app/prompts">Run trial scan</Link>
-      </Button>
-    );
-
-  return (
-    <div className="flex flex-col items-end gap-1.5">
-      <Button
-        disabled={busy || runnable.length === 0}
-        onClick={() => {
-          setBusy(true);
-          setMessage('');
-          void fetch('/api/scans/today', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              projectId: data.projectId,
-              promptIds: runnable.map((prompt) => prompt.promptId),
-            }),
-          })
-            .then(async (response) => {
-              const body = (await response.json()) as {
-                data?: { successful: number; failed: number };
-                error?: { message: string };
-              };
-              setMessage(
-                response.ok
-                  ? `Scan finished: ${String(body.data?.successful ?? 0)} observed, ${String(body.data?.failed ?? 0)} failed.`
-                  : (body.error?.message ?? 'Scan failed.'),
-              );
-              if (response.ok) onDone();
-            })
-            .catch(() => {
-              setMessage('Network error while starting the scan.');
-            })
-            .finally(() => {
-              setBusy(false);
-            });
-        }}
-      >
-        {busy
-          ? 'Running…'
-          : runnable.length === 0
-            ? "Today's scan is complete"
-            : "Run today's scan"}
-      </Button>
-      {message && (
-        <p
-          role="status"
-          aria-live="polite"
-          className="max-w-64 text-right text-xs text-muted-foreground"
-        >
-          {message}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function OverviewSkeleton() {
-  return (
-    <div className="space-y-6 p-6 lg:p-8">
-      <Skeleton className="h-8 w-56" />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <Skeleton key={index} className="h-28" />
+    <ul className="space-y-4">
+      {[...entities]
+        .sort((a, b) => (b.share ?? 0) - (a.share ?? 0))
+        .map((entity) => (
+          <li key={entity.key}>
+            <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
+              <span className={cn('truncate', entity.key === 'brand' && 'font-semibold')}>
+                {entity.label}
+              </span>
+              <span className="text-muted-foreground">{fmtPercent(entity.share)}</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+              <div
+                className={cn(
+                  'h-full rounded-full',
+                  entity.key === 'brand' ? 'bg-foreground' : 'bg-zinc-400',
+                )}
+                style={{ width: `${String((entity.share ?? 0) * 100)}%` }}
+              />
+            </div>
+          </li>
         ))}
+    </ul>
+  );
+}
+
+function CopyReportButton({ data }: { data: DashboardPayload }) {
+  const [state, setState] = useState<'idle' | 'copying' | 'copied'>('idle');
+  async function copy() {
+    setState('copying');
+    try {
+      if (!('clipboard' in navigator)) throw new Error('Clipboard is unavailable in this browser.');
+      const lines = [
+        `# ${data.brandName} — CiteScout visibility report`,
+        `Metric date: ${data.latestObservationDate ?? 'No recent observations'} (UTC)`,
+        `Visibility: ${fmtScore(data.current.visibilityScore)} · Mention rate: ${fmtPercent(data.current.mentionRate)}`,
+        `Share of voice: ${fmtPercent(data.current.shareOfVoice)} · First-mention position: ${fmtPosition(data.current.averageMentionPosition)}`,
+        `Coverage: ${String(data.current.successful)}/${String(data.current.attempted)} attempted observations`,
+        '',
+        ...data.prompts.map(
+          (prompt) =>
+            `${prompt.text}: ${prompt.insight.status === 'displaced' ? 'Displaced by Competitor' : prompt.insight.status} (${prompt.observationDate ?? 'not scanned'})${prompt.insight.explanation ? ` — ${prompt.insight.explanation}` : ''}${prompt.insight.context === 'negative' ? ' — Negative brand context' : ''}${prompt.observationId ? `\n${window.location.origin}/app/responses?observation=${encodeURIComponent(prompt.observationId)}` : ''}`,
+        ),
+        '',
+        'First-mention order is not a recommendation ranking. Observations are directional.',
+      ];
+      await navigator.clipboard.writeText(lines.join('\n'));
+      setState('copied');
+      toast.success('Report copied');
+    } catch (error) {
+      setState('idle');
+      toast.error(error instanceof Error ? error.message : 'Could not copy the report.');
+    }
+  }
+  return (
+    <Button
+      variant="outline"
+      disabled={state === 'copying'}
+      aria-busy={state === 'copying'}
+      onClick={() => {
+        void copy();
+      }}
+    >
+      {state === 'copied' ? (
+        <Check className="size-4" aria-hidden="true" />
+      ) : (
+        <Copy className="size-4" aria-hidden="true" />
+      )}
+      {state === 'copying' ? 'Copying…' : state === 'copied' ? 'Copied' : 'Copy report'}
+    </Button>
+  );
+}
+
+function CompetitiveGaps({ data }: { data: DashboardPayload }) {
+  const gaps = data.prompts.filter((prompt) => prompt.insight.status === 'displaced');
+  const observed = data.prompts.filter((prompt) => prompt.insight.status !== 'unknown').length;
+  return (
+    <Card className={cn('gap-3 p-5', gaps.length > 0 && 'border-amber-200 bg-amber-50/40')}>
+      <div className="flex items-start gap-3">
+        <ShieldAlert
+          className={cn(
+            'mt-0.5 size-4 shrink-0',
+            gaps.length ? 'text-amber-700' : 'text-muted-foreground',
+          )}
+          aria-hidden="true"
+        />
+        <div>
+          <h2 className="text-sm font-semibold">Competitive gaps</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {gaps.length > 0
+              ? `Competitors appeared ahead of your brand in ${pluralize(gaps.length, 'prompt')} among ${String(observed)} with stored answers.`
+              : observed > 0
+                ? 'No first-mention displacement in the latest stored answers. This does not establish recommendation leadership.'
+                : 'Collect successful observations to see where competitors appear ahead of your brand.'}
+          </p>
+        </div>
       </div>
-      <Skeleton className="h-72" />
-    </div>
+      {gaps.length > 0 && (
+        <ul className="divide-y divide-amber-200/70">
+          {gaps.map((prompt) => (
+            <li
+              key={prompt.promptId}
+              className="flex flex-wrap items-center justify-between gap-3 py-3 last:pb-0"
+            >
+              <div className="min-w-0 flex-1 basis-48">
+                <p className="text-sm font-medium wrap-anywhere">{prompt.text}</p>
+                <p className="mt-1 text-xs text-amber-900">{prompt.insight.explanation}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{prompt.observationDate} UTC</p>
+              </div>
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  to={`/app/responses?observation=${encodeURIComponent(prompt.observationId ?? '')}`}
+                >
+                  View evidence <ArrowUpRight className="size-3.5" aria-hidden="true" />
+                </Link>
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Positions describe first appearance among tracked brands, not a ranking by Perplexity.
+      </p>
+    </Card>
+  );
+}
+
+function CitationOpportunities({ data }: { data: DashboardPayload }) {
+  return (
+    <Card className="gap-4 p-5">
+      <div>
+        <h2 className="text-base font-semibold">Citation opportunities</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Sources returned with displaced answers · last {data.windowDays} calendar days
+        </p>
+      </div>
+      {data.citationOpportunities.length > 0 ? (
+        <ul className="divide-y">
+          {data.citationOpportunities.map((item) => (
+            <li key={item.domain} className="py-4 first:pt-0 last:pb-0">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <a
+                  href={item.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-sm font-semibold underline-offset-4 hover:underline"
+                >
+                  {item.domain} ↗
+                </a>
+                <span className="text-xs text-muted-foreground">
+                  {pluralize(item.count, 'related answer')}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed">{item.action}</p>
+              <ul className="mt-2 space-y-1">
+                {item.observations.map((observation) => (
+                  <li key={observation.id}>
+                    <Link
+                      className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                      to={`/app/responses?observation=${encodeURIComponent(observation.id)}`}
+                    >
+                      {observation.prompt} · {observation.date} · View evidence
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div>
+          <p className="text-sm text-muted-foreground">
+            No returned-source evidence from displaced answers yet. Gather more observations to
+            identify relevant sources.
+          </p>
+          <details className="mt-4 rounded-md border bg-muted/20 p-3">
+            <summary className="cursor-pointer text-sm font-medium">
+              General guidance · not based on your observations
+            </summary>
+            <ul className="mt-3 space-y-3">
+              {['reddit.com', 'g2.com', 'wikipedia.org', 'techcrunch.com'].map((domain) => (
+                <li key={domain} className="text-xs leading-relaxed">
+                  <strong>{domain}</strong> — {sourceGuidance(domain)}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        These are research opportunities, not proven ranking factors. Returned sources do not
+        establish which source influenced a particular brand recommendation.
+      </p>
+    </Card>
   );
 }
 
 export function AppOverview() {
-  const { state, reload } = useDashboardContext();
   usePageTitle('Overview');
-
-  if (state.status === 'onboarding') {
+  const { state, reload } = useDashboardContext();
+  if (state.status === 'loading') return <OverviewSkeletonExport />;
+  if (state.status === 'onboarding')
     return (
       <div className="p-6 lg:p-8">
-        <div id="main" className="sr-only">
-          Visibility overview
+        <h1 className="text-2xl font-semibold tracking-tight">Set up your brand monitoring</h1>
+        <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+          Add your brand, competitors, and buyer prompts to see who appears in Perplexity answers.
+        </p>
+        <div className="mt-6 grid max-w-4xl gap-4 md:grid-cols-3">
+          {[
+            ['01', 'Brand & domain', 'Define the brand and canonical website to detect.'],
+            ['02', 'Tracked competitors', 'Compare up to three competitors in the same answers.'],
+            ['03', 'Buyer prompts', 'Track the questions customers ask when choosing a tool.'],
+          ].map(([step, title, description]) => (
+            <Card key={step} className="gap-2 p-5">
+              <span className="font-mono text-xs text-muted-foreground">STEP {step}</span>
+              <h2 className="text-base font-semibold">{title}</h2>
+              <p className="text-sm text-muted-foreground">{description}</p>
+            </Card>
+          ))}
         </div>
-        <div className="mb-8">
-          <p className="text-sm text-muted-foreground">Getting started with CiteScout</p>
-          <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Set up your brand monitoring</h1>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            Complete your brand profile to start observing how Perplexity answers evaluate your
-            product against competitors.
-          </p>
-        </div>
-
-        <div className="grid max-w-4xl gap-6 md:grid-cols-3">
-          <Card className="flex flex-col justify-between p-5">
-            <div>
-              <span className="text-xs font-mono font-semibold text-muted-foreground">STEP 01</span>
-              <h3 className="mt-2 text-base font-semibold">Brand & domain</h3>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                Define your brand name and canonical website URL so CiteScout knows what to detect
-                in AI answers.
-              </p>
-            </div>
-          </Card>
-
-          <Card className="flex flex-col justify-between p-5">
-            <div>
-              <span className="text-xs font-mono font-semibold text-muted-foreground">STEP 02</span>
-              <h3 className="mt-2 text-base font-semibold">Tracked competitors</h3>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                Add up to 3 competitors to compare share-of-voice and recommendation positioning
-                side by side.
-              </p>
-            </div>
-          </Card>
-
-          <Card className="flex flex-col justify-between p-5">
-            <div>
-              <span className="text-xs font-mono font-semibold text-muted-foreground">STEP 03</span>
-              <h3 className="mt-2 text-base font-semibold">Buyer prompts</h3>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                Configure the real search prompts your potential buyers ask Perplexity when
-                evaluating tools.
-              </p>
-            </div>
-          </Card>
-        </div>
-
-        <div className="mt-8 flex flex-wrap items-center gap-4">
-          <Button asChild size="lg">
-            <Link to="/app/onboarding">Start project setup (2 min) →</Link>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Button asChild>
+            <Link to="/app/onboarding">Start project setup</Link>
           </Button>
-          <Button asChild variant="outline" size="lg">
-            <Link to="/demo">Explore sample demo dashboard</Link>
+          <Button asChild variant="outline">
+            <Link to="/demo">Explore sample dashboard</Link>
           </Button>
         </div>
       </div>
     );
-  }
-
   if (state.status !== 'ready') return <PageState state={state} onRetry={reload} />;
   const data = state.data;
-
   return (
-    <div className="p-6 lg:p-8">
-      <div id="main" className="sr-only">
-        Visibility overview
-      </div>
+    <div className="p-4 sm:p-6 lg:p-8">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground">
-            {data.brandName} · last {pluralize(data.series.length, 'observed day')}
+            {data.brandName} ·{' '}
+            {data.latestObservationDate
+              ? `Metrics for ${data.latestObservationDate} UTC`
+              : 'No recent observations'}
           </p>
-          <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Visibility overview</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Visibility overview</h1>
         </div>
-        <RunScanButton data={data} onDone={reload} />
+        <div className="flex w-full flex-wrap items-start gap-2 sm:w-auto">
+          <CopyReportButton data={data} />
+          <ScanAction data={data} onDone={reload} />
+        </div>
       </div>
-
       {data.entitlement.warning && (
         <div
-          className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm"
           role="status"
+          className="mb-6 flex flex-wrap gap-2 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
         >
-          <strong className="font-semibold text-amber-900">
-            {data.entitlement.warning === 'payment'
-              ? 'Billing needs attention.'
-              : data.entitlement.warning === 'paused'
-                ? 'Subscription paused.'
-                : 'Subscription ended.'}
-          </strong>
-          <span className="text-amber-800">
-            Historical results stay available, but new provider calls are blocked.
-          </span>
-          <Link
-            to="/app/billing"
-            className="ml-auto font-medium text-amber-900 underline-offset-4 hover:underline"
-          >
-            Open billing →
+          <strong>Billing needs attention.</strong>
+          <span>New scans are paused; historical answers remain available.</span>
+          <Link className="underline underline-offset-4" to="/app/billing">
+            Open billing
           </Link>
         </div>
       )}
-
-      {data.totalObservations === 0 ? (
-        <Card className="mx-auto max-w-md text-center">
-          <CardHeader>
-            <CardTitle>No observations yet</CardTitle>
-            <CardDescription>
-              Your trial scan has not produced stored results. Run the trial scan from the prompts
-              page to collect your first genuine Perplexity observation.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild>
-              <Link to="/app/prompts">Go to prompts</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
-              label="Visibility score"
-              value={fmtScore(data.current.visibilityScore)}
-              delta={fmtDelta(data.delta.visibilityScore, 'score')}
-              deltaKind="score"
-              definition={metricDefinitions.visibilityScore}
-            />
-            <MetricCard
-              label="Mention rate"
-              value={fmtPercent(data.current.mentionRate)}
-              delta={fmtDelta(data.delta.mentionRate, 'percent')}
-              deltaKind="percent"
-              definition={metricDefinitions.mentionRate}
-            />
-            <MetricCard
-              label="Share of voice"
-              value={fmtPercent(data.current.shareOfVoice)}
-              delta={fmtDelta(data.delta.shareOfVoice, 'percent')}
-              deltaKind="percent"
-              definition={metricDefinitions.shareOfVoice}
-            />
-            <MetricCard
-              label="Avg. mention position"
-              value={fmtPosition(data.current.averageMentionPosition)}
-              definition={metricDefinitions.avgPosition}
-              footer={`Coverage ${fmtPercent(data.current.coverage)}`}
-            />
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Card className="lg:col-span-2">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-base">Visibility trend</CardTitle>
-                  {data.provider && (
-                    <Badge variant="secondary" className="font-normal text-muted-foreground">
-                      {data.provider.name} · {data.provider.preset ?? 'default'}
-                    </Badge>
-                  )}
-                </div>
-                <CardDescription>
-                  Daily visibility score across all successful observations.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <TrendChart series={data.series} />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Share of voice</CardTitle>
-                <CardDescription>Brand vs competitors, counted once per answer.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ShareOfVoice entities={data.shareOfVoiceByEntity} />
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card className="gap-0 py-0">
-            <div className="flex items-center justify-between gap-2 border-b px-5 py-3.5">
-              <h2 className="text-base font-semibold">Prompt observations</h2>
-              <p className="text-xs text-muted-foreground">
-                {data.provider
-                  ? `${data.provider.name} · ${data.provider.model ?? 'unknown model'}`
-                  : 'No provider calls yet'}
-                {data.lastSuccessfulAt
-                  ? ` · last success ${formatLastSuccess(data.lastSuccessfulAt)}`
-                  : ''}
-              </p>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="pl-5">Prompt</TableHead>
-                  <TableHead>Brand status</TableHead>
-                  <TableHead className="pr-5 text-right">First mention</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.prompts.map((prompt) => (
-                  <TableRow key={prompt.promptId}>
-                    <TableCell className="max-w-md pl-5">
-                      <span className="line-clamp-1">{prompt.text}</span>
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge classification={prompt.classified} />
-                    </TableCell>
-                    <TableCell className="pr-5 text-right tabular-nums">
-                      {prompt.brandPosition === null ? '—' : `#${String(prompt.brandPosition)}`}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Metrics are directional observations collected over time from the Perplexity Agent API.
-            They are not guaranteed rankings and may differ from the Perplexity consumer
-            application. Interactive charts have tabular equivalents for screen readers.
-          </p>
+      <div className="space-y-6">
+        <CompetitiveGaps data={data} />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            label="Visibility score"
+            value={fmtScore(data.current.visibilityScore)}
+            delta={fmtDelta(data.delta.visibilityScore, 'score')}
+            definition={metricDefinitions.visibilityScore}
+          />
+          <MetricCard
+            label="Mention rate"
+            value={fmtPercent(data.current.mentionRate)}
+            delta={fmtDelta(data.delta.mentionRate, 'percent')}
+            definition={metricDefinitions.mentionRate}
+          />
+          <MetricCard
+            label="Share of voice"
+            value={fmtPercent(data.current.shareOfVoice)}
+            delta={fmtDelta(data.delta.shareOfVoice, 'percent')}
+            definition={metricDefinitions.shareOfVoice}
+          />
+          <MetricCard
+            label="Avg. mention position"
+            value={fmtPosition(data.current.averageMentionPosition)}
+            definition={metricDefinitions.avgPosition}
+            footer={`Coverage ${String(data.current.successful)}/${String(data.current.attempted)} attempted · ${fmtPercent(data.current.coverage)}`}
+          />
         </div>
-      )}
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-base">Visibility trend</CardTitle>
+                {data.provider && (
+                  <Badge variant="secondary">
+                    {data.provider.name} · {data.provider.preset ?? 'default'}
+                  </Badge>
+                )}
+              </div>
+              <CardDescription>
+                Last {data.windowDays} calendar days. Gaps indicate no successful observations.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TrendChart series={data.series} />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Share of voice</CardTitle>
+              <CardDescription>
+                Counted once per answer · {data.latestObservationDate ?? 'no recent observations'}{' '}
+                UTC.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ShareOfVoice entities={data.shareOfVoiceByEntity} />
+            </CardContent>
+          </Card>
+        </div>
+        <Card className="gap-0 py-0">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b px-5 py-4">
+            <h2 className="text-base font-semibold">Prompt observations</h2>
+            <p className="text-xs text-muted-foreground">
+              Latest stored answer per prompt · first-mention order
+            </p>
+          </div>
+          <Table className="observation-table" aria-label="Prompt observations">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-5">Prompt</TableHead>
+                <TableHead>Brand status</TableHead>
+                <TableHead className="pr-5 text-right">First mention</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.prompts.map((prompt) => (
+                <TableRow key={prompt.promptId}>
+                  <TableCell className="max-w-md pl-5">
+                    <span className="block min-w-40 whitespace-normal wrap-anywhere">
+                      {prompt.text}
+                    </span>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {prompt.observationDate
+                        ? `${prompt.observationDate} UTC`
+                        : 'No stored answer'}
+                    </p>
+                    {prompt.observationId && (
+                      <Link
+                        className="mt-2 inline-block text-xs underline underline-offset-4"
+                        to={`/app/responses?observation=${encodeURIComponent(prompt.observationId)}`}
+                      >
+                        View evidence
+                      </Link>
+                    )}
+                  </TableCell>
+                  <TableCell className="whitespace-normal">
+                    <ObservationSignal
+                      insight={prompt.insight}
+                      attemptStatus={prompt.attemptStatus}
+                    />
+                  </TableCell>
+                  <TableCell className="pr-5 text-right">
+                    <span className="text-muted-foreground sm:hidden">First mention: </span>
+                    {prompt.brandPosition === null ? '—' : `#${String(prompt.brandPosition)}`}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {data.prompts.length === 0 && (
+            <p className="p-5 text-sm text-muted-foreground">
+              Add a buyer prompt to begin monitoring.
+            </p>
+          )}
+        </Card>
+        <CitationOpportunities data={data} />
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Directional observations from the Perplexity Agent API may differ from the consumer
+          application. First-mention positions are not guaranteed rankings. The trend includes a
+          tabular equivalent for screen readers.
+        </p>
+      </div>
     </div>
   );
 }
 
 export function OverviewSkeletonExport() {
-  return <OverviewSkeleton />;
+  return (
+    <div className="space-y-6 p-6" role="status" aria-label="Loading overview">
+      <Skeleton className="h-8 w-48" />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[1, 2, 3, 4].map((key) => (
+          <Skeleton key={key} className="h-28" />
+        ))}
+      </div>
+      <Skeleton className="h-64" />
+    </div>
+  );
 }
-
 export function UnknownRoute() {
   usePageTitle('Page not found');
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center px-6 py-24 text-center">
-      <h1 className="text-xl font-semibold tracking-tight">Page not found</h1>
+    <div className="mx-auto max-w-md px-6 py-24 text-center">
+      <h1 className="text-xl font-semibold">Page not found</h1>
       <p className="mt-2 text-sm text-muted-foreground">That application page does not exist.</p>
       <Button asChild className="mt-6">
-        <Link to="/app/overview">
-          Back to overview <ArrowUpRight className="size-4" aria-hidden="true" />
-        </Link>
+        <Link to="/app/overview">Back to overview</Link>
       </Button>
     </div>
   );

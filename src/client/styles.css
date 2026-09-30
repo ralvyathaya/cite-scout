@@ -90,7 +90,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply bg-background text-foreground font-sans antialiased tabular-nums;
     font-feature-settings: 'cv11', 'ss01';
     font-variation-settings: 'opsz' 32;
   }
@@ -134,4 +134,37 @@
 .font-display {
   font-weight: 700;
   letter-spacing: -0.035em;
+}
+
+/* Stack dense evidence rows on phones while keeping every status and action visible. */
+@media (max-width: 639px) {
+  .observation-table,
+  .observation-table tbody {
+    display: block;
+  }
+  .observation-table thead {
+    display: none;
+  }
+  .observation-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+  }
+  .observation-table td {
+    padding: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  .observation-table td:nth-child(-n + 2) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Preserve keyboard focus across links, icon controls and native disclosure widgets. */
+@layer base {
+  :where(a, button, summary):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
 }

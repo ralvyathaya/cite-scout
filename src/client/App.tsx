@@ -17,8 +17,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/client/components/ui
 import {
   G2Icon,
   GithubIcon,
-  GoogleIcon,
-  LinkedinIcon,
   NotionIcon,
   PerplexityIcon,
   ProductHuntIcon,
@@ -187,11 +185,11 @@ const demoPromptRows = [
   {
     prompt: 'Best scheduling tool for independent consultants',
     status: 'recommended',
-    position: 2,
+    position: 1,
   },
-  { prompt: 'Alternatives to Calendly for freelancers', status: 'mentioned', position: 3 },
-  { prompt: 'Simple client booking software', status: 'absent', position: null },
-  { prompt: 'Scheduling tools with client intake forms', status: 'recommended', position: 1 },
+  { prompt: 'Alternatives to Calendly for freelancers', status: 'displaced', position: 2 },
+  { prompt: 'Simple client booking software', status: 'mentioned', position: 1 },
+  { prompt: 'Scheduling tools with client intake forms', status: 'absent', position: null },
 ] as const;
 
 const demoCitations = [
@@ -262,7 +260,7 @@ function DemoSparkline() {
 
 function DemoDashboard({ compact = false }: { compact?: boolean }) {
   return (
-    <Card className="overflow-hidden py-0 shadow-md border-border/80">
+    <Card className="overflow-hidden py-0 shadow-none border-border/80">
       {/* Mock browser header frame */}
       <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2.5">
         <div className="flex items-center gap-2">
@@ -345,14 +343,26 @@ function DemoDashboard({ compact = false }: { compact?: boolean }) {
               <TableRow className="hover:bg-transparent">
                 <TableHead className="pl-4">Prompt</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="pr-4 text-right">Position</TableHead>
+                <TableHead className="pr-4 text-right">First mention</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {demoPromptRows.map((row) => (
                 <TableRow key={row.prompt}>
                   <TableCell className="max-w-xs pl-4 text-sm">
-                    <span className="line-clamp-1">{row.prompt}</span>
+                    <span className="block min-w-36 whitespace-normal">{row.prompt}</span>
+                    <details className="mt-2 text-xs text-muted-foreground">
+                      <summary className="cursor-pointer">View example evidence</summary>
+                      <p className="mt-2 whitespace-normal">
+                        {row.status === 'displaced'
+                          ? 'Calendly appears first. OrbitCal is another option. Calendly appeared before your brand; first-mention order is not a ranking.'
+                          : row.status === 'recommended'
+                            ? 'OrbitCal is a strong choice for independent consultants.'
+                            : row.status === 'mentioned'
+                              ? 'OrbitCal offers client booking software.'
+                              : 'Use a booking form to collect client details. No tracked brands appear in this example.'}
+                      </p>
+                    </details>
                   </TableCell>
                   <TableCell>
                     <StatusBadge classification={row.status} />
@@ -384,7 +394,8 @@ function DemoDashboard({ compact = false }: { compact?: boolean }) {
             ))}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Sources most frequently cited in the AI answers CiteScout observed.
+            Sources most frequently returned with these illustrative AI answers. Research
+            opportunities, not proven ranking factors.
           </p>
         </TabsContent>
       </Tabs>
@@ -403,8 +414,8 @@ function Hero() {
             AI search visibility · Perplexity monitoring
           </Badge>
           <h1 className="font-display text-4xl leading-tight sm:text-5xl lg:text-6xl">
-            When founders ask AI for your category,{' '}
-            <span className="text-muted-foreground">who gets recommended?</span>
+            Know when AI recommends your competitors{' '}
+            <span className="text-muted-foreground">instead of you.</span>
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-base text-muted-foreground lg:text-lg">
             CiteScout tracks how your brand appears in Perplexity answers over time, compares

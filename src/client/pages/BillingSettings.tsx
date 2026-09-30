@@ -30,6 +30,9 @@ import { useDashboardContext } from './dashboard-context';
 import { fmtPercent } from './dashboard-view';
 
 interface BillingStatus {
+  checkoutAvailable: boolean;
+  portalAvailable: boolean;
+  availabilityMessage: string | null;
   subscription: {
     status: string;
     cancelled: boolean;
@@ -130,25 +133,22 @@ function ConfirmingSubscription({ onVerified }: { onVerified: () => void }) {
     void (async () => {
       for (let index = 0; index < 6; index += 1) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
-        if (controller.signal.aborted) return;
-        setAttempts(index + 1);
-
-        let response: Response;
         try {
-          response = await fetch('/api/billing/status', { signal: controller.signal });
-        } catch {
-          return;
-        }
-        if (!response.ok) continue;
-
-        const body = (await response.json()) as { data: BillingStatus };
-        const subscription = body.data.subscription;
-        if (subscription !== null && subscription.status !== 'expired') {
-          if (!settled.current) {
-            settled.current = true;
-            onVerified();
+          controller.signal.throwIfAborted();
+          setAttempts(index + 1);
+          const response = await fetch('/api/billing/status', { signal: controller.signal });
+          if (!response.ok) continue;
+          const body = (await response.json()) as { data: BillingStatus };
+          controller.signal.throwIfAborted();
+          if (body.data.entitlement.canScan) {
+            if (!settled.current) {
+              settled.current = true;
+              onVerified();
+            }
+            return;
           }
-          return;
+        } catch {
+          if (controller.signal.aborted) return;
         }
       }
     })();
@@ -164,7 +164,9 @@ function ConfirmingSubscription({ onVerified }: { onVerified: () => void }) {
       role="status"
       aria-live="polite"
     >
-      <strong className="font-semibold">Confirming your subscription…</strong>
+      <strong className="font-semibold">
+        {attempts >= 6 ? 'Activation is still pending' : 'Confirming your subscription…'}
+      </strong>
       <span className="text-muted-foreground">
         Activation happens only after payment is verified. Checked {pluralize(attempts, 'time')}.
       </span>
@@ -243,9 +245,6 @@ export function BillingPage() {
 
   return (
     <div className="p-6 lg:p-8">
-      <div id="main" className="sr-only">
-        Billing
-      </div>
       <div className="mb-6">
         <p className="text-sm text-muted-foreground">Plan and payment</p>
         <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Billing</h1>
@@ -307,9 +306,10 @@ export function BillingPage() {
           </ul>
 
           <div className="flex flex-wrap items-center gap-3">
-            {hasSubscription ? (
+            {hasSubscription && !load.data.checkoutAvailable ? (
               <Button
-                disabled={busy}
+                disabled={busy || !load.data.portalAvailable}
+                aria-busy={busy}
                 onClick={() => {
                   setBusy(true);
                   void fetch('/api/billing/portal', { method: 'POST' })
@@ -333,7 +333,8 @@ export function BillingPage() {
               </Button>
             ) : (
               <Button
-                disabled={busy}
+                disabled={busy || load.status !== 'ready' || !load.data.checkoutAvailable}
+                aria-busy={busy}
                 onClick={() => {
                   setBusy(true);
                   void fetch('/api/billing/checkout', { method: 'POST' })
@@ -364,6 +365,21 @@ export function BillingPage() {
             </Link>
           </div>
 
+          {load.status === 'ready' && load.data.availabilityMessage && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {load.data.availabilityMessage}
+            </p>
+          )}
+          {load.status === 'error' && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                void refreshStatus();
+              }}
+            >
+              Retry billing status
+            </Button>
+          )}
           <p className="text-xs leading-relaxed text-muted-foreground">
             Checkout and the customer portal are hosted by Lemon Squeezy, the merchant of record.
             CiteScout never stores card data. Returning from checkout does not by itself grant
@@ -396,6 +412,7 @@ export function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [typed, setTyped] = useState('');
+  const [deleteError, setDeleteError] = useState('');
 
   if (dashboard.state.status === 'loading') {
     return (
@@ -414,8 +431,13 @@ export function SettingsPage() {
 
   async function deleteAccount() {
     setBusy(true);
+    setDeleteError('');
     try {
-      const response = await fetch('/api/account', { method: 'DELETE' });
+      const response = await fetch('/api/account', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmation: typed, forfeitRemainingAccess: true }),
+      });
       const body = (await response.json()) as {
         data?: { deleted: boolean };
         error?: { message: string };
@@ -424,21 +446,18 @@ export function SettingsPage() {
         window.location.assign('/');
         return;
       }
+      setDeleteError(body.error?.message ?? 'Account deletion failed.');
       toast.error(body.error?.message ?? 'Account deletion failed.');
     } catch {
+      setDeleteError('Network error while deleting the account.');
       toast.error('Network error while deleting the account.');
     } finally {
       setBusy(false);
-      setConfirming(false);
-      setTyped('');
     }
   }
 
   return (
     <div className="p-6 lg:p-8">
-      <div id="main" className="sr-only">
-        Project settings
-      </div>
       <div className="mb-6">
         <p className="text-sm text-muted-foreground">Workspace</p>
         <h1 className="mt-0.5 text-2xl font-bold tracking-tight">Project settings</h1>
@@ -532,9 +551,10 @@ export function SettingsPage() {
       <AlertDialog
         open={confirming}
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && !busy) {
             setConfirming(false);
             setTyped('');
+            setDeleteError('');
           }
         }}
       >
@@ -545,12 +565,14 @@ export function SettingsPage() {
               <div>
                 This permanently deletes your project, prompts, competitors, scans, and stored
                 answers, then signs you out everywhere. It cannot be undone. If a subscription is
-                active, cancel it in the billing portal first.
+                active, cancel it in the billing portal first. Deleting after cancellation
+                immediately forfeits any remaining paid access.
                 <div className="mt-4 grid gap-2">
                   <Label htmlFor="delete-confirm">Type DELETE to confirm</Label>
                   <Input
                     id="delete-confirm"
                     value={typed}
+                    disabled={busy}
                     autoComplete="off"
                     onChange={(event) => {
                       setTyped(event.target.value);
@@ -560,12 +582,19 @@ export function SettingsPage() {
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteError && (
+            <p role="alert" className="text-sm text-destructive">
+              {deleteError}
+            </p>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90 disabled:opacity-50"
               disabled={busy || typed !== 'DELETE'}
-              onClick={() => {
+              aria-busy={busy}
+              onClick={(event) => {
+                event.preventDefault();
                 void deleteAccount();
               }}
             >

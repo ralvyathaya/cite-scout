@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import { App } from './App';
 import { ErrorBoundary } from './ErrorBoundary';
+import { Toaster } from './components/ui/sonner';
 import './styles.css';
 
 const root = document.getElementById('root');
@@ -16,6 +17,7 @@ createRoot(root).render(
     <ErrorBoundary>
       <BrowserRouter>
         <App />
+        <Toaster />
       </BrowserRouter>
     </ErrorBoundary>
   </StrictMode>,

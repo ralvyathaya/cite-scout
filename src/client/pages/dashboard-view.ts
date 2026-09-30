@@ -1,55 +1,6 @@
 /** Shared client-side view helpers and the authenticated dashboard loader. */
 
-export interface DashboardPayload {
-  projectId: string;
-  brandName: string;
-  canonicalDomain: string;
-  observationDate: string;
-  current: {
-    visibilityScore: number | null;
-    mentionRate: number | null;
-    shareOfVoice: number | null;
-    averageMentionPosition: number | null;
-    coverage: number | null;
-  };
-  delta: {
-    visibilityScore: number | null;
-    mentionRate: number | null;
-    shareOfVoice: number | null;
-  };
-  shareOfVoiceByEntity: { key: string; label: string; share: number | null; mentions: number }[];
-  series: {
-    date: string;
-    visibilityScore: number | null;
-    coverage: number | null;
-    successful: number;
-    attempted: number;
-  }[];
-  prompts: {
-    promptId: string;
-    text: string;
-    classified: string | null;
-    brandPosition: number | null;
-    observationDate: string | null;
-  }[];
-  scanRuns: {
-    id: string;
-    triggerType: string;
-    status: string;
-    observationDate: string;
-    successfulCount: number;
-    failedCount: number;
-    attemptedCount: number;
-  }[];
-  lastSuccessfulAt: string | null;
-  provider: { name: string; model: string | null; preset: string | null } | null;
-  entitlement: {
-    canScan: boolean;
-    hasPaidFeatures: boolean;
-    warning: 'payment' | 'paused' | 'expired' | null;
-  };
-  totalObservations: number;
-}
+export type { DashboardPayload } from '@/shared/dashboard';
 
 export type LoadState<T> =
   | { status: 'loading' }
