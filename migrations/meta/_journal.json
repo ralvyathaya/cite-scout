@@ -8,6 +8,13 @@
       "when": 1789562448991,
       "tag": "0000_careless_selene",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790690448440,
+      "tag": "0001_sticky_the_hand",
+      "breakpoints": true
     }
   ]
 }

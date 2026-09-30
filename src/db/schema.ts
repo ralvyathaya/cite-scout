@@ -177,7 +177,15 @@ export const scanRuns = sqliteTable(
     triggerType: text('trigger_type', { enum: ['trial', 'manual', 'scheduled'] }).notNull(),
     provider: text('provider').notNull(),
     status: text('status', {
-      enum: ['pending', 'running', 'completed', 'partial', 'failed', 'deferred'],
+      enum: [
+        'pending',
+        'running',
+        'completed',
+        'partial',
+        'failed',
+        'deferred',
+        'already_observed',
+      ],
     }).notNull(),
     observationDate: text('observation_date').notNull(),
     startedAt: timestamp('started_at'),
@@ -241,18 +249,10 @@ export const providerCallReservations = sqliteTable(
   {
     id: text('id').primaryKey(),
     idempotencyKey: text('idempotency_key').notNull().unique(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => users.id),
-    projectId: text('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    promptId: text('prompt_id')
-      .notNull()
-      .references(() => prompts.id, { onDelete: 'cascade' }),
-    scanRunId: text('scan_run_id')
-      .notNull()
-      .references(() => scanRuns.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    promptId: text('prompt_id').references(() => prompts.id, { onDelete: 'set null' }),
+    scanRunId: text('scan_run_id').references(() => scanRuns.id, { onDelete: 'set null' }),
     provider: text('provider').notNull(),
     usageDate: text('usage_date').notNull(),
     status: text('status', { enum: ['reserved', 'succeeded', 'failed', 'deferred'] }).notNull(),
