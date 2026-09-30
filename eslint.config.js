@@ -9,6 +9,8 @@ export default tseslint.config(
     ignores: [
       'dist',
       '.wrangler',
+      'test-results',
+      'playwright-report',
       'worker-configuration.d.ts',
       'migrations/meta',
       'eslint.config.js',

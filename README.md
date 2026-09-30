@@ -152,11 +152,11 @@ Use the operator-protected reconciliation endpoint with `Authorization: Bearer $
 - Paid project: maximum 10 prompt observations/UTC day
 - One project, 10 enabled prompts, 3 competitors
 
-Reservations are written before provider calls with unique idempotency keys. Ambiguous interrupted calls are not automatically replayed.
+Reservations and trial/manual gates are claimed in one conditional D1 batch before provider calls. Failed and ambiguous interrupted calls remain consumed and are not automatically replayed. Deleting prompts or accounts does not delete usage reservations. Apply `migrations/0001_sticky_the_hand.sql` before deploying this version; it copies existing rows and changes ownership references to nullable `ON DELETE SET NULL`. It cannot reconstruct usage deleted before this migration and never resets trial eligibility.
 
 ## Mention heuristics
 
-Detection is deterministic and does not make a second LLM call. It uses Unicode-safe normalization, token boundaries, exact brand names, canonical domains, and optional aliases. Recommendation and negative context require conservative nearby terms. Each entity counts at most once per response for share of voice. The UI labels metrics as directional.
+Detection is deterministic and does not make a second LLM call. It uses Unicode-safe normalization, token boundaries, exact brand names, canonical domains, and optional aliases. Recommendation context is restricted to brand-specific clauses; negated and ambiguous multi-brand praise cannot produce Recommended. Displacement means a tracked competitor appeared earlier or appeared while the brand was absent; it is not a recommendation ranking. Each actually mentioned entity counts at most once per successful, nonempty response for share of voice. The UI labels metrics as directional.
 
 ## Tests
 
@@ -177,7 +177,7 @@ uniqueness, multi-tenant authorization guards, and public/mobile/accessibility b
 
 ## Account deletion
 
-Deletion requires recent authentication. An active subscription must be managed or cancelled first. Product data and sessions are deleted; legally or operationally required minimal billing identifiers may be retained. CiteScout never stores card data.
+Deletion requires sign-in within 15 minutes and explicit confirmation of permanent removal and forfeited remaining access. Provider-confirmed cancelled or expired subscriptions can be deleted immediately. Renewable, paused, or payment-problem subscriptions must first be cancelled in the portal. Product data and sessions are removed atomically with the local subscription; anonymous usage accounting and minimal retired billing identifiers remain.
 
 ## Add another AI provider
 

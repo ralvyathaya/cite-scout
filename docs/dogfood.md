@@ -75,6 +75,22 @@ retest → commit.
 
 ## Launch gate (open to public only when ALL green)
 
+### Finalization delivery boundary
+
+The finalization pass provides local code, migration, and automated verification only. It does not deploy a Worker, apply remote migrations, configure live payments, or open the launch gate. Browser fixtures verify authenticated UI behavior with local API responses; they do not prove real login, payment delivery, or Perplexity availability.
+
+Local verification on 2026-09-30: formatting, lint, type checking, production build, 63 unit tests, 63 integration tests, and 86 browser tests passed. Overview screenshots were reviewed at 320px, 390px, and 1440px. Authenticated checks also cover narrow layouts across prompts, responses, billing, and settings; exact-answer navigation, archive pagination, clipboard failures, delayed mutations, scan outcomes, and keyboard focus restoration. The populated migration test verifies copied reservations, retained indexes, and nullable references after account deletion. Build output retains non-blocking Vite configuration/chunk-size warnings.
+
+- [ ] Back up/export D1, then apply `0001_sticky_the_hand.sql` to the intended environment before deploying the matching code. Verify reservation row counts, idempotency keys, indexes, and `foreign_key_check`. The migration copies retained rows; it does not reconstruct already-deleted usage or reopen old trials.
+- [ ] Confirm all local gates below pass on the exact release commit; review Overview at 320px, 390px, and desktop, including the navigation dialog's Tab/Escape/focus return and reduced-motion behavior.
+- [ ] Run the existing real-provider checks below. Exercise trial failure, deferred quotas, manual eligibility, scheduled scans, and returned-source evidence using controlled accounts.
+- [ ] In Lemon Squeezy test mode, prove signed subscription and invoice payment events, duplicate/stale delivery, portal navigation, cancellation, expiry, and replacement after expiry. Verify redirect alone never enables scans.
+- [ ] Verify cancellation-confirmed account deletion with fresh sign-in and forfeiture confirmation; late webhooks must not recreate entitlement, and anonymous usage accounting must remain.
+- [ ] Configure and verify live store/product/variant, keys, signing secret, and mode separately. Safe capability flags must keep unavailable Google login hidden and unconfigured checkout disabled.
+- [ ] Keep production closed until the existing launch checks are complete. Local tests are not production billing certification.
+
+### Existing real-provider launch checks
+
 - [ ] Dogfood script above passes twice in a row, desktop + mobile
 - [ ] First hourly cron ran clean (dashboard → Triggers → Past Cron Events, no errors)
 - [ ] Lemon Squeezy test-mode end-to-end: checkout → webhook → entitlement → portal
