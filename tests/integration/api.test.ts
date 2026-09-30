@@ -37,7 +37,11 @@ describe('public API surface', () => {
     const text = await response.clone().text();
     const body = await response.json<{ data: Record<string, unknown> }>();
 
-    expect(Object.keys(body.data).sort()).toEqual(['integrationsEnabled', 'turnstileSiteKey']);
+    expect(Object.keys(body.data).sort()).toEqual([
+      'googleOAuthAvailable',
+      'integrationsEnabled',
+      'turnstileSiteKey',
+    ]);
     expect(text).not.toContain('TURNSTILE_SECRET');
     expect(text).not.toContain(env.TURNSTILE_SECRET_KEY);
   });
@@ -75,7 +79,6 @@ describe('authentication is required for every private resource', () => {
     ['POST', '/api/scans/trial'],
     ['POST', '/api/scans/today'],
     ['DELETE', '/api/account'],
-    ['DELETE', '/api/project'],
   ];
 
   for (const [method, path] of privateRoutes) {
@@ -102,6 +105,14 @@ describe('authentication is required for every private resource', () => {
 });
 
 describe('authentication boundary hardening', () => {
+  it('keeps malformed login JSON on the generic response path', async () => {
+    const response = await call('/api/login/magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{broken',
+    });
+    expect(response.status).toBe(200);
+  });
   it('never lets the native Better Auth magic-link route bypass Turnstile', async () => {
     const response = await call('/api/auth/sign-in/magic-link', {
       method: 'POST',

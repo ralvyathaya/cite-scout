@@ -41,6 +41,7 @@ describe('Lemon Squeezy integration', () => {
     const client = new LemonSqueezyClient('key', fetcher);
     await client.createCheckout({
       storeId: '1',
+      testMode: true,
       variantId: '2',
       email: 'a@example.com',
       userId: 'user_1',
@@ -50,12 +51,14 @@ describe('Lemon Squeezy integration', () => {
     const body = JSON.parse(typeof init?.body === 'string' ? init.body : '') as {
       data: {
         attributes: {
+          test_mode: boolean;
           product_options: { enabled_variants: number[] };
           checkout_data: { custom: { user_id: string } };
         };
         relationships: { variant: { data: { id: string } } };
       };
     };
+    expect(body.data.attributes.test_mode).toBe(true);
     expect(body.data.attributes.checkout_data.custom.user_id).toBe('user_1');
     expect(body.data.attributes.product_options.enabled_variants).toEqual([2]);
     expect(body.data.relationships.variant.data.id).toBe('2');

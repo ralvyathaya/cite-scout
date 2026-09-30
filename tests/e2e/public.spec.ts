@@ -4,7 +4,9 @@ test.describe('public visitor', () => {
   test('landing page states the honest product position', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('who gets recommended');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(
+      'Know when AI recommends your competitors',
+    );
     await expect(page.getByText('Perplexity answers over time')).toBeVisible();
     await expect(page.getByText(/nondeterministic/)).toBeVisible();
     await expect(page.getByText(/does not claim to reproduce/i)).toBeVisible();
@@ -17,7 +19,7 @@ test.describe('public visitor', () => {
     const tabs = page.getByRole('tab', { name: 'Citations' });
     await expect(tabs.first()).toBeVisible();
     await tabs.first().click();
-    await expect(page.getByText('Sources most frequently cited')).toBeVisible();
+    await expect(page.getByText('Sources most frequently returned')).toBeVisible();
     await expect(page.getByText('reddit.com').first()).toBeVisible();
 
     await page.getByRole('tab', { name: 'Prompts' }).first().click();
@@ -233,6 +235,8 @@ test.describe('authenticated workspace', () => {
     await page.goto('/app/overview');
     await expect(page.getByText('Session expired')).toBeVisible();
 
+    const menu = page.getByRole('button', { name: 'Open navigation' });
+    if (await menu.isVisible()) await menu.click();
     const sidebar = page.getByRole('complementary');
     await expect(sidebar.getByRole('link', { name: 'Sign in' })).toBeVisible();
     expect(await page.getByRole('button', { name: 'Sign out' }).count()).toBe(0);
