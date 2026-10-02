@@ -433,6 +433,18 @@ for (const width of [320, 390, 1440]) {
       shadow === 'none' ||
         shadow.replaceAll('rgba(0, 0, 0, 0) 0px 0px 0px 0px', '').replaceAll(', ', '') === '',
     ).toBe(true);
+    await page.evaluate(() => {
+      window.scrollTo({ top: 800, behavior: 'instant' });
+    });
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+    const header = page.getByRole('banner', { name: 'Workspace header' });
+    await expect.poll(async () => (await header.boundingBox())?.y).toBe(0);
+    if (width >= 1024) {
+      const sidebar = page.getByRole('complementary', { name: 'Workspace sidebar' });
+      await expect.poll(async () => (await sidebar.boundingBox())?.y).toBe(0);
+      await expect(sidebar.getByRole('link', { name: 'Overview', exact: true })).toBeInViewport();
+      await expect(sidebar.getByRole('button', { name: 'Sign out' })).toBeInViewport();
+    }
     if (width < 1024) {
       const trigger = page.getByRole('button', { name: 'Open navigation' });
       await trigger.focus();
@@ -464,3 +476,25 @@ for (const width of [320, 390, 1440]) {
     }
   });
 }
+
+test('section shortcuts keep navigation visible and changing pages starts at the top', async ({
+  page,
+}) => {
+  await workspace(page);
+  await page.goto('/app/overview');
+  await page
+    .getByRole('navigation', { name: 'Overview sections' })
+    .getByRole('link', { name: 'Sources' })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Citation opportunities' })).toBeInViewport();
+  await expect(page.getByRole('banner', { name: 'Workspace header' })).toBeInViewport();
+  const trigger = page.getByRole('button', { name: 'Open navigation' });
+  if (await trigger.isVisible()) await trigger.click();
+  await page
+    .getByRole('navigation', { name: 'Application' })
+    .getByRole('link', { name: 'Prompts', exact: true })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Monitored prompts' })).toBeInViewport();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(page.getByLabel('Buyer-style question')).toBeVisible();
+});

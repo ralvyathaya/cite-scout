@@ -1,4 +1,12 @@
-import { ArrowUpRight, Check, Copy, Info, ShieldAlert } from 'lucide-react';
+import {
+  ArrowRight,
+  ArrowUpRight,
+  CalendarDays,
+  Check,
+  Copy,
+  Info,
+  ShieldAlert,
+} from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { toast } from 'sonner';
@@ -23,6 +31,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/client/components/ui/tooltip';
 import { ObservationSignal } from '@/client/components/status-badge';
 import { ScanAction } from '@/client/components/scan-action';
+import { DomainIcon } from '@/client/components/brand-icons';
 import { cn } from '@/client/lib/utils';
 import { sourceGuidance } from '@/domain/insights';
 import { usePageTitle } from '@/client/use-page-title';
@@ -60,10 +69,10 @@ function MetricCard({
 }) {
   const neutral = !delta || delta === 'Not enough data' || /^[-+]?0(?:\.0)?(?: pp)?$/u.test(delta);
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="px-4 py-4">
+    <Card className="gap-0 rounded-lg py-0">
+      <CardContent className="px-4 py-4 sm:px-5">
         <div className="flex items-center gap-1.5">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <p className="text-xs font-medium leading-relaxed text-muted-foreground">{label}</p>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -82,7 +91,9 @@ function MetricCard({
         <p
           className={cn(
             'mt-2 font-semibold tracking-tight tabular-nums',
-            value === 'Not enough data' ? 'text-lg text-muted-foreground' : 'text-3xl',
+            value === 'Not enough data'
+              ? 'text-sm text-muted-foreground sm:text-lg'
+              : 'text-2xl sm:text-3xl',
           )}
         >
           {value}
@@ -133,7 +144,7 @@ function TrendChart({ series }: { series: DashboardPayload['series'] }) {
       ) : (
         <svg
           viewBox={`-5 -5 ${String(width + 10)} ${String(height + 10)}`}
-          className="h-48 w-full"
+          className="h-40 w-full sm:h-48"
           role="img"
           aria-label={`Visibility scores over ${String(series.length)} calendar days; ${String(points.length)} days observed. Gaps mean no successful observations.`}
         >
@@ -164,7 +175,11 @@ function TrendChart({ series }: { series: DashboardPayload['series'] }) {
                   cy={point.y}
                   r="3"
                   fill="var(--chart-1)"
-                />
+                >
+                  <title>
+                    {series[index]?.date}: {series[index]?.visibilityScore?.toFixed(1)}
+                  </title>
+                </circle>
               ),
           )}
         </svg>
@@ -217,8 +232,11 @@ function ShareOfVoice({ entities }: { entities: DashboardPayload['shareOfVoiceBy
               <span className={cn('truncate', entity.key === 'brand' && 'font-semibold')}>
                 {entity.label}
               </span>
-              <span className="text-muted-foreground">{fmtPercent(entity.share)}</span>
+              <span className="font-medium tabular-nums">{fmtPercent(entity.share)}</span>
             </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {pluralize(entity.mentions, 'mention')}
+            </p>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
               <div
                 className={cn(
@@ -285,18 +303,22 @@ function CompetitiveGaps({ data }: { data: DashboardPayload }) {
   const gaps = data.prompts.filter((prompt) => prompt.insight.status === 'displaced');
   const observed = data.prompts.filter((prompt) => prompt.insight.status !== 'unknown').length;
   return (
-    <Card className={cn('gap-3 p-5', gaps.length > 0 && 'border-amber-200 bg-amber-50/40')}>
-      <div className="flex items-start gap-3">
-        <ShieldAlert
+    <Card className={cn('gap-0 rounded-lg p-0', gaps.length > 0 && 'border-amber-200/80')}>
+      <div className="flex flex-wrap items-center gap-3 border-b p-4 sm:px-5">
+        <span
           className={cn(
-            'mt-0.5 size-4 shrink-0',
-            gaps.length ? 'text-amber-700' : 'text-muted-foreground',
+            'flex size-9 shrink-0 items-center justify-center rounded-md border',
+            gaps.length ? 'border-amber-200 bg-amber-50' : 'bg-muted',
           )}
-          aria-hidden="true"
-        />
-        <div>
+        >
+          <ShieldAlert
+            className={cn('size-4', gaps.length ? 'text-amber-700' : 'text-muted-foreground')}
+            aria-hidden="true"
+          />
+        </span>
+        <div className="min-w-0 flex-1 basis-40">
           <h2 className="text-sm font-semibold">Competitive gaps</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             {gaps.length > 0
               ? `Competitors appeared ahead of your brand in ${pluralize(gaps.length, 'prompt')} among ${String(observed)} with stored answers.`
               : observed > 0
@@ -304,17 +326,22 @@ function CompetitiveGaps({ data }: { data: DashboardPayload }) {
                 : 'Collect successful observations to see where competitors appear ahead of your brand.'}
           </p>
         </div>
+        {gaps.length > 0 && (
+          <Badge variant="warning">{pluralize(gaps.length, 'prompt')} to review</Badge>
+        )}
       </div>
       {gaps.length > 0 && (
-        <ul className="divide-y divide-amber-200/70">
+        <ul className="divide-y px-4 sm:px-5">
           {gaps.map((prompt) => (
             <li
               key={prompt.promptId}
-              className="flex flex-wrap items-center justify-between gap-3 py-3 last:pb-0"
+              className="flex flex-wrap items-center justify-between gap-3 py-4"
             >
               <div className="min-w-0 flex-1 basis-48">
-                <p className="text-sm font-medium wrap-anywhere">{prompt.text}</p>
-                <p className="mt-1 text-xs text-amber-900">{prompt.insight.explanation}</p>
+                <p className="text-sm font-medium wrap-anywhere">{prompt.insight.explanation}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground wrap-anywhere">
+                  {prompt.text}
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">{prompt.observationDate} UTC</p>
               </div>
               <Button asChild size="sm" variant="outline">
@@ -328,7 +355,7 @@ function CompetitiveGaps({ data }: { data: DashboardPayload }) {
           ))}
         </ul>
       )}
-      <p className="text-xs text-muted-foreground">
+      <p className="border-t bg-zinc-50/50 px-4 py-3 text-xs leading-relaxed text-muted-foreground sm:px-5">
         Positions describe first appearance among tracked brands, not a ranking by Perplexity.
       </p>
     </Card>
@@ -337,7 +364,7 @@ function CompetitiveGaps({ data }: { data: DashboardPayload }) {
 
 function CitationOpportunities({ data }: { data: DashboardPayload }) {
   return (
-    <Card className="gap-4 p-5">
+    <Card id="overview-sources" className="scroll-mt-24 gap-4 rounded-lg p-4 sm:p-5">
       <div>
         <h2 className="text-base font-semibold">Citation opportunities</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -353,8 +380,9 @@ function CitationOpportunities({ data }: { data: DashboardPayload }) {
                   href={item.sourceUrl}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="text-sm font-semibold underline-offset-4 hover:underline"
+                  className="flex items-center gap-2 text-sm font-semibold underline-offset-4 hover:underline"
                 >
+                  <DomainIcon url={item.sourceUrl} className="size-4 shrink-0" />
                   {item.domain} ↗
                 </a>
                 <span className="text-xs text-muted-foreground">
@@ -443,21 +471,40 @@ export function AppOverview() {
   const data = state.data;
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm text-muted-foreground">
-            {data.brandName} ·{' '}
+          <h1 className="text-2xl font-semibold tracking-tight">Visibility overview</h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            See where competitors appear, inspect the answer, and plan your next move.
+          </p>
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <CalendarDays className="size-3.5" aria-hidden="true" />
             {data.latestObservationDate
               ? `Metrics for ${data.latestObservationDate} UTC`
-              : 'No recent observations'}
+              : 'No recent observations'}{' '}
+            · {data.brandName}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Visibility overview</h1>
         </div>
         <div className="flex w-full flex-wrap items-start gap-2 sm:w-auto">
           <CopyReportButton data={data} />
           <ScanAction data={data} onDone={reload} />
         </div>
       </div>
+      <nav aria-label="Overview sections" className="mb-6 flex flex-wrap gap-1 border-b pb-3">
+        {[
+          ['#overview-summary', 'Summary'],
+          ['#overview-observations', 'Observations'],
+          ['#overview-sources', 'Sources'],
+        ].map(([href, label]) => (
+          <a
+            key={href}
+            href={href}
+            className="flex min-h-9 items-center rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-white hover:text-foreground"
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
       {data.entitlement.warning && (
         <div
           role="status"
@@ -471,35 +518,41 @@ export function AppOverview() {
         </div>
       )}
       <div className="space-y-6">
-        <CompetitiveGaps data={data} />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            label="Visibility score"
-            value={fmtScore(data.current.visibilityScore)}
-            delta={fmtDelta(data.delta.visibilityScore, 'score')}
-            definition={metricDefinitions.visibilityScore}
-          />
-          <MetricCard
-            label="Mention rate"
-            value={fmtPercent(data.current.mentionRate)}
-            delta={fmtDelta(data.delta.mentionRate, 'percent')}
-            definition={metricDefinitions.mentionRate}
-          />
-          <MetricCard
-            label="Share of voice"
-            value={fmtPercent(data.current.shareOfVoice)}
-            delta={fmtDelta(data.delta.shareOfVoice, 'percent')}
-            definition={metricDefinitions.shareOfVoice}
-          />
-          <MetricCard
-            label="Avg. mention position"
-            value={fmtPosition(data.current.averageMentionPosition)}
-            definition={metricDefinitions.avgPosition}
-            footer={`Coverage ${String(data.current.successful)}/${String(data.current.attempted)} attempted · ${fmtPercent(data.current.coverage)}`}
-          />
-        </div>
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
+        <section
+          id="overview-summary"
+          aria-label="Visibility summary"
+          className="scroll-mt-24 space-y-5"
+        >
+          <CompetitiveGaps data={data} />
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <MetricCard
+              label="Visibility score"
+              value={fmtScore(data.current.visibilityScore)}
+              delta={fmtDelta(data.delta.visibilityScore, 'score')}
+              definition={metricDefinitions.visibilityScore}
+            />
+            <MetricCard
+              label="Mention rate"
+              value={fmtPercent(data.current.mentionRate)}
+              delta={fmtDelta(data.delta.mentionRate, 'percent')}
+              definition={metricDefinitions.mentionRate}
+            />
+            <MetricCard
+              label="Share of voice"
+              value={fmtPercent(data.current.shareOfVoice)}
+              delta={fmtDelta(data.delta.shareOfVoice, 'percent')}
+              definition={metricDefinitions.shareOfVoice}
+            />
+            <MetricCard
+              label="Avg. mention position"
+              value={fmtPosition(data.current.averageMentionPosition)}
+              definition={metricDefinitions.avgPosition}
+              footer={`Coverage ${String(data.current.successful)}/${String(data.current.attempted)} attempted · ${fmtPercent(data.current.coverage)}`}
+            />
+          </div>
+        </section>
+        <div className="grid gap-4 xl:grid-cols-3">
+          <Card className="rounded-lg xl:col-span-2">
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <CardTitle className="text-base">Visibility trend</CardTitle>
@@ -517,7 +570,7 @@ export function AppOverview() {
               <TrendChart series={data.series} />
             </CardContent>
           </Card>
-          <Card>
+          <Card className="rounded-lg">
             <CardHeader>
               <CardTitle className="text-base">Share of voice</CardTitle>
               <CardDescription>
@@ -530,12 +583,20 @@ export function AppOverview() {
             </CardContent>
           </Card>
         </div>
-        <Card className="gap-0 py-0">
+        <Card id="overview-observations" className="scroll-mt-24 gap-0 rounded-lg py-0">
           <div className="flex flex-wrap items-baseline justify-between gap-2 border-b px-5 py-4">
-            <h2 className="text-base font-semibold">Prompt observations</h2>
-            <p className="text-xs text-muted-foreground">
-              Latest stored answer per prompt · first-mention order
-            </p>
+            <div>
+              <h2 className="text-base font-semibold">Prompt observations</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Latest stored answer per prompt · first-mention order
+              </p>
+            </div>
+            <Link
+              to="/app/prompts"
+              className="flex min-h-9 items-center gap-1.5 text-xs font-medium hover:underline"
+            >
+              Manage prompts <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
           </div>
           <Table className="observation-table" aria-label="Prompt observations">
             <TableHeader>
@@ -589,8 +650,7 @@ export function AppOverview() {
         <CitationOpportunities data={data} />
         <p className="text-xs leading-relaxed text-muted-foreground">
           Directional observations from the Perplexity Agent API may differ from the consumer
-          application. First-mention positions are not guaranteed rankings. The trend includes a
-          tabular equivalent for screen readers.
+          application. First-mention positions are not guaranteed rankings.
         </p>
       </div>
     </div>
@@ -601,7 +661,7 @@ export function OverviewSkeletonExport() {
   return (
     <div className="space-y-6 p-6" role="status" aria-label="Loading overview">
       <Skeleton className="h-8 w-48" />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {[1, 2, 3, 4].map((key) => (
           <Skeleton key={key} className="h-28" />
         ))}
