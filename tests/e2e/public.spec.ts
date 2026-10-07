@@ -91,13 +91,13 @@ test.describe('public visitor', () => {
     await expect(page.getByText(/not refundable/i)).toBeVisible();
   });
 
-  test('footer carries copyright, support link, and small Build Games credit', async ({ page }) => {
+  test('footer carries copyright and support link', async ({ page }) => {
     await page.goto('/');
 
     const footer = page.getByRole('contentinfo');
     await expect(footer.getByText(/© \d{4} CiteScout/)).toBeVisible();
     await expect(footer.getByRole('link', { name: 'Support' })).toBeVisible();
-    await expect(footer.getByText('Built for The Build Games')).toBeVisible();
+    expect(await footer.getByText('Built for The Build Games').count()).toBe(0);
   });
 
   test('unknown routes show a marketing 404 with way home', async ({ page }) => {

@@ -172,7 +172,6 @@ function Footer() {
         <Separator className="my-6" />
         <div className="flex flex-col justify-between gap-2 text-xs text-muted-foreground sm:flex-row">
           <span>© {String(new Date().getUTCFullYear())} CiteScout. All rights reserved.</span>
-          <span className="text-muted-foreground/60">Built for The Build Games</span>
         </div>
       </div>
     </footer>
