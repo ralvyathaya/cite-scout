@@ -3,11 +3,12 @@ import { secureHeaders } from 'hono/secure-headers';
 import { createAuth } from './auth';
 import { getConfig } from './config';
 import { projectRoutes } from './routes/project';
-import { competitorRoutes, dashboardRoutes, promptRoutes } from './routes/dashboard';
+import { competitorRoutes, promptRoutes } from './routes/dashboard';
 import { billingRoutes, handleLemonWebhook } from './routes/billing';
 import { loginRoutes } from './routes/login';
 import { scanRoutes } from './routes/scans';
-import { runScheduledScans } from './cron';
+import { processDueScans } from './v2/scans';
+import { v2Routes } from './v2/routes';
 import { accountRoutes } from './routes/account';
 import { operatorRoutes } from './routes/operator';
 import { BodyTooLargeError } from './http';
@@ -127,8 +128,25 @@ app.get('/api/me', async (c) => {
     },
   });
 });
+// Legacy reads remain available for old evidence links; writes cannot bypass v2 history/trial rules.
+app.use('/api/*', async (c, next) => {
+  if (
+    /^\/api\/dashboard(\/|$)/.test(c.req.path) ||
+    (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) &&
+      /^\/api\/(project|prompts|competitors|scans)(\/|$)/.test(c.req.path))
+  ) {
+    const session = await createAuth(c.env).api.getSession({ headers: c.req.raw.headers });
+    if (!session)
+      return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
+    return c.json(
+      { error: { code: 'USE_V2_FLOW', message: 'Use the buyer-question workflow.' } },
+      409,
+    );
+  }
+  await next();
+});
+app.route('/api/v2', v2Routes);
 app.route('/api/project', projectRoutes);
-app.route('/api/dashboard', dashboardRoutes);
 app.route('/api/prompts', promptRoutes);
 app.route('/api/competitors', competitorRoutes);
 app.route('/api/billing', billingRoutes);
@@ -171,7 +189,14 @@ async function scheduled(controller: ScheduledController, env: CloudflareBinding
       cron: controller.cron,
     }),
   );
-  await runScheduledScans(env, controller.scheduledTime);
+  await processDueScans(
+    env,
+    Number(env.MAX_PROVIDER_CALLS_PER_CRON_INVOCATION),
+    new Date(controller.scheduledTime),
+  );
+  await env.DB.prepare('DELETE FROM product_events WHERE received_at < ?')
+    .bind(Date.now() - 90 * 86400000)
+    .run();
 }
 
 export default {

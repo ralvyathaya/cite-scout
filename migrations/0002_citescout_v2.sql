@@ -1,54 +1,84 @@
--- Additive: preserve all existing results as explicitly legacy evidence.
-ALTER TABLE projects ADD COLUMN context_version INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE projects ADD COLUMN v2_enabled_at INTEGER;
-ALTER TABLE projects ADD COLUMN creation_key TEXT;
-ALTER TABLE projects ADD COLUMN creation_hash TEXT;
-ALTER TABLE prompts ADD COLUMN archived_at INTEGER;
-ALTER TABLE prompts ADD COLUMN replaces_question_id TEXT;
-ALTER TABLE competitors ADD COLUMN archived_at INTEGER;
-ALTER TABLE scan_runs ADD COLUMN intent_key TEXT;
-ALTER TABLE scan_runs ADD COLUMN phase TEXT;
-ALTER TABLE scan_runs ADD COLUMN context_version INTEGER;
-ALTER TABLE scan_runs ADD COLUMN due_at INTEGER;
-CREATE UNIQUE INDEX scan_runs_intent_unique ON scan_runs(intent_key);
-ALTER TABLE scan_results ADD COLUMN evidence_version TEXT NOT NULL DEFAULT 'legacy-normalized';
-ALTER TABLE scan_results ADD COLUMN request_context_json TEXT;
--- Versioned envelope includes raw JSON, text parts, sources, links and entity matches.
-ALTER TABLE scan_results ADD COLUMN evidence_json TEXT;
-ALTER TABLE scan_results ADD COLUMN received_at INTEGER;
-ALTER TABLE scan_results ADD COLUMN reported_cost TEXT;
-CREATE INDEX results_v2_history_idx ON scan_results(project_id,prompt_id,received_at,id);
-ALTER TABLE provider_call_reservations ADD COLUMN item_id TEXT;
-ALTER TABLE provider_call_reservations ADD COLUMN request_context_json TEXT;
-ALTER TABLE provider_call_reservations ADD COLUMN lease_token TEXT;
-ALTER TABLE provider_call_reservations ADD COLUMN lease_until INTEGER;
-ALTER TABLE provider_call_reservations ADD COLUMN failure_code TEXT;
-ALTER TABLE provider_call_reservations ADD COLUMN provider_status TEXT;
-ALTER TABLE provider_call_reservations ADD COLUMN provider_response_json TEXT;
-ALTER TABLE provider_call_reservations ADD COLUMN reported_cost TEXT;
-CREATE TABLE pilot_enrollments (
- user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
- qualified_at INTEGER NOT NULL, manual_check_at INTEGER NOT NULL, role TEXT NOT NULL,
- authority_confirmed INTEGER NOT NULL, example_verified INTEGER NOT NULL,
- policy_version TEXT NOT NULL DEFAULT 'pilot-v2-1', frozen_question_ids_json TEXT,
- frozen_context_json TEXT, trial_started_at INTEGER, expires_at INTEGER,
- baseline_closed_at INTEGER, followup_due_at INTEGER, paid_starts_at INTEGER,
- trial_state TEXT NOT NULL DEFAULT 'eligible'
+CREATE TABLE `pilot_enrollments` (
+	`user_id` text PRIMARY KEY NOT NULL,
+	`qualified_at` integer NOT NULL,
+	`manual_check_at` integer NOT NULL,
+	`role` text NOT NULL,
+	`authority_confirmed` integer NOT NULL,
+	`example_verified` integer NOT NULL,
+	`policy_version` text DEFAULT 'pilot-v2-1' NOT NULL,
+	`frozen_question_ids_json` text,
+	`frozen_context_json` text,
+	`trial_started_at` integer,
+	`expires_at` integer,
+	`baseline_closed_at` integer,
+	`followup_due_at` integer,
+	`paid_starts_at` integer,
+	`trial_state` text DEFAULT 'eligible' NOT NULL,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
 );
-CREATE TABLE scan_run_items (
- id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES scan_runs(id) ON DELETE CASCADE,
- prompt_id TEXT NOT NULL REFERENCES prompts(id) ON DELETE CASCADE, phase TEXT NOT NULL,
- status TEXT NOT NULL DEFAULT 'pending', attempts_used INTEGER NOT NULL DEFAULT 0,
- due_at INTEGER NOT NULL, terminal_reason TEXT
+--> statement-breakpoint
+CREATE TABLE `product_events` (
+	`id` text PRIMARY KEY NOT NULL,
+	`dedupe_key` text NOT NULL,
+	`schema_version` integer DEFAULT 1 NOT NULL,
+	`name` text NOT NULL,
+	`user_id` text NOT NULL,
+	`project_id` text,
+	`question_id` text,
+	`observation_id` text,
+	`compare_to_id` text,
+	`received_at` integer NOT NULL,
+	`occurred_at` integer NOT NULL,
+	`source` text NOT NULL,
+	`assisted` integer,
+	`properties_json` text DEFAULT '{}' NOT NULL,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade
 );
-CREATE UNIQUE INDEX run_items_question_unique ON scan_run_items(run_id,prompt_id);
-CREATE INDEX run_items_due_idx ON scan_run_items(status,due_at);
-CREATE TABLE product_events (
- id TEXT PRIMARY KEY, dedupe_key TEXT NOT NULL UNIQUE, schema_version INTEGER NOT NULL DEFAULT 1,
- name TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
- project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
- question_id TEXT, observation_id TEXT, compare_to_id TEXT,
- received_at INTEGER NOT NULL, occurred_at INTEGER NOT NULL, source TEXT NOT NULL,
- assisted INTEGER, properties_json TEXT NOT NULL DEFAULT '{}'
+--> statement-breakpoint
+CREATE UNIQUE INDEX `product_events_dedupe_key_unique` ON `product_events` (`dedupe_key`);--> statement-breakpoint
+CREATE INDEX `events_cohort_idx` ON `product_events` (`user_id`,`name`,`received_at`);--> statement-breakpoint
+CREATE TABLE `scan_run_items` (
+	`id` text PRIMARY KEY NOT NULL,
+	`run_id` text NOT NULL,
+	`prompt_id` text NOT NULL,
+	`phase` text NOT NULL,
+	`status` text DEFAULT 'pending' NOT NULL,
+	`attempts_used` integer DEFAULT 0 NOT NULL,
+	`due_at` integer NOT NULL,
+	`terminal_reason` text,
+	FOREIGN KEY (`run_id`) REFERENCES `scan_runs`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`prompt_id`) REFERENCES `prompts`(`id`) ON UPDATE no action ON DELETE cascade
 );
-CREATE INDEX events_cohort_idx ON product_events(user_id,name,received_at);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `run_items_question_unique` ON `scan_run_items` (`run_id`,`prompt_id`);--> statement-breakpoint
+CREATE INDEX `run_items_due_idx` ON `scan_run_items` (`status`,`due_at`);--> statement-breakpoint
+ALTER TABLE `competitors` ADD `archived_at` integer;--> statement-breakpoint
+ALTER TABLE `projects` ADD `context_version` integer DEFAULT 1 NOT NULL;--> statement-breakpoint
+ALTER TABLE `projects` ADD `v2_enabled_at` integer;--> statement-breakpoint
+ALTER TABLE `projects` ADD `creation_key` text;--> statement-breakpoint
+ALTER TABLE `projects` ADD `creation_hash` text;--> statement-breakpoint
+ALTER TABLE `projects` ADD `mutation_key` text;--> statement-breakpoint
+ALTER TABLE `prompts` ADD `archived_at` integer;--> statement-breakpoint
+ALTER TABLE `prompts` ADD `replaces_question_id` text;--> statement-breakpoint
+ALTER TABLE `provider_call_reservations` ADD `item_id` text;--> statement-breakpoint
+ALTER TABLE `provider_call_reservations` ADD `request_context_json` text;--> statement-breakpoint
+ALTER TABLE `provider_call_reservations` ADD `lease_token` text;--> statement-breakpoint
+ALTER TABLE `provider_call_reservations` ADD `lease_until` integer;--> statement-breakpoint
+ALTER TABLE `provider_call_reservations` ADD `failure_code` text;--> statement-breakpoint
+ALTER TABLE `provider_call_reservations` ADD `provider_status` text;--> statement-breakpoint
+ALTER TABLE `provider_call_reservations` ADD `provider_response_json` text;--> statement-breakpoint
+ALTER TABLE `provider_call_reservations` ADD `reported_cost` text;--> statement-breakpoint
+ALTER TABLE `scan_results` ADD `evidence_version` text DEFAULT 'legacy-normalized' NOT NULL;--> statement-breakpoint
+ALTER TABLE `scan_results` ADD `request_context_json` text;--> statement-breakpoint
+ALTER TABLE `scan_results` ADD `evidence_json` text;--> statement-breakpoint
+ALTER TABLE `scan_results` ADD `received_at` integer;--> statement-breakpoint
+ALTER TABLE `scan_results` ADD `reported_cost` text;--> statement-breakpoint
+ALTER TABLE `scan_runs` ADD `intent_key` text;--> statement-breakpoint
+ALTER TABLE `scan_runs` ADD `phase` text;--> statement-breakpoint
+ALTER TABLE `scan_runs` ADD `context_version` integer;--> statement-breakpoint
+ALTER TABLE `scan_runs` ADD `due_at` integer;--> statement-breakpoint
+CREATE UNIQUE INDEX `scan_runs_intent_key_unique` ON `scan_runs` (`intent_key`);
+--> statement-breakpoint
+-- Preserve existing evidence and route future checks through the v2 scheduler.
+UPDATE projects SET v2_enabled_at=unixepoch()*1000 WHERE v2_enabled_at IS NULL;

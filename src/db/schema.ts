@@ -74,11 +74,12 @@ export const projects = sqliteTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     brandName: text('brand_name').notNull(),
-  canonicalDomain: text('canonical_domain').notNull(),
-  contextVersion: integer('context_version').notNull().default(1),
-  v2EnabledAt: timestamp('v2_enabled_at'),
-  creationKey: text('creation_key'),
-  creationHash: text('creation_hash'),
+    canonicalDomain: text('canonical_domain').notNull(),
+    contextVersion: integer('context_version').notNull().default(1),
+    v2EnabledAt: timestamp('v2_enabled_at'),
+    creationKey: text('creation_key'),
+    creationHash: text('creation_hash'),
+    mutationKey: text('mutation_key'),
     trialScanReservedAt: timestamp('trial_scan_reserved_at'),
     trialScanCompletedAt: timestamp('trial_scan_completed_at'),
     manualScanLastUsedOn: text('manual_scan_last_used_on'),
@@ -296,7 +297,9 @@ export const providerCallReservations = sqliteTable(
 );
 
 export const pilotEnrollments = sqliteTable('pilot_enrollments', {
-  userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
   qualifiedAt: timestamp('qualified_at').notNull(),
   manualCheckAt: timestamp('manual_check_at').notNull(),
   role: text('role', { enum: ['founder', 'first_marketer'] }).notNull(),
@@ -310,36 +313,59 @@ export const pilotEnrollments = sqliteTable('pilot_enrollments', {
   baselineClosedAt: timestamp('baseline_closed_at'),
   followupDueAt: timestamp('followup_due_at'),
   paidStartsAt: timestamp('paid_starts_at'),
-  trialState: text('trial_state', { enum: ['eligible', 'baseline', 'waiting', 'followup', 'completed', 'expired', 'cancelled'] }).notNull().default('eligible'),
+  trialState: text('trial_state', {
+    enum: ['eligible', 'baseline', 'waiting', 'followup', 'completed', 'expired', 'cancelled'],
+  })
+    .notNull()
+    .default('eligible'),
 });
 
-export const scanRunItems = sqliteTable('scan_run_items', {
-  id: text('id').primaryKey(),
-  runId: text('run_id').notNull().references(() => scanRuns.id, { onDelete: 'cascade' }),
-  promptId: text('prompt_id').notNull().references(() => prompts.id, { onDelete: 'cascade' }),
-  phase: text('phase', { enum: ['baseline', 'followup', 'paid'] }).notNull(),
-  status: text('status', { enum: ['pending', 'running', 'succeeded', 'exhausted', 'cancelled'] }).notNull().default('pending'),
-  attemptsUsed: integer('attempts_used').notNull().default(0),
-  dueAt: timestamp('due_at').notNull(),
-  terminalReason: text('terminal_reason'),
-}, (table) => [uniqueIndex('run_items_question_unique').on(table.runId, table.promptId), index('run_items_due_idx').on(table.status, table.dueAt)]);
+export const scanRunItems = sqliteTable(
+  'scan_run_items',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id')
+      .notNull()
+      .references(() => scanRuns.id, { onDelete: 'cascade' }),
+    promptId: text('prompt_id')
+      .notNull()
+      .references(() => prompts.id, { onDelete: 'cascade' }),
+    phase: text('phase', { enum: ['baseline', 'followup', 'paid'] }).notNull(),
+    status: text('status', { enum: ['pending', 'running', 'succeeded', 'exhausted', 'cancelled'] })
+      .notNull()
+      .default('pending'),
+    attemptsUsed: integer('attempts_used').notNull().default(0),
+    dueAt: timestamp('due_at').notNull(),
+    terminalReason: text('terminal_reason'),
+  },
+  (table) => [
+    uniqueIndex('run_items_question_unique').on(table.runId, table.promptId),
+    index('run_items_due_idx').on(table.status, table.dueAt),
+  ],
+);
 
-export const productEvents = sqliteTable('product_events', {
-  id: text('id').primaryKey(),
-  dedupeKey: text('dedupe_key').notNull().unique(),
-  schemaVersion: integer('schema_version').notNull().default(1),
-  name: text('name').notNull(),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
-  questionId: text('question_id'),
-  observationId: text('observation_id'),
-  compareToId: text('compare_to_id'),
-  receivedAt: timestamp('received_at').notNull(),
-  occurredAt: timestamp('occurred_at').notNull(),
-  source: text('source', { enum: ['client', 'server', 'operator'] }).notNull(),
-  assisted: integer('assisted', { mode: 'boolean' }),
-  propertiesJson: text('properties_json').notNull().default('{}'),
-}, (table) => [index('events_cohort_idx').on(table.userId, table.name, table.receivedAt)]);
+export const productEvents = sqliteTable(
+  'product_events',
+  {
+    id: text('id').primaryKey(),
+    dedupeKey: text('dedupe_key').notNull().unique(),
+    schemaVersion: integer('schema_version').notNull().default(1),
+    name: text('name').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    questionId: text('question_id'),
+    observationId: text('observation_id'),
+    compareToId: text('compare_to_id'),
+    receivedAt: timestamp('received_at').notNull(),
+    occurredAt: timestamp('occurred_at').notNull(),
+    source: text('source', { enum: ['client', 'server', 'operator'] }).notNull(),
+    assisted: integer('assisted', { mode: 'boolean' }),
+    propertiesJson: text('properties_json').notNull().default('{}'),
+  },
+  (table) => [index('events_cohort_idx').on(table.userId, table.name, table.receivedAt)],
+);
 
 export const rateLimits = sqliteTable(
   'rate_limits',

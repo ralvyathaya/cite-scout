@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { Hono } from 'hono';
+import { recordPayment } from '../v2/payments';
 import { billingWebhookReceipts, subscriptions } from '../../db/schema';
 import { getEntitlement } from '../../domain/entitlements';
 import { safeRedirect } from '../../domain/redirects';
@@ -193,13 +194,18 @@ export async function handleLemonWebhook(
     .from(billingWebhookReceipts)
     .where(eq(billingWebhookReceipts.fingerprint, fingerprint))
     .get();
-  if (receipt?.processedAt) return Response.json({ data: { duplicate: true } });
+  if (receipt?.processedAt) {
+    if (payment) await recordPayment(env, id, event.data.id, event.data.attributes, fingerprint);
+    return Response.json({ data: { duplicate: true } });
+  }
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const result = await syncSubscription(env, id, event.meta.custom_data?.user_id, {
         fingerprint,
         eventName: event.meta.event_name,
       });
+      if (payment && !result.retired)
+        await recordPayment(env, id, event.data.id, event.data.attributes, fingerprint);
       return Response.json({ data: { processed: true, ...result } });
     } catch (error) {
       const code = error instanceof Error ? error.message : 'BILLING_SYNC_FAILED';

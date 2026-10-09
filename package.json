@@ -12,6 +12,7 @@
     "test:integration": "vitest run --project integration",
     "test:e2e": "playwright test",
     "typecheck": "tsc -b --pretty false",
+    "check:v2": "tsx tests/integration/check-v2.ts",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -19,7 +20,7 @@
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "db:seed:demo": "tsx scripts/seed-demo.ts",
-    "cf:typegen": "wrangler types --env-interface CloudflareBindings",
+    "cf:typegen": "wrangler types --env-interface CloudflareBindings --strict-vars=false --env-file .dev.vars.example",
     "deploy": "npm run build && wrangler deploy --config wrangler.production.jsonc",
     "deploy:preview": "npm run build && wrangler versions upload --config wrangler.production.jsonc --preview-alias staging"
   },

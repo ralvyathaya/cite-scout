@@ -45,6 +45,16 @@ export async function deleteAccountData(
       ).bind(current.id, userId, current.updatedAt.getTime(), `retired:${remote.id}`),
     );
   }
+  // Reservations keep anonymous cost counts; deletion also revokes in-flight evidence writes.
+  statements.push(
+    env.DB.prepare(
+      `UPDATE provider_call_reservations SET
+    request_context_json=NULL,provider_response_json=NULL,item_id=NULL,lease_token=NULL,lease_until=NULL,
+    status=CASE WHEN status='reserved' THEN 'failed' ELSE status END,
+    failure_code=CASE WHEN status='reserved' THEN 'ACCOUNT_DELETED' ELSE failure_code END
+    WHERE user_id=? AND NOT EXISTS(SELECT 1 FROM subscriptions WHERE user_id=?)`,
+    ).bind(userId, userId),
+  );
   statements.push(
     env.DB.prepare(
       'DELETE FROM users WHERE id = ? AND NOT EXISTS (SELECT 1 FROM subscriptions WHERE user_id = ?)',
