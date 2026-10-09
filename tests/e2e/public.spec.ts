@@ -5,30 +5,21 @@ test.describe('public visitor', () => {
     await page.goto('/');
 
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      'Know when AI recommends your competitors',
+      'See what Perplexity tells buyers about your SaaS.',
     );
-    await expect(page.getByText('Perplexity answers over time')).toBeVisible();
-    await expect(page.getByText(/nondeterministic/)).toBeVisible();
-    await expect(page.getByText(/does not claim to reproduce/i)).toBeVisible();
+    await expect(
+      page.getByText(/Results can differ from the Perplexity app/).first(),
+    ).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Run my baseline' }).first()).toBeVisible();
   });
 
-  test('hero preview is interactive with tabs and example data', async ({ page }) => {
+  test('hero preview distinguishes baseline, follow-up and returned sources', async ({ page }) => {
     await page.goto('/');
 
-    // The hero embeds the same component tree as the demo: clickable tabs.
-    const tabs = page.getByRole('tab', { name: 'Citations' });
-    await expect(tabs.first()).toBeVisible();
-    await tabs.first().click();
-    await expect(page.getByText('Sources most frequently returned')).toBeVisible();
-    await expect(page.getByText('reddit.com').first()).toBeVisible();
-
-    await page.getByRole('tab', { name: 'Prompts' }).first().click();
-    await expect(
-      page.getByText('Best scheduling tool for independent consultants').first(),
-    ).toBeVisible();
-
-    // The preview is labelled as an example, never as live data.
-    await expect(page.getByText('Example dashboard', { exact: false }).first()).toBeVisible();
+    await expect(page.getByText('Baseline · example answer')).toBeVisible();
+    await expect(page.getByText('Follow-up · example answer')).toBeVisible();
+    await expect(page.getByText('Returned only:', { exact: true })).toBeVisible();
+    await expect(page.getByText('Illustrative example', { exact: false }).first()).toBeVisible();
     expect(await page.getByText('Live observation preview').count()).toBe(0);
   });
 
@@ -40,12 +31,11 @@ test.describe('public visitor', () => {
 
     await page.goto('/demo');
 
-    await expect(page.getByText('Illustrative demo data').first()).toBeVisible();
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('See the pattern');
-
-    // Demo tabs are interactive here too.
-    await page.getByRole('tab', { name: 'Citations' }).click();
-    await expect(page.getByText('wikipedia.org')).toBeVisible();
+    await expect(page.getByText('Illustrative example').first()).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(
+      'Follow one buyer question over time.',
+    );
+    await expect(page.getByText('Brand match appeared: CedarFlow')).toBeVisible();
 
     expect(providerCalls).toEqual([]);
   });
@@ -53,16 +43,16 @@ test.describe('public visitor', () => {
   test('pricing exposes one $19 plan with an honest FAQ', async ({ page }) => {
     await page.goto('/pricing');
 
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('without a sales call');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(
+      'Keep checking the questions buyers ask.',
+    );
     await expect(page.getByText('$19').first()).toBeVisible();
-    await expect(page.getByText('Secure self-serve billing')).toBeVisible();
-    await expect(page.getByText('Cancel anytime, keep your history')).toBeVisible();
+    await expect(page.getByText(/No card required/).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Can I cancel anytime?' })).toBeVisible();
 
     await expect(page.getByText('Frequently asked questions')).toBeVisible();
-    await expect(
-      page.getByText('Does CiteScout monitor ChatGPT, Claude, or Google AI Overviews?'),
-    ).toBeVisible();
-    await expect(page.getByText('What is the free trial, exactly?')).toBeVisible();
+    await expect(page.getByText('What does CiteScout observe?')).toBeVisible();
+    await expect(page.getByText('What is included in the pilot?')).toBeVisible();
 
     const body = await page.locator('body').innerText();
     for (const forbidden of ['trusted by', 'testimonial', '99.9%', 'rated']) {
@@ -77,7 +67,7 @@ test.describe('public visitor', () => {
     await expect(question).toHaveAttribute('aria-expanded', 'false');
     await question.click();
     await expect(question).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.getByText('from the self-serve billing portal')).toBeVisible();
+    await expect(page.getByText(/from the self-serve billing portal/)).toBeVisible();
   });
 
   test('legal pages render real terms with contact and refund policy', async ({ page }) => {
@@ -114,14 +104,12 @@ test.describe('document metadata', () => {
 
     const icon = page.locator('link[rel="icon"]');
     await expect(icon).toHaveAttribute('href', '/favicon.svg');
-    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
       'content',
-      'https://cite-scout.com/og-image.png',
+      /See what Perplexity tells buyers/,
     );
-    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute(
-      'content',
-      'summary_large_image',
-    );
+    await expect(page.locator('meta[property="og:image"]')).toHaveCount(0);
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary');
 
     const iconResponse = await request.get('/favicon.svg');
     expect(iconResponse.status()).toBe(200);
@@ -138,7 +126,7 @@ test.describe('document metadata', () => {
     await expect(page).toHaveTitle('Pricing — CiteScout');
 
     await page.goto('/demo');
-    await expect(page).toHaveTitle('Demo — CiteScout');
+    await expect(page).toHaveTitle('Example — CiteScout');
 
     await page.goto('/login');
     await expect(page).toHaveTitle('Sign in — CiteScout');
@@ -224,27 +212,22 @@ test.describe('mobile', () => {
 
   test('app navigation is reachable from the mobile header', async ({ page }) => {
     await page.goto('/app/overview');
-    await expect(page.getByText('Session expired')).toBeVisible();
-    await page.getByRole('button', { name: 'Open navigation' }).click();
-    await expect(page.getByRole('navigation', { name: 'Application' })).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByLabel('Work email')).toBeVisible();
   });
 });
 
 test.describe('authenticated workspace', () => {
   test('anonymous visitor is refused and offered sign in', async ({ page }) => {
     await page.goto('/app/overview');
-    await expect(page.getByText('Session expired')).toBeVisible();
-
-    const menu = page.getByRole('button', { name: 'Open navigation' });
-    if (await menu.isVisible()) await menu.click();
-    const sidebar = page.getByRole('complementary');
-    await expect(sidebar.getByRole('link', { name: 'Sign in' })).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByLabel('Work email')).toBeVisible();
     expect(await page.getByRole('button', { name: 'Sign out' }).count()).toBe(0);
   });
 
-  test('visiting /app redirects to the overview', async ({ page }) => {
+  test('visiting /app requires login for an anonymous visitor', async ({ page }) => {
     await page.goto('/app');
-    await expect(page).toHaveURL(/\/app\/overview$/);
+    await expect(page).toHaveURL(/\/login$/);
   });
 
   test('switching tabs never leaks an unrelated view underneath', async ({ page }) => {
@@ -252,20 +235,20 @@ test.describe('authenticated workspace', () => {
     // same frame as every other tab, so it can never persist beneath them.
     // Anonymous visitors see the session gate, which proves the route resolved.
     await page.goto('/app/onboarding');
-    await expect(page.getByText('Session expired')).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
 
     await page.goto('/app/overview');
-    await expect(page.getByText('Session expired')).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
     expect(await page.getByLabel('Brand name').count()).toBe(0);
 
     await page.goto('/app/billing');
-    await expect(page.getByText('Session expired')).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
     expect(await page.getByLabel('Brand name').count()).toBe(0);
   });
 
   test('a checkout redirect alone does not unlock paid access', async ({ page }) => {
     await page.goto('/app/billing?checkout=complete');
-    await expect(page.getByText('Session expired')).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
     expect(await page.getByText(/CiteScout Monitor/).count()).toBe(0);
   });
 
@@ -276,6 +259,8 @@ test.describe('authenticated workspace', () => {
       '/api/prompts',
       '/api/competitors',
       '/api/billing/status',
+      '/api/v2/project',
+      '/api/v2/questions',
     ]) {
       const response = await request.get(path);
       expect(response.status(), `${path} should require authentication`).toBe(401);

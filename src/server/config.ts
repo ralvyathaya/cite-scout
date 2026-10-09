@@ -4,6 +4,7 @@ const configSchema = z.object({
   APP_URL: z.url(),
   APP_ENV: z.enum(['development', 'test', 'production']),
   EXTERNAL_INTEGRATIONS_ENABLED: z.enum(['true', 'false']),
+  V2_SCANS_ENABLED: z.enum(['true', 'false']).default('false'),
   TEST_AUTH_ENABLED: z.enum(['true', 'false']),
   GLOBAL_DAILY_PROVIDER_CALL_CAP: z.coerce.number().int().positive(),
   PER_USER_MONTHLY_PROVIDER_CALL_CAP: z.coerce.number().int().positive(),

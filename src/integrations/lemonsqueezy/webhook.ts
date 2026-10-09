@@ -11,6 +11,7 @@ const eventNames = [
   'subscription_payment_success',
   'subscription_payment_failed',
   'subscription_payment_recovered',
+  'subscription_payment_refunded',
 ] as const;
 export const lemonWebhookSchema = z.object({
   meta: z.object({

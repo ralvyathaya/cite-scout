@@ -134,7 +134,9 @@ export function Login() {
           <CardTitle className="text-xl font-bold tracking-tight">
             <h1 className="text-xl font-bold tracking-tight">Sign in to CiteScout</h1>
           </CardTitle>
-          <CardDescription>Sign in securely to monitor your brand visibility.</CardDescription>
+          <CardDescription>
+            Sign in to inspect saved answers to your buyers’ questions.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {googleAvailable && (
