@@ -1,51 +1,23 @@
-import { ArrowRight, Check, ChevronDown, ExternalLink, Menu, TrendingUp, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, Menu, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes } from 'react-router';
 import { Badge } from '@/client/components/ui/badge';
 import { Button } from '@/client/components/ui/button';
 import { Card, CardContent } from '@/client/components/ui/card';
 import { Separator } from '@/client/components/ui/separator';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/client/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/client/components/ui/tabs';
-import {
-  G2Icon,
-  GithubIcon,
-  NotionIcon,
-  PerplexityIcon,
-  ProductHuntIcon,
-  RedditIcon,
-  SubstackIcon,
-  WikipediaIcon,
-  XIcon,
-  YoutubeIcon,
-} from '@/client/components/brand-icons';
-import { StatusBadge } from '@/client/components/status-badge';
 import { brand } from '@/shared/brand';
-import { demoDays } from '@/domain/demo';
 import { ErrorBoundary } from '@/client/ErrorBoundary';
 import { OfflineBanner } from '@/client/OfflineBanner';
-import { AppShell } from '@/client/pages/AppShell';
-import { AppOverview } from '@/client/pages/Overview';
-import { PromptsPage, ResponsesPage } from '@/client/pages/Workspace';
-import { BillingPage, SettingsPage } from '@/client/pages/BillingSettings';
+import {
+  V2Shell,
+  V2Onboarding,
+  V2Questions,
+  V2QuestionDetail,
+  V2Settings,
+  LegacyEvidenceRedirect,
+} from '@/client/pages/v2/Workspace';
 import { Login } from '@/client/pages/Login';
-import { Onboarding } from '@/client/pages/Onboarding';
 import { usePageTitle } from '@/client/use-page-title';
-
-const visibility = demoDays.map((day) => day.visibilityScore);
-
-function relativeDayLabel(offsetFromToday: number): string {
-  const date = new Date();
-  date.setUTCDate(date.getUTCDate() - offsetFromToday);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-}
 
 function Logo() {
   return (
@@ -99,12 +71,12 @@ function Header() {
           {links}
           <Button asChild size="sm">
             <Link
-              to="/login"
+              to="/app/onboarding"
               onClick={() => {
                 setOpen(false);
               }}
             >
-              Check my visibility <ArrowRight className="size-3.5" />
+              Run my baseline <ArrowRight className="size-3.5" />
             </Link>
           </Button>
         </nav>
@@ -129,12 +101,12 @@ function Header() {
           {links}
           <Button asChild size="sm" className="mt-2">
             <Link
-              to="/login"
+              to="/app/onboarding"
               onClick={() => {
                 setOpen(false);
               }}
             >
-              Check my visibility <ArrowRight className="size-3.5" />
+              Run my baseline <ArrowRight className="size-3.5" />
             </Link>
           </Button>
         </nav>
@@ -151,7 +123,7 @@ function Footer() {
           <div>
             <Logo />
             <p className="mt-2 text-xs text-muted-foreground">
-              AI visibility observations from the Perplexity API.
+              Buyer questions and saved answers from the Perplexity Agent API.
             </p>
           </div>
           <nav className="flex flex-wrap items-center gap-x-6 gap-y-2" aria-label="Footer">
@@ -179,231 +151,95 @@ function Footer() {
   );
 }
 
-/* --- Interactive demo dashboard (real components, fixture data) --- */
-
-const demoPromptRows = [
-  {
-    prompt: 'Best scheduling tool for independent consultants',
-    status: 'recommended',
-    position: 1,
-  },
-  { prompt: 'Alternatives to Calendly for freelancers', status: 'displaced', position: 2 },
-  { prompt: 'Simple client booking software', status: 'mentioned', position: 1 },
-  { prompt: 'Scheduling tools with client intake forms', status: 'absent', position: null },
-] as const;
-
-const demoCitations = [
-  { source: 'Reddit', icon: RedditIcon, domain: 'reddit.com', count: 34 },
-  { source: 'Wikipedia', icon: WikipediaIcon, domain: 'wikipedia.org', count: 21 },
-  { source: 'Product Hunt', icon: ProductHuntIcon, domain: 'producthunt.com', count: 19 },
-  { source: 'G2 Reviews', icon: G2Icon, domain: 'g2.com', count: 16 },
-  { source: 'YouTube', icon: YoutubeIcon, domain: 'youtube.com', count: 14 },
-  { source: 'GitHub', icon: GithubIcon, domain: 'github.com', count: 11 },
-  { source: 'X', icon: XIcon, domain: 'x.com', count: 9 },
-  { source: 'Substack', icon: SubstackIcon, domain: 'substack.com', count: 6 },
-] as const;
-
-function DemoSparkline() {
-  const width = 560;
-  const height = 160;
-  const values = visibility;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const coords = values.map((value, index) => {
-    const x = (index / (values.length - 1)) * width;
-    const y = height - ((value - min) / span) * height;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
+function ExampleEvidence() {
   return (
-    <div>
-      <svg
-        viewBox={`0 0 ${String(width)} ${String(height)}`}
-        className="h-40 w-full"
-        role="img"
-        aria-label="Example visibility score rising from 42 to 84 over fourteen days"
-      >
-        {[0.25, 0.5, 0.75].map((fraction) => (
-          <line
-            key={fraction}
-            x1="0"
-            x2={String(width)}
-            y1={String(height * fraction)}
-            y2={String(height * fraction)}
-            stroke="var(--border)"
-            strokeWidth="1"
-            strokeDasharray="3,3"
-          />
-        ))}
-        <polygon
-          points={`0,${String(height)} ${coords.join(' ')} ${String(width)},${String(height)}`}
-          fill="var(--chart-1)"
-          opacity="0.07"
-        />
-        <polyline
-          points={coords.join(' ')}
-          fill="none"
-          stroke="var(--chart-1)"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-      <div className="mt-1.5 flex justify-between text-xs tabular-nums text-muted-foreground">
-        <span>{relativeDayLabel(13)}</span>
-        <span>{relativeDayLabel(0)}</span>
+    <Card className="overflow-hidden border-border/80 py-0 shadow-none">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-5 py-3">
+        <span className="text-sm font-semibold">Example: CedarFlow</span>
+        <Badge variant="secondary" className="font-normal">
+          Illustrative example
+        </Badge>
       </div>
-    </div>
-  );
-}
-
-function DemoDashboard({ compact = false }: { compact?: boolean }) {
-  return (
-    <Card className="overflow-hidden py-0 shadow-none border-border/80">
-      {/* Mock browser header frame */}
-      <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1.5" aria-hidden="true">
-            <span className="size-2.5 rounded-full bg-zinc-300/80" />
-            <span className="size-2.5 rounded-full bg-zinc-300/80" />
-            <span className="size-2.5 rounded-full bg-zinc-300/80" />
-          </div>
-          <span className="ml-2 hidden rounded-md bg-background px-2.5 py-0.5 font-mono text-[11px] text-muted-foreground border sm:inline-block">
-            app.citescout.com/overview · OrbitCal
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="flex size-5 items-center justify-center rounded bg-primary text-[9px] font-bold italic text-primary-foreground">
-            O
-          </span>
-          <span className="text-xs font-semibold">OrbitCal</span>
-          <Badge variant="secondary" className="text-[10px] font-normal h-5 px-1.5">
-            Last 14 days · UTC
-          </Badge>
-        </div>
-      </div>
-
-      <Tabs defaultValue="overview">
-        <div className="border-b px-4 pt-2">
-          <TabsList className="bg-transparent p-0">
-            <TabsTrigger
-              value="overview"
-              className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
-            >
-              Overview
-            </TabsTrigger>
-            <TabsTrigger
-              value="prompts"
-              className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
-            >
-              Prompts
-            </TabsTrigger>
-            <TabsTrigger
-              value="citations"
-              className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
-            >
-              Citations
-            </TabsTrigger>
-          </TabsList>
-        </div>
-
-        <TabsContent value="overview" className="mt-0 p-4">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {(
-              [
-                ['Visibility score', '84.2', '+8.4'],
-                ['Mention rate', '70%', '+20%'],
-                ['Share of voice', '31%', '+5%'],
-                ['Coverage', '90%', '1 timed out'],
-              ] as const
-            ).map(([label, value, delta]) => (
-              <div key={label} className="rounded-md border p-3">
-                <p className="text-[11px] text-muted-foreground">{label}</p>
-                <p className="mt-0.5 text-xl font-bold tabular-nums tracking-tight">{value}</p>
-                <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-                  {!delta.includes('timed') && (
-                    <TrendingUp className="size-3 text-emerald-600" aria-hidden="true" />
-                  )}
-                  <span className={delta.includes('timed') ? '' : 'text-emerald-700'}>{delta}</span>
-                </p>
-              </div>
-            ))}
-          </div>
-          {!compact && (
-            <div className="mt-4">
-              <DemoSparkline />
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="prompts" className="mt-0 p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-4">Prompt</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="pr-4 text-right">First mention</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {demoPromptRows.map((row) => (
-                <TableRow key={row.prompt}>
-                  <TableCell className="max-w-xs pl-4 text-sm">
-                    <span className="block min-w-36 whitespace-normal">{row.prompt}</span>
-                    <details className="mt-2 text-xs text-muted-foreground">
-                      <summary className="cursor-pointer">View example evidence</summary>
-                      <p className="mt-2 whitespace-normal">
-                        {row.status === 'displaced'
-                          ? 'Calendly appears first. OrbitCal is another option. Calendly appeared before your brand; first-mention order is not a ranking.'
-                          : row.status === 'recommended'
-                            ? 'OrbitCal is a strong choice for independent consultants.'
-                            : row.status === 'mentioned'
-                              ? 'OrbitCal offers client booking software.'
-                              : 'Use a booking form to collect client details. No tracked brands appear in this example.'}
-                      </p>
-                    </details>
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge classification={row.status} />
-                  </TableCell>
-                  <TableCell className="pr-4 text-right text-sm tabular-nums">
-                    {row.position === null ? '—' : `#${String(row.position)}`}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TabsContent>
-
-        <TabsContent value="citations" className="mt-0 p-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {demoCitations.map(({ source, icon: Icon, domain, count }) => (
-              <div key={source} className="flex items-center gap-3 rounded-md border p-3">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                  <Icon className="size-4 text-foreground/70" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{source}</p>
-                  <p className="truncate text-xs text-muted-foreground">{domain}</p>
-                </div>
-                <span className="text-sm font-semibold tabular-nums text-muted-foreground">
-                  {String(count)}
-                </span>
-              </div>
-            ))}
-          </div>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Sources most frequently returned with these illustrative AI answers. Research
-            opportunities, not proven ranking factors.
+      <CardContent className="space-y-6 p-5 sm:p-6">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Buyer question
           </p>
-        </TabsContent>
-      </Tabs>
+          <h2 className="mt-2 text-lg font-semibold tracking-tight">
+            Which customer onboarding tools work for a small B2B SaaS team?
+          </h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-md border p-4">
+            <p className="text-xs font-semibold text-muted-foreground">Baseline · example answer</p>
+            <blockquote className="mt-3 text-sm leading-relaxed">
+              “Trailkit offers in-app checklists for small teams. Compare its setup requirements
+              with your onboarding workflow. [1]”
+            </blockquote>
+            <p className="mt-4 text-xs">CedarFlow: not matched · Trailkit: matched</p>
+          </div>
+          <div className="rounded-md border border-primary/30 bg-muted/20 p-4">
+            <p className="text-xs font-semibold text-muted-foreground">
+              Follow-up · example answer
+            </p>
+            <blockquote className="mt-3 text-sm leading-relaxed">
+              “CedarFlow offers onboarding checklists. Trailkit includes guided product tours.
+              Compare both against your setup needs. [1]”
+            </blockquote>
+            <p className="mt-4 text-xs">CedarFlow: matched · Trailkit: matched</p>
+          </div>
+        </div>
+        <div className="rounded-md bg-muted/50 p-4">
+          <p className="text-sm font-semibold">Brand match appeared: CedarFlow</p>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+            Open both answers to interpret the difference. A mention does not establish a
+            recommendation or explain why the answer changed.
+          </p>
+        </div>
+        <div className="border-t pt-4 text-sm">
+          <h3 className="font-semibold">Sources in this example</h3>
+          <ul className="mt-3 space-y-2 break-words text-muted-foreground">
+            <li>
+              <span className="font-medium text-foreground">[1] Cited in answer:</span>{' '}
+              onboarding-guide.example/tools
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Returned only:</span>{' '}
+              product-notes.example/onboarding
+            </li>
+          </ul>
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            Returned sources are supplied by the provider. Only a source linked by an identifiable
+            answer citation is labeled cited. All vendors, answers and source addresses here are
+            fictional.
+          </p>
+        </div>
+      </CardContent>
     </Card>
   );
 }
 
-/* --- Landing sections --- */
+function PilotOffer() {
+  return (
+    <div className="space-y-2 text-xs leading-relaxed text-muted-foreground">
+      <p>
+        Pilot: 3 questions, a baseline and one follow-up check. Then $19/month for up to 10
+        questions checked daily.
+      </p>
+      <p>
+        Follow-up is scheduled 72 hours after the baseline phase closes. No card required. Timing
+        depends on provider availability and usage limits; details are in settings.
+      </p>
+      <p>
+        The pilot is currently founder-assisted.{' '}
+        <a href="mailto:support@cite-scout.com" className="underline underline-offset-4">
+          Contact us to join
+        </a>
+        .
+      </p>
+    </div>
+  );
+}
 
 function Hero() {
   return (
@@ -411,38 +247,33 @@ function Hero() {
       <div className="mx-auto max-w-6xl px-4 pb-12 pt-16 lg:pb-16 lg:pt-24">
         <div className="mx-auto max-w-3xl text-center">
           <Badge variant="secondary" className="mb-4 font-normal text-muted-foreground">
-            AI search visibility · Perplexity monitoring
+            For SaaS founders already checking Perplexity
           </Badge>
           <h1 className="font-display text-4xl leading-tight sm:text-5xl lg:text-6xl">
-            Know when AI recommends your competitors{' '}
-            <span className="text-muted-foreground">instead of you.</span>
+            {brand.tagline}
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-base text-muted-foreground lg:text-lg">
-            CiteScout tracks how your brand appears in Perplexity answers over time, compares
-            competitors, and keeps every source auditable.
+            {brand.description}
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Button asChild size="lg">
-              <Link to="/login">
-                Check my visibility <ArrowRight className="size-4" />
+              <Link to="/app/onboarding">
+                Run my baseline <ArrowRight className="size-4" />
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <Link to="/demo">
-                Explore the live demo <ExternalLink className="size-4" />
-              </Link>
+              <Link to="/demo">Explore the example</Link>
             </Button>
           </div>
-          <p className="mt-4 text-xs text-muted-foreground">
-            One genuine trial scan. No card required. Monitoring starts at $19/month.
-          </p>
+          <div className="mx-auto mt-5 max-w-xl">
+            <PilotOffer />
+          </div>
         </div>
-
         <div className="mx-auto mt-12 max-w-4xl lg:mt-16">
-          <p className="mb-3 text-center text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Example dashboard — click through the tabs
+          <ExampleEvidence />
+          <p className="mt-4 text-center text-xs leading-relaxed text-muted-foreground">
+            Observations from the Perplexity Agent API. Results can differ from the Perplexity app.
           </p>
-          <DemoDashboard />
         </div>
       </div>
     </section>
@@ -453,30 +284,27 @@ function HowItWorks() {
   const steps = [
     {
       number: '01',
-      title: 'Configure your prompts',
-      body: 'Add your brand, up to three competitors, and the buyer-style questions your customers actually ask AI assistants.',
+      title: 'Bring three buyer questions',
+      body: 'Use questions you already check manually. Add your SaaS brand and one to three competitors, then review your baseline setup.',
     },
     {
       number: '02',
-      title: 'We observe daily',
-      body: 'Every enabled prompt is run once per UTC day against the Perplexity Agent API, with the full answer and citations stored.',
+      title: 'Inspect the saved answers',
+      body: 'Read the observed answer for each question. Inspect matched brand names and distinguish returned sources from sources cited in the answer.',
     },
     {
       number: '03',
-      title: 'Inspect the evidence',
-      body: 'Track visibility over time, compare share of voice, and open any stored answer to see exactly why a metric moved.',
+      title: 'Return and compare',
+      body: 'Compare the follow-up with its baseline. Inspect changes in mentions and sources, then decide what deserves more investigation. No change is a valid result too.',
     },
   ] as const;
 
   return (
     <section className="border-b" aria-labelledby="how-it-works-heading">
       <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
-        <p
-          className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-          id="how-it-works-heading"
-        >
-          How CiteScout works
-        </p>
+        <h2 className="font-display text-3xl lg:text-4xl" id="how-it-works-heading">
+          From a buyer question to evidence you can revisit.
+        </h2>
         <div className="mt-8 grid gap-8 md:grid-cols-3">
           {steps.map((step) => (
             <div key={step.number} className="border-t pt-4">
@@ -491,101 +319,22 @@ function HowItWorks() {
   );
 }
 
-function Integrations() {
-  const sources = [
-    { label: 'Perplexity AI', icon: PerplexityIcon, note: 'Observed daily' },
-    { label: 'Reddit', icon: RedditIcon, note: 'Citations tracked' },
-    { label: 'Product Hunt', icon: ProductHuntIcon, note: 'Launch references' },
-    { label: 'G2 Reviews', icon: G2Icon, note: 'B2B sentiment' },
-    { label: 'Wikipedia', icon: WikipediaIcon, note: 'Knowledge graph citations' },
-    { label: 'YouTube', icon: YoutubeIcon, note: 'Video citations' },
-    { label: 'GitHub', icon: GithubIcon, note: 'Developer discussions' },
-    { label: 'X (Twitter)', icon: XIcon, note: 'Social recommendations' },
-    { label: 'Substack', icon: SubstackIcon, note: 'Newsletter citations' },
-    { label: 'Notion', icon: NotionIcon, note: 'Team workspace' },
-  ] as const;
-
-  return (
-    <section className="border-b bg-background">
-      <div className="mx-auto max-w-6xl px-4 py-8">
-        <p className="mb-4 text-center text-xs font-medium uppercase tracking-wider text-muted-foreground/80">
-          Tracking citations across authoritative consumer & B2B platforms
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4">
-          {sources.map(({ label, icon: Icon, note }) => (
-            <div
-              key={label}
-              className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
-              title={note}
-            >
-              <Icon className="size-4 shrink-0 opacity-70" />
-              <span className="text-xs font-medium">{label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Features() {
-  return (
-    <section className="border-b">
-      <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          The useful difference
-        </p>
-        <h2 className="font-display mt-3 max-w-xl text-3xl lg:text-4xl">
-          One answer is an anecdote. Fourteen days is a signal.
-        </h2>
-        <div className="mt-10 grid gap-8 md:grid-cols-3">
-          <div className="border-t pt-4">
-            <h3 className="text-base font-semibold tracking-tight">Track movement</h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-              See whether your brand is gaining visibility, losing ground, or appearing
-              inconsistently across buyer-style prompts.
-            </p>
-          </div>
-          <div className="border-t pt-4">
-            <h3 className="text-base font-semibold tracking-tight">Watch competitors</h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-              Compare share of voice and first-mention order against the products prospects see
-              alongside yours.
-            </p>
-          </div>
-          <div className="border-t pt-4">
-            <h3 className="text-base font-semibold tracking-tight">Audit the evidence</h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-              Open the stored answer and every returned citation. No mysterious score without the
-              underlying observation.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function Honesty() {
   return (
     <section className="border-b bg-muted/40">
-      <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
-        <div className="grid gap-10 lg:grid-cols-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Honest by design
-            </p>
-            <h2 className="font-display mt-3 text-3xl lg:text-4xl">
-              Directional intelligence, not a fabricated ranking.
-            </h2>
-          </div>
-          <div className="flex flex-col justify-center">
-            <p className="text-sm leading-relaxed text-muted-foreground lg:text-base">
-              AI answers are nondeterministic. CiteScout records observations from the supported
-              Perplexity Agent API. It does not claim to reproduce the Perplexity consumer app,
-              ChatGPT, Claude, or Google AI Overviews.
-            </p>
-          </div>
+      <div className="mx-auto grid max-w-6xl gap-8 px-4 py-16 lg:grid-cols-2 lg:py-20">
+        <h2 className="font-display text-3xl lg:text-4xl">
+          A record for your next marketing review.
+        </h2>
+        <div className="space-y-3 text-sm leading-relaxed text-muted-foreground lg:text-base">
+          <p>
+            Each answer is one observation from the Perplexity Agent API using CiteScout’s
+            configuration. Answers can vary, even when the question stays the same.
+          </p>
+          <p>
+            Brand mentions and sources help you investigate. They do not measure buyer reach,
+            rankings or revenue, and a change does not prove the effect of a marketing action.
+          </p>
         </div>
       </div>
     </section>
@@ -595,33 +344,35 @@ function Honesty() {
 function PricingCta() {
   return (
     <section className="border-b">
-      <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
-        <div className="grid items-center gap-10 lg:grid-cols-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Focused and affordable
-            </p>
-            <h2 className="font-display mt-3 text-3xl lg:text-4xl">
-              Replace the spreadsheet ritual, not your entire SEO stack.
-            </h2>
-          </div>
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-bold tabular-nums tracking-tight">$19</span>
-                <span className="text-sm text-muted-foreground">/ month</span>
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                10 daily prompts · 3 competitors · full history
-              </p>
-              <Button asChild className="mt-5 w-full">
-                <Link to="/pricing">
-                  See what is included <ArrowRight className="size-4" />
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
+      <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-16 lg:grid-cols-2 lg:py-20">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            One focused pilot
+          </p>
+          <h2 className="font-display mt-3 text-3xl lg:text-4xl">
+            Start with questions you already care about.
+          </h2>
         </div>
+        <Card>
+          <CardContent className="p-6">
+            <div className="mb-4 flex items-baseline gap-2">
+              <span className="text-4xl font-bold tabular-nums tracking-tight">$19</span>
+              <span className="text-sm text-muted-foreground">/ month after the pilot</span>
+            </div>
+            <PilotOffer />
+            <Button asChild className="mt-5 w-full">
+              <Link to="/app/onboarding">
+                Run my baseline <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+            <Link
+              to="/pricing"
+              className="mt-3 block text-center text-xs text-muted-foreground underline underline-offset-4"
+            >
+              View plan details
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     </section>
   );
@@ -634,9 +385,7 @@ function Landing() {
       <Header />
       <main id="main">
         <Hero />
-        <Integrations />
         <HowItWorks />
-        <Features />
         <Honesty />
         <PricingCta />
       </main>
@@ -646,31 +395,25 @@ function Landing() {
 }
 
 function Demo() {
-  usePageTitle('Demo');
+  usePageTitle('Example');
   return (
     <>
       <Header />
       <main id="main" className="mx-auto max-w-6xl px-4 py-12 lg:py-16">
         <div className="mx-auto max-w-2xl text-center">
-          <Badge variant="secondary" className="font-normal text-muted-foreground">
-            Illustrative demo data
-          </Badge>
-          <h1 className="font-display mt-4 text-3xl lg:text-4xl">
-            See the pattern, not just the snapshot.
+          <h1 className="font-display text-3xl lg:text-4xl">
+            Follow one buyer question over time.
           </h1>
           <p className="mt-3 text-sm text-muted-foreground lg:text-base">
-            OrbitCal is a fictional scheduling product. This dashboard demonstrates fourteen days of
-            changing AI-search visibility and never calls Perplexity.
+            Inspect a fictional baseline and follow-up for CedarFlow, a fictional B2B SaaS. This
+            example makes no provider calls and represents no customer results.
           </p>
         </div>
         <div className="mx-auto mt-10 max-w-4xl">
-          <DemoDashboard />
+          <ExampleEvidence />
         </div>
-        <p className="mx-auto mt-8 max-w-2xl text-center text-xs leading-relaxed text-muted-foreground">
-          Illustrative demo data only. CiteScout observes the Perplexity Agent API and does not
-          claim to reproduce the Perplexity consumer application, ChatGPT, Claude, or Google AI
-          Overviews. AI answers are nondeterministic, so these numbers are directional observations
-          rather than guaranteed rankings.
+        <p className="mx-auto mt-4 max-w-2xl text-center text-xs leading-relaxed text-muted-foreground">
+          Observations from the Perplexity Agent API. Results can differ from the Perplexity app.
         </p>
       </main>
       <Footer />
@@ -680,34 +423,34 @@ function Demo() {
 
 const pricingFaq = [
   {
-    question: 'Does CiteScout monitor ChatGPT, Claude, or Google AI Overviews?',
+    question: 'What does CiteScout observe?',
     answer:
-      'No. CiteScout observes the supported Perplexity Agent API only, and every number in your dashboard comes from a stored, auditable Perplexity answer. We say this openly because a monitoring tool that overstates its coverage is worse than no tool.',
+      'Answers from the Perplexity Agent API using CiteScout’s configuration. These can differ from the Perplexity app. Each observation is a sample; brand mentions are not rankings or evidence of revenue impact.',
   },
   {
-    question: 'What is the free trial, exactly?',
+    question: 'What is included in the pilot?',
     answer:
-      'One genuine trial scan per account, covering up to three of your prompts, run against the real Perplexity API. No card required. You keep the results whether or not you subscribe.',
+      'Three fixed questions, a baseline, and one follow-up scheduled 72 hours after the baseline phase closes. No card required. The trial expires 14 days after it starts. Provider availability and usage limits can delay checks; failed captures have bounded recovery attempts. Enrollment is founder-assisted.',
   },
   {
-    question: 'Can I change my prompts and competitors later?',
+    question: 'Can I change my questions and competitors later?',
     answer:
-      'Yes, any time. Each enabled prompt is observed once per UTC day, so changes take effect on the next daily scan. You can have up to ten enabled prompts and three competitors on the single plan.',
+      'The trial question set and brand configuration stay fixed while it runs. You can stop the trial or subscribe to change them. On the paid plan, you can monitor up to ten active questions and three competitors. Replacing a captured question keeps its history and starts a new comparison baseline.',
   },
   {
     question: 'Can I cancel anytime?',
     answer:
-      'Yes, from the self-serve billing portal. If you cancel, you keep access until the end of the paid period, and your historical answers stay available afterwards — we never delete your data because a subscription ended.',
+      'Yes, from the self-serve billing portal. Daily monitoring continues until the end of your paid period. Saved answers remain available to read and compare after your subscription or trial ends.',
   },
   {
-    question: 'Why is it only $19/month when competitors charge hundreds?',
+    question: 'Does the price guarantee daily results?',
     answer:
-      'CiteScout is deliberately focused: one project, one provider, daily observations. That focus keeps provider costs low, and we pass that on instead of building an enterprise sales motion.',
+      'The pilot offer is $19/month for one SaaS project and up to ten questions checked daily. Checks depend on provider availability and usage limits. Failed or delayed checks are shown explicitly; they do not count as evidence that your brand was absent.',
   },
   {
-    question: 'What if my brand is missing from an answer?',
+    question: 'What if my brand is missing or nothing changes?',
     answer:
-      'That is exactly what CiteScout surfaces. You will see the absence per prompt over time, alongside which competitors were mentioned and which sources the AI cited — the starting point for improving your visibility.',
+      'You can inspect the answer and see which tracked names matched. A follow-up with no detected change is a valid result. You decide whether the evidence suggests anything worth investigating; CiteScout does not promise improved visibility.',
   },
 ] as const;
 
@@ -764,10 +507,10 @@ function Pricing() {
         <div className="mx-auto max-w-6xl px-4 pb-12 pt-16 lg:pt-20">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              One plan. Predictable cost.
+              One project. One pilot offer.
             </p>
             <h1 className="font-display mt-3 text-4xl lg:text-5xl">
-              Useful monitoring without a sales call.
+              Keep checking the questions buyers ask.
             </h1>
           </div>
 
@@ -777,8 +520,7 @@ function Pricing() {
                 <div>
                   <p className="text-sm font-semibold">CiteScout Monitor</p>
                   <p className="mt-0.5 text-sm text-muted-foreground">
-                    For founders and small teams who need evidence, not another enterprise
-                    dashboard.
+                    For B2B SaaS founders and first marketers already checking Perplexity manually.
                   </p>
                 </div>
                 <div className="flex items-baseline gap-1.5">
@@ -790,10 +532,10 @@ function Pricing() {
               <ul className="grid gap-2.5 text-sm sm:grid-cols-2">
                 {[
                   'One active project',
-                  '10 enabled prompts',
-                  '3 tracked competitors',
-                  'One observation per prompt per UTC day',
-                  'Historical trends and raw answer archive',
+                  'Up to 10 active buyer questions',
+                  '1–3 tracked competitors',
+                  'Daily checks, subject to availability and usage limits',
+                  'Saved answers, sources and comparable changes',
                   'Secure self-serve billing',
                   'Cancel anytime, keep your history',
                 ].map((item) => (
@@ -804,13 +546,13 @@ function Pricing() {
                 ))}
               </ul>
               <Button asChild size="lg" className="mt-6 w-full">
-                <Link to="/login">
-                  Start with a trial scan <ArrowRight className="size-4" />
+                <Link to="/app/onboarding">
+                  Run my baseline <ArrowRight className="size-4" />
                 </Link>
               </Button>
-              <p className="mt-3 text-center text-xs text-muted-foreground">
-                No card required for the trial scan.
-              </p>
+              <div className="mt-4 text-center">
+                <PilotOffer />
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -944,17 +686,19 @@ export function App() {
           path="/app"
           element={
             <ErrorBoundary>
-              <AppShell />
+              <V2Shell />
             </ErrorBoundary>
           }
         >
-          <Route index element={<Navigate to="/app/overview" replace />} />
-          <Route path="onboarding" element={<Onboarding />} />
-          <Route path="overview" element={<AppOverview />} />
-          <Route path="prompts" element={<PromptsPage />} />
-          <Route path="responses" element={<ResponsesPage />} />
-          <Route path="billing" element={<BillingPage />} />
-          <Route path="settings" element={<SettingsPage />} />
+          <Route index element={<Navigate to="/app/questions" replace />} />
+          <Route path="onboarding" element={<V2Onboarding />} />
+          <Route path="questions" element={<V2Questions />} />
+          <Route path="questions/:questionId" element={<V2QuestionDetail />} />
+          <Route path="overview" element={<Navigate to="/app/questions" replace />} />
+          <Route path="prompts" element={<Navigate to="/app/questions" replace />} />
+          <Route path="responses" element={<LegacyEvidenceRedirect />} />
+          <Route path="billing" element={<Navigate to="/app/settings" replace />} />
+          <Route path="settings" element={<V2Settings />} />
         </Route>
         <Route path="*" element={<MarketingNotFound />} />
       </Routes>
