@@ -6,6 +6,8 @@ Implementasi mengikuti `docs/citescout-v2-final-spec.md`. Dokumen ini adalah run
 
 Jalankan aplikasi dengan `npm run dev`. Script `predev` menerapkan migrasi D1 lokal yang belum dijalankan sebelum Vite mulai, termasuk ketika memakai database dari versi lama. Jika menjalankan Vite langsung, jalankan `npm run db:migrate:local` terlebih dahulu. Database lokal berada di checkout tempat perintah dijalankan; tiap worktree memiliki database sendiri.
 
+Jika halaman kosong setelah restart konfigurasi Vite, periksa request `/node_modules/.vite/deps/` di Network browser. Pada insiden 9 Oktober 2026, request React berhenti tanpa respons meskipun HTML dan API sudah 200. Hentikan dev server dengan `Ctrl+C`, jalankan `npm run dev -- --force`, lalu refresh tab. Cold restart ini membangun ulang dependency Vite tanpa menghapus database lokal. Gunakan sebagai pemulihan ketika request dependency macet; startup normal tetap `npm run dev`.
+
 ```powershell
 npm run typecheck
 npm run lint
