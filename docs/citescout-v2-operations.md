@@ -4,6 +4,8 @@ Implementasi mengikuti `docs/citescout-v2-final-spec.md`. Dokumen ini adalah run
 
 ## Pemeriksaan lokal
 
+Jalankan aplikasi dengan `npm run dev`. Script `predev` menerapkan migrasi D1 lokal yang belum dijalankan sebelum Vite mulai, termasuk ketika memakai database dari versi lama. Jika menjalankan Vite langsung, jalankan `npm run db:migrate:local` terlebih dahulu. Database lokal berada di checkout tempat perintah dijalankan; tiap worktree memiliki database sendiri.
+
 ```powershell
 npm run typecheck
 npm run lint

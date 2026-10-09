@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { analyzeEvidence, compareEvidence } from '../../src/domain/evidence';
 import { processDueScans, startScan, readRun, cancelTrial } from '../../src/server/v2/scans';
-import { observationPayload, questionRows } from '../../src/server/v2/read-model';
+import { observationPayload, projectPayload, questionRows } from '../../src/server/v2/read-model';
 import { deleteAccountData } from '../../src/server/account-deletion';
 import { recordPayment } from '../../src/server/v2/payments';
 import { clientEvent } from '../../src/server/v2/routes';
@@ -81,6 +81,15 @@ const env = {
   PER_USER_MONTHLY_PROVIDER_CALL_CAP: '350',
 } as unknown as CloudflareBindings;
 const now = new Date('2026-10-08T12:00:00Z');
+// The first request after sign-in must work for both upgraded and new accounts.
+const legacyWorkspace = await projectPayload(env, 'legacy');
+assert.equal(legacyWorkspace.project?.id, 'legacy');
+assert.equal(legacyWorkspace.project.questions[0]?.id, 'legacy');
+assert.equal(legacyWorkspace.enrolled, false);
+const newWorkspace = await projectPayload(env, 'new-account');
+assert.equal(newWorkspace.project, null);
+assert.equal(newWorkspace.trial, null);
+assert.equal(newWorkspace.usage.today, 0);
 assert.equal(
   clientEvent.safeParse({
     name: 'answer_inspected',

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "npm run db:migrate:local",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

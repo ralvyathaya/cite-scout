@@ -51,7 +51,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), cloudflare(), stripLocalSecrets()],
   resolve: {
     alias: {
-      '@': resolve(__dirname, './src'),
+      '@': resolve(import.meta.dirname, './src'),
     },
   },
 });
