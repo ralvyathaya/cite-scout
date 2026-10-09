@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { Link } from 'react-router';
 import { GoogleColorIcon } from '@/client/components/brand-icons';
+import { BrandLogo } from '@/client/components/BrandLogo';
 import { Button } from '@/client/components/ui/button';
 import {
   Card,
@@ -123,10 +124,7 @@ export function Login() {
       className="flex min-h-svh flex-col items-center justify-center bg-muted/50 px-4 py-12"
     >
       <Link to="/" className="mb-8 flex items-center gap-2" aria-label="CiteScout home">
-        <span className="flex size-8 items-center justify-center rounded-md bg-primary text-sm font-bold italic text-primary-foreground">
-          CS
-        </span>
-        <span className="text-lg font-bold tracking-tight">CiteScout</span>
+        <BrandLogo />
       </Link>
 
       <Card className="w-full max-w-sm">

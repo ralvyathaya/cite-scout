@@ -10,6 +10,7 @@ import {
   useSearchParams,
 } from 'react-router';
 import { Button } from '../../components/ui/button';
+import { BrandLogo } from '../../components/BrandLogo';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { highlight } from '../../lib/highlight';
@@ -74,8 +75,8 @@ export function V2Shell() {
     <div className="min-h-svh bg-background">
       <header className="border-b">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-5 px-5 py-4">
-          <Link to="/" className="mr-auto text-lg font-bold tracking-tight">
-            CiteScout
+          <Link to="/" className="mr-auto" aria-label="CiteScout home">
+            <BrandLogo />
           </Link>
           <nav aria-label="Application" className="flex gap-4 text-sm">
             <NavLink

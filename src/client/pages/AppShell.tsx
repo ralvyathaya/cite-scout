@@ -23,6 +23,7 @@ import {
   DialogTrigger,
 } from '@/client/components/ui/dialog';
 import { Button } from '@/client/components/ui/button';
+import { BrandLogo } from '@/client/components/BrandLogo';
 import { Skeleton } from '@/client/components/ui/skeleton';
 import type { DashboardContext } from './dashboard-context';
 import type { DashboardPayload, LoadState } from './dashboard-view';
@@ -43,10 +44,7 @@ function Logo({ className }: { className?: string }) {
       className={`flex items-center gap-2 ${className ?? ''}`}
       aria-label="CiteScout home"
     >
-      <span className="flex size-7 items-center justify-center rounded-md bg-primary text-xs font-bold italic text-primary-foreground">
-        CS
-      </span>
-      <span className="text-sm font-bold tracking-tight">CiteScout</span>
+      <BrandLogo />
     </Link>
   );
 }

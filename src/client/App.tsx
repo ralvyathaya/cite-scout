@@ -6,6 +6,7 @@ import { Button } from '@/client/components/ui/button';
 import { Card, CardContent } from '@/client/components/ui/card';
 import { Separator } from '@/client/components/ui/separator';
 import { brand } from '@/shared/brand';
+import { BrandLogo } from '@/client/components/BrandLogo';
 import { ErrorBoundary } from '@/client/ErrorBoundary';
 import { OfflineBanner } from '@/client/OfflineBanner';
 import {
@@ -22,10 +23,7 @@ import { usePageTitle } from '@/client/use-page-title';
 function Logo() {
   return (
     <Link to="/" className="flex items-center gap-2" aria-label={`${brand.name} home`}>
-      <span className="flex size-7 items-center justify-center rounded-md bg-primary text-xs font-bold italic text-primary-foreground">
-        CS
-      </span>
-      <span className="text-sm font-bold tracking-tight">{brand.name}</span>
+      <BrandLogo />
     </Link>
   );
 }

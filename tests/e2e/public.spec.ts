@@ -102,20 +102,46 @@ test.describe('document metadata', () => {
   test('favicon and social meta are served', async ({ page, request }) => {
     await page.goto('/');
 
-    const icon = page.locator('link[rel="icon"]');
+    const icon = page.locator('link[rel="icon"][type="image/svg+xml"]');
     await expect(icon).toHaveAttribute('href', '/favicon.svg');
     await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
       'content',
       /See what Perplexity tells buyers/,
     );
-    await expect(page.locator('meta[property="og:image"]')).toHaveCount(0);
-    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary');
+    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+      'content',
+      'https://cite-scout.com/og-image.png',
+    );
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute(
+      'content',
+      'summary_large_image',
+    );
+    await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute(
+      'href',
+      '/apple-touch-icon.png',
+    );
+    await expect(page.locator('header img[src="/brand/logo-blue.svg"]')).toBeVisible();
 
     const iconResponse = await request.get('/favicon.svg');
     expect(iconResponse.status()).toBe(200);
 
     const ogResponse = await request.get('/og-image.png');
     expect(ogResponse.status()).toBe(200);
+    expect(ogResponse.headers()['content-type']).toContain('image/png');
+
+    for (const path of ['/favicon.ico', '/apple-touch-icon.png', '/brand/logo-blue.svg']) {
+      const response = await request.get(path);
+      expect(response.status()).toBe(200);
+      expect(response.headers()['content-type']).toContain('image/');
+    }
+    const manifest = await request.get('/site.webmanifest');
+    const data = (await manifest.json()) as { name: string; icons: { src: string }[] };
+    expect(data.name).toBe('CiteScout');
+    for (const asset of data.icons) {
+      const response = await request.get(asset.src);
+      expect(response.status()).toBe(200);
+      expect(response.headers()['content-type']).toContain('image/png');
+    }
   });
 
   test('each public route sets its own tab title', async ({ page }) => {
