@@ -1,5 +1,20 @@
 import { useState, type ReactNode, type SubmitEvent } from 'react';
 import {
+  BarChart3,
+  ListChecks,
+  FileText,
+  Stethoscope,
+  CheckSquare,
+  Globe,
+  Users,
+  CreditCard,
+  Settings,
+  Menu,
+  LogOut,
+  LifeBuoy,
+  ChevronRight,
+} from 'lucide-react';
+import {
   Link,
   NavLink,
   Navigate,
@@ -8,11 +23,19 @@ import {
   useOutletContext,
   useParams,
   useSearchParams,
+  useLocation,
 } from 'react-router';
 import { Button } from '../../components/ui/button';
 import { BrandLogo } from '../../components/BrandLogo';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+} from '../../components/ui/dialog';
 import { highlight } from '../../lib/highlight';
 import { ApiError, api, emitEvent, useInspection, useResource } from './api';
 import type {
@@ -24,7 +47,7 @@ import type {
   V2QuestionRow,
 } from '../../../shared/v2';
 
-interface WorkspaceContext {
+export interface WorkspaceContext {
   data: V2ProjectPayload;
   reload: () => Promise<void>;
 }
@@ -69,66 +92,168 @@ export function V2Shell() {
   const resource = useResource<V2ProjectPayload>('/project', true);
   const navigate = useNavigate();
   const action = useAction();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { pathname } = useLocation();
+  const navigation = [
+    { label: 'Overview', path: '/app/overview', Icon: BarChart3, group: 'Workspace' },
+    { label: 'Prompt Sets', path: '/app/questions', Icon: ListChecks },
+    { label: 'Observations', path: '/app/observations', Icon: FileText },
+    { label: 'Diagnoses', path: '/app/diagnoses', Icon: Stethoscope, group: 'Improve' },
+    { label: 'Action Playbook', path: '/app/playbook', Icon: CheckSquare },
+    { label: 'Sources', path: '/app/sources', Icon: Globe },
+    { label: 'Competitors', path: '/app/competitors', Icon: Users },
+    { label: 'Billing & usage', path: '/app/billing', Icon: CreditCard, group: 'Account' },
+    { label: 'Settings', path: '/app/settings', Icon: Settings },
+  ];
+  const activePage =
+    navigation.find((item) => pathname.startsWith(item.path))?.label ?? 'Project setup';
+  const sidebar = (
+    <>
+      <Link
+        to="/"
+        className="flex h-16 shrink-0 items-center border-b px-5"
+        aria-label="CiteScout home"
+      >
+        <BrandLogo />
+      </Link>
+      <Link
+        to="/app/settings"
+        onClick={() => {
+          setMobileOpen(false);
+        }}
+        className="m-3 flex items-center gap-3 rounded-lg border bg-background p-3"
+      >
+        <span
+          className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold text-primary"
+          aria-hidden="true"
+        >
+          {resource.data?.project?.brandName.slice(0, 2).toUpperCase() ?? 'CS'}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold">
+            {resource.data?.project?.brandName ?? 'Your workspace'}
+          </span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {resource.data?.project?.canonicalDomain ?? 'Complete project setup'}
+          </span>
+        </span>
+      </Link>
+      <nav aria-label="Application" className="min-h-0 flex-1 overflow-y-auto px-3 pb-5">
+        {navigation.map(({ label, path, Icon, group }) => (
+          <div key={path}>
+            {group && (
+              <p className="px-3 pb-2 pt-5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {group}
+              </p>
+            )}
+            <NavLink
+              to={path}
+              onClick={() => {
+                setMobileOpen(false);
+              }}
+              className={({ isActive }) =>
+                `mb-1 flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`
+              }
+            >
+              <Icon className="size-4 shrink-0" aria-hidden="true" />
+              {label}
+            </NavLink>
+          </div>
+        ))}
+      </nav>
+      <div className="border-t p-3">
+        <p className="px-3 py-2 text-xs text-muted-foreground">
+          {resource.data?.canScan ? 'Daily monitoring enabled' : 'Saved evidence stays available'}
+        </p>
+        <Button
+          variant="ghost"
+          className="w-full justify-start"
+          size="sm"
+          disabled={action.busy}
+          onClick={() =>
+            void action.run(async () => {
+              const response = await fetch('/api/auth/sign-out', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+              });
+              if (!response.ok) throw new Error('Could not sign out.');
+              sessionStorage.removeItem('citescout-run');
+              await navigate('/');
+            })
+          }
+        >
+          <LogOut className="size-4" aria-hidden="true" />
+          Sign out
+        </Button>
+      </div>
+    </>
+  );
   if (resource.error instanceof ApiError && resource.error.status === 401)
     return <Navigate to="/login" replace />;
   return (
-    <div className="min-h-svh bg-background">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-5 px-5 py-4">
-          <Link to="/" className="mr-auto" aria-label="CiteScout home">
-            <BrandLogo />
-          </Link>
-          <nav aria-label="Application" className="flex gap-4 text-sm">
-            <NavLink
-              to="/app/questions"
-              className={({ isActive }) =>
-                isActive ? 'font-semibold underline underline-offset-8' : ''
-              }
+    <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
+      <div className="flex min-h-svh bg-background">
+        <aside
+          className="sticky top-0 hidden h-svh w-60 shrink-0 flex-col self-start border-r bg-muted/25 lg:flex"
+          aria-label="Workspace sidebar"
+        >
+          {sidebar}
+        </aside>
+        <DialogContent className="inset-y-0 left-0 top-0 flex h-svh w-72 max-w-[calc(100%-3rem)] translate-x-0 translate-y-0 flex-col gap-0 rounded-none bg-background p-0 sm:max-w-72">
+          <DialogTitle className="sr-only">Workspace navigation</DialogTitle>
+          <DialogDescription className="sr-only">
+            Navigate your CiteScout workspace.
+          </DialogDescription>
+          {sidebar}
+        </DialogContent>
+        <div className="min-w-0 flex-1">
+          <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background px-4 sm:px-8">
+            <DialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="lg:hidden"
+                aria-label="Open navigation"
+              >
+                <Menu className="size-4" aria-hidden="true" />
+              </Button>
+            </DialogTrigger>
+            <span className="hidden text-sm text-muted-foreground sm:inline">Workspace</span>
+            <ChevronRight
+              className="hidden size-3 text-muted-foreground sm:inline"
+              aria-hidden="true"
+            />
+            <span className="text-sm font-medium">{activePage}</span>
+            <a
+              href={`mailto:${resource.data?.supportEmail ?? 'support@cite-scout.com'}`}
+              className="ml-auto flex min-h-9 items-center gap-2 text-xs text-muted-foreground"
+              aria-label="Contact support"
             >
-              Questions
-            </NavLink>
-            <NavLink
-              to="/app/settings"
-              className={({ isActive }) =>
-                isActive ? 'font-semibold underline underline-offset-8' : ''
-              }
-            >
-              Settings
-            </NavLink>
-          </nav>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={action.busy}
-            onClick={() =>
-              void action.run(async () => {
-                const response = await fetch('/api/auth/sign-out', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                });
-                if (!response.ok) throw new Error('Could not sign out.');
-                sessionStorage.removeItem('citescout-run');
-                await navigate('/');
-              })
-            }
+              <LifeBuoy className="size-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Help & support</span>
+            </a>
+          </header>
+          <main
+            id="main"
+            tabIndex={-1}
+            className="mx-auto max-w-[1440px] space-y-5 px-4 py-7 outline-none sm:px-8"
           >
-            Sign out
-          </Button>
+            <Failure error={action.error ?? resource.error} />
+            {resource.loading && !resource.data ? (
+              <p role="status">Loading your questions…</p>
+            ) : resource.data ? (
+              <Outlet
+                context={
+                  { data: resource.data, reload: resource.reload } satisfies WorkspaceContext
+                }
+              />
+            ) : (
+              <Button onClick={() => void resource.reload()}>Retry</Button>
+            )}
+          </main>
         </div>
-      </header>
-      <main id="main" className="mx-auto max-w-7xl space-y-5 px-5 py-8 sm:px-8">
-        <Failure error={action.error ?? resource.error} />
-        {resource.loading && !resource.data ? (
-          <p role="status">Loading your questions…</p>
-        ) : resource.data ? (
-          <Outlet
-            context={{ data: resource.data, reload: resource.reload } satisfies WorkspaceContext}
-          />
-        ) : (
-          <Button onClick={() => void resource.reload()}>Retry</Button>
-        )}
-      </main>
-    </div>
+      </div>
+    </Dialog>
   );
 }
 function TrialStatus({ data }: { data: V2ProjectPayload }) {
@@ -384,7 +509,7 @@ interface RunView {
   }[];
 }
 const runPending = (run: RunView) => !run.terminal;
-function RunProgress({ id }: { id: string }) {
+export function RunProgress({ id }: { id: string }) {
   const { data } = useOutletContext<WorkspaceContext>();
   const run = useResource<RunView>(`/scans/${id}`, runPending);
   if (!run.data) return <Failure error={run.error} />;
@@ -1221,7 +1346,11 @@ export function V2Settings() {
         {billing.data?.availabilityMessage && <Notice>{billing.data.availabilityMessage}</Notice>}
         <div className="flex flex-wrap gap-3">
           {billing.data?.checkoutAvailable && (
-            <Button disabled={action.busy} onClick={() => void billingAction('checkout')}>
+            <Button
+              className="h-auto min-h-9 max-w-full whitespace-normal"
+              disabled={action.busy}
+              onClick={() => void billingAction('checkout')}
+            >
               Continue daily monitoring — $19/month
             </Button>
           )}

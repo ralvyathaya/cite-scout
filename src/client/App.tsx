@@ -17,6 +17,7 @@ import {
   V2Settings,
   LegacyEvidenceRedirect,
 } from '@/client/pages/v2/Workspace';
+import { V2DevelopmentSection, V2Overview } from '@/client/pages/v2/Overview';
 import { Login } from '@/client/pages/Login';
 import { usePageTitle } from '@/client/use-page-title';
 
@@ -687,11 +688,16 @@ export function App() {
             </ErrorBoundary>
           }
         >
-          <Route index element={<Navigate to="/app/questions" replace />} />
+          <Route index element={<Navigate to="/app/overview" replace />} />
           <Route path="onboarding" element={<V2Onboarding />} />
           <Route path="questions" element={<V2Questions />} />
           <Route path="questions/:questionId" element={<V2QuestionDetail />} />
-          <Route path="overview" element={<Navigate to="/app/questions" replace />} />
+          <Route path="overview" element={<V2Overview />} />
+          <Route path="observations" element={<V2Questions />} />
+          <Route path="diagnoses" element={<V2DevelopmentSection title="Diagnoses" />} />
+          <Route path="playbook" element={<V2DevelopmentSection title="Action Playbook" />} />
+          <Route path="sources" element={<V2DevelopmentSection title="Sources" />} />
+          <Route path="competitors" element={<V2DevelopmentSection title="Competitors" />} />
           <Route path="prompts" element={<Navigate to="/app/questions" replace />} />
           <Route path="responses" element={<LegacyEvidenceRedirect />} />
           <Route path="billing" element={<Navigate to="/app/settings" replace />} />

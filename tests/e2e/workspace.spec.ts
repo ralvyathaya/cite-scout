@@ -288,7 +288,9 @@ test('unpaid checkout return does not unlock monitoring', async ({ page }) => {
   );
   await page.goto('/app/settings?checkout=complete');
   await expect(page.getByText(/Subscription: unpaid/)).toBeVisible();
-  await page.getByRole('link', { name: 'Questions', exact: true }).click();
+  if ((page.viewportSize()?.width ?? 1440) < 1024)
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('link', { name: 'Prompt Sets', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Check today' })).toHaveCount(0);
 });
 test('account deletion preserves confirmation after a verification failure', async ({ page }) => {
@@ -313,6 +315,10 @@ for (const width of [320, 390, 1440])
     await workspace(page);
     await page.goto('/app/questions');
     await expect(page.getByRole('heading', { name: 'Buyer questions', exact: true })).toBeVisible();
+    if (width < 1024) {
+      await page.getByRole('button', { name: 'Open navigation' }).focus();
+      await page.keyboard.press('Enter');
+    }
     const settings = page
       .getByRole('navigation', { name: 'Application' })
       .getByRole('link', { name: 'Settings' });
