@@ -22,12 +22,12 @@ import {
 } from '../../shared/geo';
 import { getConfig, globalCollectorCallCap } from '../config';
 import { paidProjectSql } from '../scan-policy';
+import { utcDate } from '../../domain/normalization';
 
 const COOLDOWN = 300_000;
 const paidGate = `${paidProjectSql} AND NOT EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.paid_starts_at>?)`;
 const sql = (env: CloudflareBindings, query: string, ...params: unknown[]) =>
   env.DB.prepare(query).bind(...params);
-const dateOf = (at: Date) => at.toISOString().slice(0, 10);
 const iso = (at: number | null) => (at === null ? null : new Date(at).toISOString());
 
 interface ProjectRow {
@@ -295,7 +295,7 @@ export async function geoAllowance(
 ): Promise<GeoAllowance> {
   const project = await projectFor(env, userId),
     config = getConfig(env);
-  const date = dateOf(at),
+  const date = utcDate(at),
     month = `${date.slice(0, 7)}%`;
   const counts = await sql(
     env,
@@ -315,22 +315,22 @@ export async function geoAllowance(
     globalDaily: globalCollectorCallCap(env),
   };
   const count = counts ?? { today: 0, month: 0, globalToday: 0 };
-  const reason =
+  let reason: string | null = null;
+  if (
     config.GEO_SCANS_ENABLED !== 'true' ||
     config.EXTERNAL_INTEGRATIONS_ENABLED !== 'true' ||
     config.V2_SCANS_ENABLED !== 'true'
-      ? 'GEO_SCANS_DISABLED'
-      : !(await hasPaidAccess(env, userId, at))
-        ? 'PAID_ACCESS_REQUIRED'
-        : (await paidStartPending(env, userId, at))
-          ? 'PAID_STARTS_NEXT_UTC_DAY'
-          : Object.values(limits).some((limit) => limit <= 0)
-            ? 'GEO_BUDGET_REQUIRED'
-            : count.today >= limits.projectDaily ||
-                count.month >= limits.projectMonthly ||
-                count.globalToday >= limits.globalDaily
-              ? 'GEO_QUOTA_EXCEEDED'
-              : null;
+  )
+    reason = 'GEO_SCANS_DISABLED';
+  else if (!(await hasPaidAccess(env, userId, at))) reason = 'PAID_ACCESS_REQUIRED';
+  else if (await paidStartPending(env, userId, at)) reason = 'PAID_STARTS_NEXT_UTC_DAY';
+  else if (Object.values(limits).some((limit) => limit <= 0)) reason = 'GEO_BUDGET_REQUIRED';
+  else if (
+    count.today >= limits.projectDaily ||
+    count.month >= limits.projectMonthly ||
+    count.globalToday >= limits.globalDaily
+  )
+    reason = 'GEO_QUOTA_EXCEEDED';
   return { ...count, limits, enabled: reason === null, reason, cooldownSeconds: 300 };
 }
 
@@ -448,7 +448,7 @@ export async function startGeoRun(
   const snapshotHash = await geoHash(contexts);
   const intent =
     trigger === 'scheduled'
-      ? `geo:daily:${project.id}:${dateOf(at)}:${snapshotHash}`
+      ? `geo:daily:${project.id}:${utcDate(at)}:${snapshotHash}`
       : `geo:manual:${project.id}:${input.requestId}`;
   if (trigger === 'scheduled') {
     const daily = await sql(env, 'SELECT id FROM scan_runs WHERE intent_key=?', intent).first<{
@@ -457,9 +457,10 @@ export async function startGeoRun(
     if (daily) return readGeoRun(env, userId, daily.id);
   }
   const runId = crypto.randomUUID(),
-    date = dateOf(at),
+    date = utcDate(at),
     month = `${date.slice(0, 7)}%`,
     now = at.getTime();
+  const contextsJson = JSON.stringify(contexts);
   const params: unknown[] = [
     runId,
     project.id,
@@ -489,8 +490,8 @@ export async function startGeoRun(
     date,
     contexts.length,
     allowance.limits.globalDaily,
-    JSON.stringify(contexts),
-    JSON.stringify(contexts),
+    contextsJson,
+    contextsJson,
     now - COOLDOWN,
     now,
   ];
@@ -526,7 +527,7 @@ export async function startGeoRun(
       input.requestId,
       payloadHash,
       snapshotHash,
-      JSON.stringify(contexts),
+      contextsJson,
       settings.revision,
       runId,
     ),
@@ -545,6 +546,7 @@ export async function startGeoRun(
     ),
   ];
   for (const context of contexts) {
+    const contextJson = JSON.stringify(context);
     const itemId = crypto.randomUUID(),
       reservationId = crypto.randomUUID();
     statements.push(
@@ -563,7 +565,7 @@ export async function startGeoRun(
         date,
         now,
         itemId,
-        JSON.stringify(context),
+        contextJson,
         runId,
       ),
     );
@@ -579,7 +581,7 @@ export async function startGeoRun(
         context.promptId,
         context.promptVersionId,
         context.engine,
-        JSON.stringify(context),
+        contextJson,
         reservationId,
         now,
         now,

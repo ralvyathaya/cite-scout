@@ -29,19 +29,17 @@ export function V2Overview() {
   );
   if (!data.project) return <Navigate to="/app/onboarding" replace />;
   const summary = rows.data?.summary;
-  const reason = !data.scansEnabled
-    ? 'Monitoring is paused. Saved answers remain available.'
-    : !data.canScan && data.trial?.state !== 'eligible'
-      ? data.trial?.state === 'waiting'
+  let reason: string | null = null;
+  if (!data.scansEnabled) reason = 'Monitoring is paused. Saved answers remain available.';
+  else if (!data.canScan && data.trial?.state !== 'eligible') {
+    reason =
+      data.trial?.state === 'waiting'
         ? 'Your trial follow-up is scheduled automatically.'
-        : 'Monitoring access is inactive. Review your plan in Settings.'
-      : data.usage.today >= data.usage.dailyLimit
-        ? 'Daily observation limit reached.'
-        : data.usage.month >= data.usage.monthlyLimit
-          ? 'Monthly observation limit reached.'
-          : questions.length === 0
-            ? 'Add an active prompt before monitoring.'
-            : null;
+        : 'Monitoring access is inactive. Review your plan in Settings.';
+  } else if (data.usage.today >= data.usage.dailyLimit) reason = 'Daily observation limit reached.';
+  else if (data.usage.month >= data.usage.monthlyLimit)
+    reason = 'Monthly observation limit reached.';
+  else if (questions.length === 0) reason = 'Add an active prompt before monitoring.';
   const runId = params.get('run') ?? sessionStorage.getItem('citescout-run');
   const observation = proof.data?.observation;
   const excerpt =

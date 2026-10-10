@@ -64,18 +64,12 @@ geoRoutes.onError((error, c) => {
     );
   const code = error instanceof Error ? error.message : '';
   if (!errors[code]) throw error;
-  return c.json(
-    { error: { code, message: errors[code] } },
-    code.endsWith('NOT_FOUND')
-      ? 404
-      : code === 'PAID_ACCESS_REQUIRED'
-        ? 403
-        : code === 'INVALID_CURSOR' || code === 'VALIDATION_ERROR'
-          ? 422
-          : code === 'GEO_QUOTA_EXCEEDED' || code === 'GEO_COOLDOWN_OR_IN_FLIGHT'
-            ? 429
-            : 409,
-  );
+  let status: 404 | 403 | 422 | 429 | 409 = 409;
+  if (code.endsWith('NOT_FOUND')) status = 404;
+  else if (code === 'PAID_ACCESS_REQUIRED') status = 403;
+  else if (code === 'INVALID_CURSOR' || code === 'VALIDATION_ERROR') status = 422;
+  else if (code === 'GEO_QUOTA_EXCEEDED' || code === 'GEO_COOLDOWN_OR_IN_FLIGHT') status = 429;
+  return c.json({ error: { code, message: errors[code] } }, status);
 });
 
 geoRoutes.get('/settings', async (c) =>
