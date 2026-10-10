@@ -120,7 +120,7 @@ test.describe('document metadata', () => {
       'href',
       '/apple-touch-icon.png',
     );
-    await expect(page.locator('header img[src="/brand/logo-blue.svg"]')).toBeVisible();
+    await expect(page.locator('header img[src="/brand/logo-box.svg"]')).toBeVisible();
 
     const iconResponse = await request.get('/favicon.svg');
     expect(iconResponse.status()).toBe(200);
@@ -129,7 +129,12 @@ test.describe('document metadata', () => {
     expect(ogResponse.status()).toBe(200);
     expect(ogResponse.headers()['content-type']).toContain('image/png');
 
-    for (const path of ['/favicon.ico', '/apple-touch-icon.png', '/brand/logo-blue.svg']) {
+    for (const path of [
+      '/favicon.ico',
+      '/apple-touch-icon.png',
+      '/brand/logo-blue.svg',
+      '/brand/logo-box.svg',
+    ]) {
       const response = await request.get(path);
       expect(response.status()).toBe(200);
       expect(response.headers()['content-type']).toContain('image/');
