@@ -14,6 +14,7 @@ import {
 } from './geo-store';
 import { geoPromptSetSchema, geoRunRequestSchema, geoSettingsSchema } from '../../shared/geo';
 import { readJson } from '../http';
+import { processGeoCollectors } from './collectors';
 
 export const geoRoutes = new Hono<{
   Bindings: CloudflareBindings;
@@ -111,21 +112,40 @@ geoRoutes.delete('/prompt-sets/:id', async (c) => {
   await deleteGeoPromptSet(c.env, c.get('userId'), c.req.param('id'));
   return c.json({ data: { deleted: true } });
 });
-geoRoutes.post('/runs', async (c) =>
-  c.json(
-    {
-      data: await startGeoRun(
-        c.env,
-        c.get('userId'),
-        geoRunRequestSchema.parse(await readJson(c.req.raw)),
-      ),
-    },
-    202,
-  ),
-);
+geoRoutes.post('/runs', async (c) => {
+  const data = await startGeoRun(
+    c.env,
+    c.get('userId'),
+    geoRunRequestSchema.parse(await readJson(c.req.raw)),
+  );
+  c.executionCtx.waitUntil(
+    processGeoCollectors(c.env, 1).catch(() => {
+      console.error(JSON.stringify({ event: 'geo_collector_deferred' }));
+    }),
+  );
+  return c.json({ data }, 202);
+});
 geoRoutes.get('/runs/:id', async (c) =>
   c.json({ data: await readGeoRun(c.env, c.get('userId'), c.req.param('id')) }),
 );
+geoRoutes.get('/runs/:id/attempts', async (c) => {
+  const run = await readGeoRun(c.env, c.get('userId'), c.req.param('id'));
+  const rows = await c.env.DB.prepare(
+    `SELECT v.item_id AS itemId,v.provider,v.status,v.failure_code AS failureCode,
+    v.provider_request_id AS providerTaskId,v.reported_cost AS reportedCost,v.provider_response_json AS raw
+    FROM provider_call_reservations v JOIN projects p ON p.id=v.project_id
+    WHERE v.scan_run_id=? AND p.user_id=? ORDER BY v.reserved_at,v.id`,
+  )
+    .bind(run.id, c.get('userId'))
+    .all<{ raw: string | null }>();
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({
+    data: rows.results.map((row) => ({
+      ...row,
+      raw: row.raw === null ? null : (JSON.parse(row.raw) as unknown),
+    })),
+  });
+});
 geoRoutes.get('/observations', async (c) =>
   c.json({ data: await readGeoObservations(c.env, c.get('userId'), c.req.query('cursor')) }),
 );

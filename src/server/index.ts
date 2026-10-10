@@ -11,6 +11,7 @@ import { processDueScans } from './v2/scans';
 import { v2Routes } from './v2/routes';
 import { accountRoutes } from './routes/account';
 import { operatorRoutes } from './routes/operator';
+import { processGeoCollectors } from './v2/collectors';
 import { BodyTooLargeError } from './http';
 
 interface AppEnv {
@@ -190,6 +191,11 @@ async function scheduled(controller: ScheduledController, env: CloudflareBinding
     }),
   );
   await processDueScans(
+    env,
+    Number(env.MAX_PROVIDER_CALLS_PER_CRON_INVOCATION),
+    new Date(controller.scheduledTime),
+  );
+  await processGeoCollectors(
     env,
     Number(env.MAX_PROVIDER_CALLS_PER_CRON_INVOCATION),
     new Date(controller.scheduledTime),

@@ -13,24 +13,32 @@ export const geoSurfaces = {
     surface: 'perplexity_agent',
     collector: 'perplexity_api',
     reportsModel: true,
+    supportsLocale: false,
+    supportsDevice: false,
   },
   google_aio: {
     label: 'Google AI Overview',
     surface: 'google_ai_overview',
     collector: 'dataforseo_standard',
     reportsModel: false,
+    supportsLocale: true,
+    supportsDevice: true,
   },
   chatgpt_search: {
     label: 'ChatGPT Search',
     surface: 'chatgpt_search',
     collector: 'dataforseo_standard',
     reportsModel: true,
+    supportsLocale: true,
+    supportsDevice: false,
   },
   bing_copilot: {
     label: 'Bing Copilot Answers',
     surface: 'bing_copilot_answers',
     collector: 'dataforseo_standard',
     reportsModel: false,
+    supportsLocale: true,
+    supportsDevice: true,
   },
 } as const;
 
