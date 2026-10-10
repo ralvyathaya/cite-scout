@@ -9,6 +9,7 @@ import { readJson } from '../http';
 import { consumeRateLimit } from '../rate-limit';
 import { eventStatement } from './events';
 import { cancelTrial, processDueScans, readRun, startScan } from './scans';
+import { geoRoutes } from './geo-routes';
 import {
   ownedProject,
   paidAccess,
@@ -124,6 +125,7 @@ v2Routes.use('*', async (c, next) => {
     );
   }
 });
+v2Routes.route('/geo', geoRoutes);
 v2Routes.get('/project', async (c) =>
   c.json({ data: await projectPayload(c.env, c.get('userId')) }),
 );

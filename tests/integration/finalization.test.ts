@@ -81,8 +81,14 @@ describe('atomic scan accounting', () => {
     const first = await seed(1),
       second = await seed(1);
     const calls = vi.fn((input: ObservationRequest) => provider.runObservation(input));
-    const limited = withBindings({ GLOBAL_DAILY_PROVIDER_CALL_CAP: '1' });
     const now = new Date('2030-01-01T12:00:00Z');
+    await env.DB.prepare(
+      `INSERT INTO provider_call_reservations
+      (id,idempotency_key,provider,usage_date,status,reserved_at) VALUES(?,?,'google_aio','2030-01-01','succeeded',?)`,
+    )
+      .bind(crypto.randomUUID(), crypto.randomUUID(), now.getTime())
+      .run();
+    const limited = withBindings({ GLOBAL_DAILY_PROVIDER_CALL_CAP: '2' });
     const results = await Promise.all(
       [first, second].map((item) =>
         runScan(limited, { ...item, trigger: 'trial', now, provider: { runObservation: calls } }),

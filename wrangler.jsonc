@@ -19,7 +19,7 @@
     },
   ],
   "triggers": {
-    "crons": ["0 * * * *"],
+    "crons": ["*/5 * * * *"],
   },
   "observability": {
     "enabled": true,
@@ -31,6 +31,10 @@
     "APP_ENV": "development",
     "EXTERNAL_INTEGRATIONS_ENABLED": "false",
     "V2_SCANS_ENABLED": "true",
+    "GEO_SCANS_ENABLED": "false",
+    "GEO_GLOBAL_DAILY_CALL_CAP": "0",
+    "GEO_PROJECT_DAILY_CALL_CAP": "0",
+    "GEO_PROJECT_MONTHLY_CALL_CAP": "0",
     "TEST_AUTH_ENABLED": "true",
     "LEMON_SQUEEZY_STORE_ID": "476459",
     "LEMON_SQUEEZY_PRODUCT_ID": "1406363",

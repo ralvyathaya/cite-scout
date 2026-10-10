@@ -2,6 +2,7 @@ import { captureEvidence } from '../../integrations/perplexity/evidence';
 import { neutralResearchInstruction } from '../../integrations/perplexity/provider';
 import { CaptureError, type EvidenceCapture, type RequestContext } from '../../shared/evidence';
 import { monthBounds, paidProjectSql as paidSql } from '../scan-policy';
+import { globalCollectorCallCap } from '../config';
 
 const DAY = 86_400_000;
 const LEASE = 300_000;
@@ -246,6 +247,13 @@ async function reconcileEligibility(env: CloudflareBindings, now: Date) {
   await env.DB.batch([
     statement(
       env,
+      `UPDATE scan_run_items SET status='cancelled',terminal_reason='geo_schedule_active'
+      WHERE phase='paid' AND status='pending' AND ?=1
+      AND run_id IN(SELECT r.id FROM scan_runs r JOIN geo_settings g ON g.project_id=r.project_id)`,
+      Number(env.GEO_SCANS_ENABLED === 'true'),
+    ),
+    statement(
+      env,
       `UPDATE pilot_enrollments SET paid_starts_at=?,trial_state='cancelled'
       WHERE paid_starts_at IS NULL AND EXISTS(SELECT 1 FROM projects p WHERE p.user_id=pilot_enrollments.user_id AND ${paidSql})`,
       nextDay(now),
@@ -312,7 +320,8 @@ async function recoverLeases(env: CloudflareBindings, now: Date) {
   const stale = await statement(
     env,
     `SELECT id,item_id FROM provider_call_reservations
-    WHERE item_id IS NOT NULL AND status='reserved' AND lease_until<=?`,
+    WHERE item_id IS NOT NULL AND status='reserved' AND lease_until<=?
+    AND EXISTS(SELECT 1 FROM scan_run_items WHERE id=provider_call_reservations.item_id)`,
     now.getTime(),
   ).all<{ id: string; item_id: string }>();
   for (const claim of stale.results)
@@ -443,8 +452,10 @@ async function createDueRuns(env: CloudflareBindings, now: Date) {
   const paid = await statement(
     env,
     `SELECT p.user_id FROM projects p WHERE p.v2_enabled_at IS NOT NULL AND ${paidSql}
+    AND (?<>1 OR NOT EXISTS(SELECT 1 FROM geo_settings g WHERE g.project_id=p.id))
     AND NOT EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.paid_starts_at>?)`,
     now.getTime(),
+    Number(env.GEO_SCANS_ENABLED === 'true'),
     now.getTime(),
   ).all<{ user_id: string }>();
   for (const project of paid.results) {
@@ -507,7 +518,7 @@ async function claimItem(env: CloudflareBindings, item: DueItem, now: Date) {
       WHERE i.id=? AND i.status='pending' AND i.due_at<=? AND i.attempts_used<? AND q.enabled=1 AND q.archived_at IS NULL
       AND q.text=? AND q.updated_at=? AND p.context_version=? AND r.context_version=p.context_version
       AND ${gate}
-      AND (SELECT count(*) FROM provider_call_reservations WHERE provider='perplexity' AND usage_date=?)<?
+      AND (SELECT count(*) FROM provider_call_reservations WHERE usage_date=?)<?
       AND (SELECT count(*) FROM provider_call_reservations WHERE user_id=p.user_id AND usage_date>=? AND usage_date<?)<?
       AND (SELECT count(*) FROM provider_call_reservations WHERE project_id=p.id AND usage_date=?)<10
       RETURNING id`,
@@ -528,7 +539,7 @@ async function claimItem(env: CloudflareBindings, item: DueItem, now: Date) {
         ? [now.getTime(), date, now.getTime()]
         : [item.phase, now.getTime()]),
       date,
-      Math.min(150, Number(env.GLOBAL_DAILY_PROVIDER_CALL_CAP)),
+      Math.min(150, globalCollectorCallCap(env)),
       monthStart,
       monthEnd,
       Math.min(350, Number(env.PER_USER_MONTHLY_PROVIDER_CALL_CAP)),

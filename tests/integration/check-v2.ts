@@ -13,7 +13,12 @@ import { highlight } from '../../src/client/lib/highlight';
 // In-memory SQLite and synthetic provider responses only; never reads credentials or calls a service.
 const db = new DatabaseSync(':memory:');
 db.exec('PRAGMA foreign_keys=ON');
-for (const name of ['0000_careless_selene', '0001_sticky_the_hand', '0002_citescout_v2']) {
+for (const name of [
+  '0000_careless_selene',
+  '0001_sticky_the_hand',
+  '0002_citescout_v2',
+  '0003_geo_action_loop',
+]) {
   if (name === '0002_citescout_v2')
     db.exec(`
     INSERT INTO users(id,name,email,created_at,updated_at) VALUES('legacy','Legacy','legacy@example.test',1,1);
@@ -280,6 +285,22 @@ try {
       )
       .get()?.n,
     0,
+  );
+  const sharedBudgetDay = new Date('2026-11-01T12:00:00Z');
+  db.prepare(
+    `INSERT INTO provider_call_reservations
+    (id,idempotency_key,provider,usage_date,status,reserved_at,item_id,lease_until)
+    VALUES('geo-ledger','geo-ledger','dataforseo','2026-11-01','reserved',?,'geo-item',?)`,
+  ).run(sharedBudgetDay.getTime() - 600000, sharedBudgetDay.getTime() - 1);
+  seed('cross-provider-cap');
+  await startScan(env, 'cross-provider-cap', 'baseline', sharedBudgetDay);
+  const beforeSharedBudget = calls;
+  await processDueScans({ ...env, GLOBAL_DAILY_PROVIDER_CALL_CAP: '1' }, 20, sharedBudgetDay);
+  assert.equal(calls, beforeSharedBudget, 'Global cap includes every collector provider');
+  assert.equal(
+    db.prepare("SELECT status FROM provider_call_reservations WHERE id='geo-ledger'").get()?.status,
+    'reserved',
+    'Legacy recovery cannot retire a GEO collector lease',
   );
   console.log(
     'V2 self-check passed: migration, trial/retry/caps, concurrent claims, paid scheduling, evidence, ownership, refund ordering, cohort SQL and deletion.',

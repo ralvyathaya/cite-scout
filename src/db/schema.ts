@@ -378,6 +378,157 @@ export const rateLimits = sqliteTable(
   (table) => [index('rate_limits_expires_idx').on(table.expiresAt)],
 );
 
+export const geoSettings = sqliteTable('geo_settings', {
+  projectId: text('project_id')
+    .primaryKey()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  enginesJson: text('engines_json').notNull(),
+  dailyEnabled: integer('daily_enabled', { mode: 'boolean' }).notNull().default(false),
+  languageCode: text('language_code').notNull(),
+  locationCode: integer('location_code').notNull(),
+  device: text('device', { enum: ['desktop', 'mobile'] }).notNull(),
+  revision: integer('revision').notNull().default(1),
+  updatedAt: timestamp('updated_at').notNull(),
+});
+
+export const geoPromptVersions = sqliteTable(
+  'geo_prompt_versions',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    promptId: text('prompt_id')
+      .notNull()
+      .references(() => prompts.id, { onDelete: 'cascade' }),
+    text: text('text').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (table) => [index('geo_prompt_versions_prompt_idx').on(table.promptId)],
+);
+
+export const geoPromptSets = sqliteTable(
+  'geo_prompt_sets',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    promptIdsJson: text('prompt_ids_json').notNull(),
+    promptVersionIdsJson: text('prompt_version_ids_json').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (table) => [index('geo_prompt_sets_project_idx').on(table.projectId)],
+);
+
+export const geoRunSnapshots = sqliteTable(
+  'geo_run_snapshots',
+  {
+    runId: text('run_id')
+      .primaryKey()
+      .references(() => scanRuns.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    requestId: text('request_id').notNull(),
+    payloadHash: text('payload_hash').notNull(),
+    snapshotHash: text('snapshot_hash').notNull(),
+    contextJson: text('context_json').notNull(),
+    settingsRevision: integer('settings_revision').notNull(),
+  },
+  (table) => [uniqueIndex('geo_run_request_unique').on(table.projectId, table.requestId)],
+);
+
+export const geoRunItems = sqliteTable(
+  'geo_run_items',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id')
+      .notNull()
+      .references(() => scanRuns.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    promptId: text('prompt_id')
+      .notNull()
+      .references(() => prompts.id, { onDelete: 'cascade' }),
+    promptVersionId: text('prompt_version_id')
+      .notNull()
+      .references(() => geoPromptVersions.id, { onDelete: 'cascade' }),
+    engine: text('engine', {
+      enum: ['perplexity', 'google_aio', 'chatgpt_search', 'bing_copilot'],
+    }).notNull(),
+    status: text('status', {
+      enum: [
+        'pending',
+        'submitting',
+        'submitted',
+        'succeeded',
+        'failed',
+        'cancelled',
+        'submission_uncertain',
+      ],
+    })
+      .notNull()
+      .default('pending'),
+    contextJson: text('context_json').notNull(),
+    reservationId: text('reservation_id')
+      .notNull()
+      .references(() => providerCallReservations.id),
+    providerTaskId: text('provider_task_id'),
+    attemptsUsed: integer('attempts_used').notNull().default(1),
+    dueAt: timestamp('due_at').notNull(),
+    leaseToken: text('lease_token'),
+    leaseUntil: timestamp('lease_until'),
+    submittedAt: timestamp('submitted_at'),
+    terminalReason: text('terminal_reason'),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('geo_item_scope_unique').on(table.runId, table.promptVersionId, table.engine),
+    index('geo_items_due_idx').on(table.status, table.dueAt),
+    index('geo_items_scope_idx').on(table.projectId, table.promptId, table.engine),
+  ],
+);
+
+export const geoObservations = sqliteTable(
+  'geo_observations',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    runId: text('run_id')
+      .notNull()
+      .references(() => scanRuns.id, { onDelete: 'cascade' }),
+    itemId: text('item_id')
+      .notNull()
+      .references(() => geoRunItems.id, { onDelete: 'cascade' }),
+    promptVersionId: text('prompt_version_id')
+      .notNull()
+      .references(() => geoPromptVersions.id, { onDelete: 'cascade' }),
+    engine: text('engine', {
+      enum: ['perplexity', 'google_aio', 'chatgpt_search', 'bing_copilot'],
+    }).notNull(),
+    model: text('model'),
+    status: text('status', { enum: ['complete', 'partial', 'no_feature'] }).notNull(),
+    contextJson: text('context_json').notNull(),
+    captureJson: text('capture_json').notNull(),
+    answerText: text('answer_text').notNull(),
+    capturedAt: timestamp('captured_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('geo_observation_item_unique').on(table.itemId),
+    uniqueIndex('geo_observation_scope_unique').on(
+      table.runId,
+      table.promptVersionId,
+      table.engine,
+    ),
+    index('geo_observation_history_idx').on(table.projectId, table.engine, table.capturedAt),
+  ],
+);
+
 export const projectRelations = relations(projects, ({ one, many }) => ({
   user: one(users, { fields: [projects.userId], references: [users.id] }),
   competitors: many(competitors),
@@ -407,6 +558,12 @@ export const schema = {
   pilotEnrollments,
   scanRunItems,
   productEvents,
+  geoSettings,
+  geoPromptVersions,
+  geoPromptSets,
+  geoRunSnapshots,
+  geoRunItems,
+  geoObservations,
 };
 
 export const sqliteForeignKeys = sql`PRAGMA foreign_keys = ON`;

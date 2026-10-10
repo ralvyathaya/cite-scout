@@ -27,7 +27,7 @@
     },
   ],
   "triggers": {
-    "crons": ["0 * * * *"],
+    "crons": ["*/5 * * * *"],
   },
   // Explicit so `wrangler deploy` never silently disables the public
   // workers.dev route or the staging preview alias used by `deploy:preview`.
@@ -43,6 +43,10 @@
     "APP_ENV": "production",
     "EXTERNAL_INTEGRATIONS_ENABLED": "true",
     "V2_SCANS_ENABLED": "true",
+    "GEO_SCANS_ENABLED": "false",
+    "GEO_GLOBAL_DAILY_CALL_CAP": "0",
+    "GEO_PROJECT_DAILY_CALL_CAP": "0",
+    "GEO_PROJECT_MONTHLY_CALL_CAP": "0",
     "TEST_AUTH_ENABLED": "false",
     "LEMON_SQUEEZY_STORE_ID": "476459",
     "LEMON_SQUEEZY_PRODUCT_ID": "1406363",
