@@ -23,16 +23,19 @@ test('local fixture workspace completes the evidence-action loop without any API
   await page.screenshot({ path: testInfo.outputPath('geo-overview.png'), fullPage: true });
   await page.goto('/app/playbook');
   await expect(page.getByRole('heading', { name: 'Action Playbook', exact: true })).toBeVisible();
-  await page.locator('a[href="/app/playbook/fixture-action-1"]').first().click();
+  await page.locator('a[href="/app/playbook/fixture-action-1"]').first().focus();
+  await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'Action brief', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Accept action', exact: true }).click();
+  await page.getByRole('button', { name: 'Accept action', exact: true }).focus();
+  await page.keyboard.press('Enter');
   await page
     .getByLabel('Change description', { exact: true })
     .fill('Synthetic update: published a clearer buyer comparison with verified product facts.');
   await page
     .getByLabel('Reported implementation time', { exact: true })
     .fill(new Date(Date.now() - 3600_000).toISOString().slice(0, 16));
-  await page.getByRole('button', { name: /Complete action/ }).click();
+  await page.getByRole('button', { name: /Complete action/ }).focus();
+  await page.keyboard.press('Enter');
   await expect(
     page
       .getByText(
@@ -40,9 +43,12 @@ test('local fixture workspace completes the evidence-action loop without any API
       )
       .first(),
   ).toBeVisible();
-  if ((page.viewportSize()?.width ?? 1440) < 1024)
-    await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
-  await page.getByRole('link', { name: 'Overview', exact: true }).click();
+  if ((page.viewportSize()?.width ?? 1440) < 1024) {
+    await page.getByRole('button', { name: 'Open navigation', exact: true }).focus();
+    await page.keyboard.press('Enter');
+  }
+  await page.getByRole('link', { name: 'Overview', exact: true }).focus();
+  await page.keyboard.press('Enter');
   await expect(page.locator('.recharts-reference-line-line')).toHaveCount(1);
   await page.locator('a[href="/app/playbook/fixture-action-1"]').first().click();
   await page.getByRole('button', { name: 'Monitor Prompts', exact: true }).click();
@@ -98,6 +104,7 @@ test('GEO quota and partial run retain original evidence when classification fai
     } else if (path === '/geo/runs' && request.method() === 'POST') {
       monitoringRun = (await fixture.request(path, request.postDataJSON())) as GeoRun;
       monitoringRun.status = 'running';
+      monitoringRun.completedAt = null;
       const [pending, failed] = monitoringRun.items;
       if (!pending || !failed) throw new Error('Fixture requires two monitoring items');
       pending.status = 'submitted';

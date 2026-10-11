@@ -1,5 +1,12 @@
 import { relations, sql } from 'drizzle-orm';
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import {
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 
 const timestamp = (name: string) => integer(name, { mode: 'timestamp_ms' });
 
@@ -558,11 +565,18 @@ export const geoProcessingAttempts = sqliteTable(
     createdAt: timestamp('created_at').notNull(),
     dueAt: timestamp('due_at').notNull(),
     completedAt: timestamp('completed_at'),
+    playbookSyncPending: integer('playbook_sync_pending').notNull().default(0),
   },
   (table) => [
     uniqueIndex('geo_processing_request_unique').on(table.projectId, table.requestId),
     index('geo_processing_due_idx').on(table.state, table.dueAt),
     index('geo_processing_usage_idx').on(table.usageDate, table.projectId),
+    index('geo_processing_playbook_sync_idx').on(
+      table.state,
+      table.kind,
+      table.playbookSyncPending,
+      table.completedAt,
+    ),
     index('geo_processing_cache_idx').on(table.projectId, table.kind, table.inputHash),
     index('geo_processing_observation_idx').on(
       table.observationId,
@@ -571,6 +585,22 @@ export const geoProcessingAttempts = sqliteTable(
       table.createdAt,
     ),
   ],
+);
+
+export const geoDailyOutcomes = sqliteTable(
+  'geo_daily_outcomes',
+  {
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    usageDate: text('usage_date').notNull(),
+    status: text('status', { enum: ['admitted', 'skipped'] }).notNull(),
+    reason: text('reason'),
+    runId: text('run_id').references(() => scanRuns.id, { onDelete: 'set null' }),
+    firstAttemptAt: timestamp('first_attempt_at').notNull(),
+    lastAttemptAt: timestamp('last_attempt_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.usageDate] })],
 );
 
 export const geoActions = sqliteTable(
@@ -709,6 +739,7 @@ export const schema = {
   geoRunItems,
   geoObservations,
   geoProcessingAttempts,
+  geoDailyOutcomes,
   geoActions,
   geoActionEvidence,
   geoActionEvents,

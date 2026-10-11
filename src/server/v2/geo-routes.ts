@@ -9,6 +9,7 @@ import {
   deleteGeoPromptSet,
   startGeoRun,
   readGeoRun,
+  readGeoRunHistory,
   readGeoObservations,
   readGeoObservation,
 } from './geo-store';
@@ -191,6 +192,10 @@ geoRoutes.post('/runs', async (c) => {
     }),
   );
   return c.json({ data }, 202);
+});
+geoRoutes.get('/runs', async (c) => {
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ data: await readGeoRunHistory(c.env, c.get('userId')) });
 });
 geoRoutes.get('/runs/:id', async (c) =>
   c.json({ data: await readGeoRun(c.env, c.get('userId'), c.req.param('id')) }),

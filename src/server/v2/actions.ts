@@ -89,14 +89,25 @@ interface EventRow {
   recorded_at: number;
   body_hash: string;
 }
-function actionView(row: ActionRow, proof: EvidenceRow[]): GeoAction {
+interface ActionProofSummary {
+  action_id: string;
+  evidence_count: number;
+  scopes_json: string;
+}
+async function proofSummaries(env: CloudflareBindings, ids: string[]) {
+  return sql(
+    env,
+    `WITH ranked AS (
+      SELECT action_id,scope_json,created_at,id,count(*) OVER(PARTITION BY action_id) AS evidence_count,
+      row_number() OVER(PARTITION BY action_id,json_extract(scope_json,'$.context.promptId'),json_extract(scope_json,'$.context.engine') ORDER BY created_at DESC,id DESC) AS rank
+      FROM geo_action_evidence WHERE action_id IN (SELECT value FROM json_each(?))
+    ) SELECT action_id,max(evidence_count) AS evidence_count,json_group_array(json(scope_json)) AS scopes_json
+    FROM (SELECT * FROM ranked WHERE rank=1 ORDER BY created_at DESC,id DESC) GROUP BY action_id`,
+    JSON.stringify(ids),
+  ).all<ActionProofSummary>();
+}
+function actionView(row: ActionRow, proof?: ActionProofSummary): GeoAction {
   const candidate = JSON.parse(row.candidate_json) as GeoActionCandidate;
-  const scopes = new Map<string, GeoActionScope>();
-  for (const item of proof) {
-    const scope = JSON.parse(item.scope_json) as GeoActionScope,
-      key = `${scope.context.promptId}:${scope.context.engine}`;
-    if (!scopes.has(key)) scopes.set(key, scope);
-  }
   return {
     ...candidate,
     id: row.id,
@@ -107,8 +118,8 @@ function actionView(row: ActionRow, proof: EvidenceRow[]): GeoAction {
     notes: row.notes,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
-    evidenceCount: proof.length,
-    scopes: Array.from(scopes.values()),
+    evidenceCount: proof?.evidence_count ?? 0,
+    scopes: proof ? (JSON.parse(proof.scopes_json) as GeoActionScope[]) : [],
   };
 }
 async function ownedAction(env: CloudflareBindings, userId: string, id: string) {
@@ -182,19 +193,13 @@ export async function readGeoActions(
     userId,
   ).all<ActionRow>();
   if (!rows.results.length) return [];
-  const proofs = await sql(
-    env,
-    'SELECT e.* FROM geo_action_evidence e JOIN geo_actions a ON a.id=e.action_id JOIN projects p ON p.id=a.project_id WHERE p.user_id=? AND e.action_id IN (SELECT value FROM json_each(?)) ORDER BY e.created_at DESC,e.id DESC',
-    userId,
-    JSON.stringify(rows.results.map((row) => row.id)),
-  ).all<EvidenceRow>();
+  const proofs = await proofSummaries(
+      env,
+      rows.results.map((row) => row.id),
+    ),
+    byAction = new Map(proofs.results.map((proof) => [proof.action_id, proof]));
   return rows.results
-    .map((row) =>
-      actionView(
-        row,
-        proofs.results.filter((proof) => proof.action_id === row.id),
-      ),
-    )
+    .map((row) => actionView(row, byAction.get(row.id)))
     .sort((a, b) => a.priority - b.priority || b.updatedAt.localeCompare(a.updatedAt));
 }
 export async function readGeoAction(
@@ -206,20 +211,16 @@ export async function readGeoAction(
   const row = await ownedAction(env, userId, id);
   if (cursor && !/^\d{1,16}\.[a-f0-9]{64}$/u.test(cursor)) throw new Error('INVALID_CURSOR');
   const [time, proofId] = cursor?.split('.') ?? [];
-  const all = await sql(
+  const page = await sql(
     env,
-    'SELECT * FROM geo_action_evidence WHERE action_id=? ORDER BY created_at DESC,id DESC',
+    `SELECT * FROM geo_action_evidence WHERE action_id=?
+    ${cursor ? 'AND (created_at<? OR (created_at=? AND id<?))' : ''}
+    ORDER BY created_at DESC,id DESC LIMIT 51`,
     id,
+    ...(cursor ? [Number(time), Number(time), proofId] : []),
   ).all<EvidenceRow>();
-  const page = all.results
-    .filter(
-      (proof) =>
-        !cursor ||
-        proof.created_at < Number(time) ||
-        (proof.created_at === Number(time) && proof.id < (proofId ?? '')),
-    )
-    .slice(0, 51);
-  const proof = page.slice(0, 50),
+  const summary = await proofSummaries(env, [id]),
+    proof = page.results.slice(0, 50),
     last = proof.at(-1);
   const events = await sql(
     env,
@@ -227,7 +228,7 @@ export async function readGeoAction(
     id,
   ).all<EventRow>();
   return {
-    action: actionView(row, all.results),
+    action: actionView(row, summary.results[0]),
     evidence: proof.map((item) => ({
       observationId: item.observation_id,
       analysisId: item.analysis_id,
@@ -243,7 +244,8 @@ export async function readGeoAction(
       scopes: JSON.parse(event.scope_json) as GeoActionScope[],
       evidenceIds: JSON.parse(event.evidence_json) as string[],
     })),
-    nextEvidenceCursor: page.length > 50 && last ? `${String(last.created_at)}.${last.id}` : null,
+    nextEvidenceCursor:
+      page.results.length > 50 && last ? `${String(last.created_at)}.${last.id}` : null,
   };
 }
 export async function patchGeoAction(

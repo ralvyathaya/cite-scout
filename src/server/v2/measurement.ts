@@ -61,10 +61,24 @@ async function freezeSamples(
   eventId: string | null,
   at: Date,
 ) {
+  if (!samples.length) return;
+  const existing = await sql(
+    env,
+    `SELECT s.series,s.cohort,s.day FROM geo_measurement_samples s JOIN projects p ON p.id=s.project_id
+    JOIN json_each(?) j ON s.series=json_extract(j.value,'$.series') AND s.cohort=json_extract(j.value,'$.cohort') AND s.day=json_extract(j.value,'$.day') WHERE p.user_id=?`,
+    JSON.stringify(samples.map(({ series, cohort, day }) => ({ series, cohort, day }))),
+    userId,
+  ).all<{ series: string; cohort: string; day: string }>();
+  const frozen = new Set(
+    existing.results.map((sample) => `${sample.series}:${sample.cohort}:${sample.day}`),
+  );
+  const candidates = samples.filter(
+    (sample) => !frozen.has(`${sample.series}:${sample.cohort}:${sample.day}`),
+  );
   // Set insertion keeps the number of D1 statements bounded for multi-engine samples.
-  for (let offset = 0; offset < samples.length; offset += 100) {
+  for (let offset = 0; offset < candidates.length; offset += 100) {
     const batch = await Promise.all(
-      samples.slice(offset, offset + 100).map(async (sample) => ({
+      candidates.slice(offset, offset + 100).map(async (sample) => ({
         ...sample,
         id: await geoHash([sample.series, sample.cohort, sample.day]),
       })),
@@ -111,9 +125,13 @@ export async function readGeoTrends(
   )
     throw new Error('INVALID_EVIDENCE_PERIOD');
   const rows = await metricRows(env, userId, filter, at);
-  await freezeSamples(env, userId, await dailySamples(rows, 'trend'), null, at);
   const availableIds = new Set(rows.map((row) => row.id));
-  const samples = await savedSamples(env, userId, 'trend', Array.from(availableIds));
+  const retained = await savedSamples(env, userId, 'trend', Array.from(availableIds));
+  const candidates = await dailySamples(rows, 'trend', undefined, retained);
+  await freezeSamples(env, userId, candidates, null, at);
+  const samples = candidates.length
+    ? await savedSamples(env, userId, 'trend', Array.from(availableIds))
+    : retained;
   return {
     version: geoMeasurementVersion,
     asOf: at.toISOString(),
@@ -292,10 +310,11 @@ export async function readGeoMeasurements(
       ['before', beforeWindow],
       ['after', { ...afterWindow, requestedAfter: input.implementedAt }],
     ] as const) {
+      const series = `${event.id}:${side}`;
       await freezeSamples(
         env,
         userId,
-        await dailySamples(rows, `${event.id}:${side}`, window),
+        await dailySamples(rows, series, window, await savedSamples(env, userId, series)),
         event.id,
         at,
       );
@@ -340,6 +359,7 @@ export async function readGeoMeasurements(
       metrics,
       limitations: [
         'Descriptive correlation; no causal or financial ROI attribution.',
+        'Before/after rates use equal weights for each distinct frozen cohort, so changes in coverage do not change cohort weights. Counts report actual eligible daily samples.',
         'Seven-day windows; one sample on each side permits a limited-data comparison. Unknowns, incompatible models/configurations and missing scopes are inconclusive.',
         'After samples must come from requests started at or after implementation. Classifier results require review; provider model aliases may change underlying weights.',
         'Google/Bing comparisons use reported configuration; upstream model versions are unavailable. Inline linkage is measured only when verified capability is present.',

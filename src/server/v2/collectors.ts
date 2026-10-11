@@ -184,14 +184,12 @@ export async function processGeoCollectors(env: CloudflareBindings, limit = 5, a
       else await terminal(env, item, 'failed', 'COLLECTOR_NOT_CONFIGURED', null, null, now);
       continue;
     }
+    let capture: GeoCapture | null = null;
+    let submission: Awaited<ReturnType<typeof submitDataForSeo>> | null = null;
+    let pendingRaw: unknown = null;
     try {
       if (item.engine === 'perplexity') {
-        await saveCapture(
-          env,
-          item,
-          await capturePerplexityGeo(env.PERPLEXITY_API_KEY, context),
-          clock(),
-        );
+        capture = await capturePerplexityGeo(env.PERPLEXITY_API_KEY, context);
       } else if (item.provider_task_id !== null) {
         const result = await pollDataForSeo(
           env.DATAFORSEO_LOGIN,
@@ -199,37 +197,15 @@ export async function processGeoCollectors(env: CloudflareBindings, limit = 5, a
           context,
           item.provider_task_id,
         );
-        if (result.status === 'pending') await deferPoll(env, item, result.raw, null, 300, clock());
-        else await saveCapture(env, item, result.capture, clock());
+        if (result.status === 'pending') pendingRaw = result.raw;
+        else capture = result.capture;
       } else {
-        const result = await submitDataForSeo(
+        submission = await submitDataForSeo(
           env.DATAFORSEO_LOGIN,
           env.DATAFORSEO_PASSWORD,
           context,
           item.id,
         );
-        const completed = clock();
-        await env.DB.batch([
-          guarded(
-            env,
-            `UPDATE provider_call_reservations SET provider_request_id=?,provider_response_json=?,reported_cost=?,provider_status='20100' WHERE id=?`,
-            [
-              result.taskId,
-              JSON.stringify(result.raw),
-              result.cost === null ? null : String(result.cost),
-              item.reservation_id,
-            ],
-            item,
-            completed,
-          ),
-          guarded(
-            env,
-            `UPDATE geo_run_items SET status='submitted',provider_task_id=?,submitted_at=?,due_at=?,lease_token=NULL,lease_until=NULL WHERE id=?`,
-            [result.taskId, completed, completed + 300_000, item.id],
-            item,
-            completed,
-          ),
-        ]);
       }
     } catch (error) {
       const code =
@@ -267,6 +243,55 @@ export async function processGeoCollectors(env: CloudflareBindings, limit = 5, a
           code,
           raw,
           cost,
+          clock(),
+        );
+      continue;
+    }
+    try {
+      if (capture) await saveCapture(env, item, capture, clock());
+      else if (submission) {
+        const completed = clock();
+        await env.DB.batch([
+          guarded(
+            env,
+            `UPDATE provider_call_reservations SET provider_request_id=?,provider_response_json=?,reported_cost=?,provider_status='20100' WHERE id=?`,
+            [
+              submission.taskId,
+              JSON.stringify(submission.raw),
+              submission.cost === null ? null : String(submission.cost),
+              item.reservation_id,
+            ],
+            item,
+            completed,
+          ),
+          guarded(
+            env,
+            `UPDATE geo_run_items SET status='submitted',provider_task_id=?,submitted_at=?,due_at=?,lease_token=NULL,lease_until=NULL WHERE id=?`,
+            [submission.taskId, completed, completed + 300_000, item.id],
+            item,
+            completed,
+          ),
+        ]);
+      } else await deferPoll(env, item, pendingRaw, null, 300, clock());
+    } catch {
+      // A storage failure cannot invalidate a saved GET task or justify another paid POST.
+      if (polling)
+        await deferPoll(
+          env,
+          item,
+          capture?.raw ?? pendingRaw,
+          'COLLECTOR_PERSISTENCE_ERROR',
+          300,
+          clock(),
+        );
+      else
+        await terminal(
+          env,
+          item,
+          'submission_uncertain',
+          'COLLECTOR_PERSISTENCE_ERROR',
+          capture?.raw ?? submission?.raw ?? null,
+          capture?.reportedCost ?? submission?.cost ?? null,
           clock(),
         );
     }

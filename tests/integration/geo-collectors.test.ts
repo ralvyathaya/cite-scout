@@ -185,6 +185,107 @@ describe('durable GEO collectors', () => {
         .first('count(*)'),
     ).toBe(0);
   });
+  it('recovers the same saved GET after a capture persistence failure without another POST', async () => {
+    const { env, owner, run } = await accepted();
+    const capture = {
+      status_code: 20000,
+      cost: 0,
+      tasks: [
+        {
+          id: 'saved-task',
+          status_code: 20000,
+          cost: 0,
+          result: [
+            { items: [{ type: 'ai_overview', markdown: 'Original paid answer.', references: [] }] },
+          ],
+        },
+      ],
+    };
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(reply(20100));
+    await processGeoCollectors(env, 1, at);
+    const submitted = (await readGeoRun(env, owner.userId, run.id)).items[0];
+    if (!submitted) throw new Error('Expected a submitted item');
+    const storage = vi.spyOn(env.DB, 'batch');
+    fetcher.mockImplementationOnce(() => {
+      storage.mockRejectedValueOnce(new Error('Transient D1 capture save failure'));
+      return Promise.resolve(Response.json(capture));
+    });
+    await processGeoCollectors(env, 1, new Date(Date.parse(submitted.dueAt) + 1));
+    const deferred = (await readGeoRun(env, owner.userId, run.id)).items[0];
+    if (!deferred) throw new Error('Expected a deferred item');
+    expect(deferred).toMatchObject({
+      status: 'submitted',
+      providerTaskId: 'saved-task',
+      terminalReason: 'COLLECTOR_PERSISTENCE_ERROR',
+    });
+    expect(
+      await env.DB.prepare('SELECT count(*) FROM geo_observations WHERE run_id=?')
+        .bind(run.id)
+        .first('count(*)'),
+    ).toBe(0);
+    expect(
+      await env.DB.prepare(
+        'SELECT status,reported_cost,provider_response_json FROM provider_call_reservations WHERE scan_run_id=?',
+      )
+        .bind(run.id)
+        .first(),
+    ).toEqual({
+      status: 'reserved',
+      reported_cost: '0.01',
+      provider_response_json: JSON.stringify(capture),
+    });
+    fetcher.mockResolvedValueOnce(Response.json(capture));
+    await processGeoCollectors(
+      { ...env, GEO_SCANS_ENABLED: 'false' },
+      1,
+      new Date(Date.parse(deferred.dueAt) + 1),
+    );
+    expect(fetcher.mock.calls.map((call) => call[1]?.method)).toEqual(['POST', 'GET', 'GET']);
+    expect(fetcher.mock.calls.slice(1).map((call) => call[0])).toEqual([
+      'https://api.dataforseo.com/v3/serp/google/organic/task_get/advanced/saved-task',
+      'https://api.dataforseo.com/v3/serp/google/organic/task_get/advanced/saved-task',
+    ]);
+    expect((await readGeoRun(env, owner.userId, run.id)).items[0]?.status).toBe('succeeded');
+    const saved = await env.DB.prepare(
+      "SELECT answer_text,json_extract(capture_json,'$.raw') AS raw FROM geo_observations WHERE run_id=?",
+    )
+      .bind(run.id)
+      .all();
+    expect(saved.results).toEqual([
+      { answer_text: 'Original paid answer.', raw: JSON.stringify(capture) },
+    ]);
+  });
+  it('keeps accepted POST identity persistence failures uncertain without another paid POST', async () => {
+    const { env, owner, run } = await accepted();
+    const storage = vi.spyOn(env.DB, 'batch');
+    const acceptedReply = {
+      status_code: 20000,
+      cost: 0.01,
+      tasks: [{ id: 'saved-task', status_code: 20100, cost: 0.01, result: null }],
+    };
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(() => {
+      storage.mockRejectedValueOnce(new Error('Transient D1 task identity save failure'));
+      return Promise.resolve(Response.json(acceptedReply));
+    });
+    await processGeoCollectors(env, 1, at);
+    await processGeoCollectors(env, 1, new Date(at.getTime() + 600_000));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect((await readGeoRun(env, owner.userId, run.id)).items[0]).toMatchObject({
+      status: 'submission_uncertain',
+      terminalReason: 'COLLECTOR_PERSISTENCE_ERROR',
+    });
+    expect(
+      await env.DB.prepare(
+        'SELECT status,reported_cost,provider_response_json FROM provider_call_reservations WHERE scan_run_id=?',
+      )
+        .bind(run.id)
+        .first(),
+    ).toEqual({
+      status: 'reserved',
+      reported_cost: '0.01',
+      provider_response_json: JSON.stringify(acceptedReply),
+    });
+  });
   it('cannot write private data after account deletion while a POST is in flight', async () => {
     const { env, owner } = await accepted();
     let deletionError: unknown;

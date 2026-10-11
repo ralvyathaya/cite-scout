@@ -11,9 +11,37 @@ import {
 import { buildGeoEvaluation } from '../../src/domain/geo-classification';
 import { readGeoObservation } from '../../src/server/v2/geo-store';
 import { geoUsage } from '../../src/server/v2/geo-readiness';
+import { readGeoActions } from '../../src/server/v2/actions';
 const at = new Date('2026-10-11T10:00:00Z');
+function nativeAnswer(evaluation: ReturnType<typeof buildGeoEvaluation>) {
+  return {
+    model: 'clef-flash',
+    usage: { input_tokens: 100, output_tokens: 0 },
+    answers: Object.fromEntries(
+      Object.entries(evaluation.questions).map(([name, q]) => [
+        name,
+        q.type === 'noul'
+          ? { type: 'noul', noul: 0.9 }
+          : {
+              type: 'choice',
+              choice: name === 'brand_presence' ? 'absent' : Object.keys(q.criteria)[0],
+              confidence: 0.9,
+              probabilities: Object.fromEntries(
+                Object.keys(q.criteria).map((option) => [
+                  option,
+                  option === (name === 'brand_presence' ? 'absent' : Object.keys(q.criteria)[0])
+                    ? 1
+                    : 0,
+                ]),
+              ),
+            },
+      ]),
+    ),
+  };
+}
 const fixtureOwners: { env: CloudflareBindings; userId: string }[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const owner of fixtureOwners) {
     await owner.env.DB.prepare('DELETE FROM subscriptions WHERE user_id=?')
       .bind(owner.userId)
@@ -22,7 +50,7 @@ afterEach(async () => {
   }
   fixtureOwners.length = 0;
 });
-async function capture() {
+async function capture(count = 1, capturedAt = at) {
   const env = withBindings({
       GEO_SCANS_ENABLED: 'true',
       EXTERNAL_INTEGRATIONS_ENABLED: 'true',
@@ -35,7 +63,7 @@ async function capture() {
       GEO_PROCESSING_PROJECT_DAILY_CAP: '10',
       GEO_PROCESSING_GLOBAL_DAILY_CAP: '30',
     }),
-    owner = await seed(1, true, at);
+    owner = await seed(count, true, capturedAt);
   await saveGeoSettings(
     env,
     owner.userId,
@@ -46,47 +74,152 @@ async function capture() {
       locationCode: 2840,
       device: 'desktop',
     },
-    at,
+    capturedAt,
   );
-  const run = await startGeoRun(env, owner.userId, { requestId: crypto.randomUUID() }, at),
-    item = run.items[0];
-  if (!item) throw new Error('fixture item');
-  const id = crypto.randomUUID(),
-    text = 'Rival is recommended.';
-  await env.DB.prepare(
-    "INSERT INTO geo_observations(id,project_id,run_id,item_id,prompt_version_id,engine,model,status,context_json,capture_json,answer_text,captured_at) VALUES(?,?,?,?,?,? ,NULL,'captured',?,?,?,?)",
-  )
-    .bind(
-      id,
-      owner.projectId,
-      run.id,
-      item.id,
-      item.context.promptVersionId,
-      item.engine,
-      JSON.stringify(item.context),
-      JSON.stringify({
-        schemaVersion: 'geo-capture-1',
-        answerText: text,
-        raw: { original: true },
-        model: null,
-        modelReported: false,
-        sources: [],
-        quality: 'complete',
-        providerRequestId: 'saved',
-        providerStatus: '20000',
-        reportedCost: 0,
-        inputTokens: null,
-        outputTokens: null,
-        textParts: [],
-      }),
-      text,
-      at.getTime(),
+  const run = await startGeoRun(env, owner.userId, { requestId: crypto.randomUUID() }, capturedAt),
+    ids: string[] = [];
+  for (const item of run.items) {
+    const id = crypto.randomUUID(),
+      text = 'Rival is recommended.';
+    ids.push(id);
+    await env.DB.prepare(
+      "INSERT INTO geo_observations(id,project_id,run_id,item_id,prompt_version_id,engine,model,status,context_json,capture_json,answer_text,captured_at) VALUES(?,?,?,?,?,? ,NULL,'captured',?,?,?,?)",
     )
-    .run();
+      .bind(
+        id,
+        owner.projectId,
+        run.id,
+        item.id,
+        item.context.promptVersionId,
+        item.engine,
+        JSON.stringify(item.context),
+        JSON.stringify({
+          schemaVersion: 'geo-capture-1',
+          answerText: text,
+          raw: { original: true },
+          model: null,
+          modelReported: false,
+          sources: [],
+          quality: 'complete',
+          providerRequestId: 'saved',
+          providerStatus: '20000',
+          reportedCost: 0,
+          inputTokens: null,
+          outputTokens: null,
+          textParts: [],
+        }),
+        text,
+        capturedAt.getTime(),
+      )
+      .run();
+  }
+  const id = ids[0];
+  if (!id) throw new Error('fixture observation');
   fixtureOwners.push({ env, userId: owner.userId });
   return { env, owner, id };
 }
 describe('independent analysis budget and stored capture recovery', () => {
+  it('skips capped projects before the automatic five-capture batch so another tenant can progress', async () => {
+    const cappedOwner = await capture(6),
+      other = await capture(1, new Date(at.getTime() + 1000)),
+      env = { ...other.env, GEO_PROCESSING_PROJECT_DAILY_CAP: '1' };
+    const used = await queueGeoAnalysis(
+      env,
+      cappedOwner.owner.userId,
+      cappedOwner.id,
+      crypto.randomUUID(),
+      at,
+    );
+    await env.DB.prepare("UPDATE geo_processing_attempts SET state='failed' WHERE id=?")
+      .bind(used.id)
+      .run();
+    const run = vi.fn().mockResolvedValue({ broken: true });
+    await processGeoAnalysis(
+      { ...env, AI: { run } as unknown as Ai },
+      5,
+      new Date(at.getTime() + 2000),
+    );
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(await readGeoAnalyses(env, other.owner.userId, other.id)).toEqual([
+      expect.objectContaining({ state: 'failed' }),
+    ]);
+    expect(await readGeoAnalyses(env, cappedOwner.owner.userId)).toHaveLength(1);
+  });
+  it('retries a failed playbook sync while providers are paused without repeating the completed inference', async () => {
+    const { env, owner, id } = await capture();
+    const evaluation = buildGeoEvaluation(await readGeoObservation(env, owner.userId, id));
+    const run = vi.fn().mockResolvedValue(nativeAnswer(evaluation));
+    const classifierEnv = { ...env, AI: { run } as unknown as Ai };
+    await queueGeoAnalysis(classifierEnv, owner.userId, id, crypto.randomUUID(), at);
+    const prepare = env.DB.prepare.bind(env.DB);
+    let failed = false;
+    vi.spyOn(env.DB, 'prepare').mockImplementation((query) => {
+      if (!failed && query.includes('AS observation_json')) {
+        failed = true;
+        throw new Error('transient action sync failure');
+      }
+      return prepare(query);
+    });
+    await processGeoAnalysis(classifierEnv, 1, at);
+    expect(failed).toBe(true);
+    expect((await readGeoAnalyses(env, owner.userId, id))[0]?.state).toBe('completed');
+    expect(await readGeoActions(env, owner.userId)).toEqual([]);
+    const paused = {
+      ...classifierEnv,
+      EXTERNAL_INTEGRATIONS_ENABLED: 'false',
+      GEO_ANALYSIS_ENABLED: 'false',
+      GEO_PROCESSING_PROJECT_DAILY_CAP: '0',
+      GEO_PROCESSING_GLOBAL_DAILY_CAP: '0',
+    };
+    await processGeoAnalysis(paused, 1, new Date(at.getTime() + 300_000));
+    expect(await readGeoActions(env, owner.userId)).toEqual([
+      expect.objectContaining({ category: 'owned', evidenceCount: 1 }),
+    ]);
+    await processGeoAnalysis(paused, 1, new Date(at.getTime() + 600_000));
+    expect(await readGeoActions(env, owner.userId)).toHaveLength(1);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+  it('cannot restore a deleted tenant through a pending completed-analysis replay', async () => {
+    const { env, owner, id } = await capture();
+    const evaluation = buildGeoEvaluation(await readGeoObservation(env, owner.userId, id)),
+      run = vi.fn().mockResolvedValue(nativeAnswer(evaluation)),
+      classifierEnv = { ...env, AI: { run } as unknown as Ai };
+    const attempt = await queueGeoAnalysis(
+      classifierEnv,
+      owner.userId,
+      id,
+      crypto.randomUUID(),
+      at,
+    );
+    const prepare = env.DB.prepare.bind(env.DB),
+      prepared = vi.spyOn(env.DB, 'prepare').mockImplementation((query) => {
+        if (query.includes('AS observation_json')) throw new Error('transient action sync failure');
+        return prepare(query);
+      });
+    await processGeoAnalysis(classifierEnv, 1, at);
+    prepared.mockRestore();
+    expect((await readGeoAnalyses(env, owner.userId, id))[0]?.state).toBe('completed');
+    await env.DB.prepare('DELETE FROM subscriptions WHERE user_id=?').bind(owner.userId).run();
+    await deleteAccountData(env, owner.userId);
+    await processGeoAnalysis(
+      { ...classifierEnv, EXTERNAL_INTEGRATIONS_ENABLED: 'false' },
+      1,
+      new Date(at.getTime() + 300_000),
+    );
+    expect(
+      await env.DB.prepare('SELECT count(*) AS n FROM geo_actions WHERE project_id=?')
+        .bind(owner.projectId)
+        .first('n'),
+    ).toBe(0);
+    expect(
+      await env.DB.prepare(
+        'SELECT project_id,input_json,result_json FROM geo_processing_attempts WHERE id=?',
+      )
+        .bind(attempt.id)
+        .first(),
+    ).toEqual({ project_id: null, input_json: '{}', result_json: null });
+    expect(run).toHaveBeenCalledTimes(1);
+  });
   it('checks actual processing-day quota across midnight without changing request time or repeating inference', async () => {
     const { env, owner, id } = await capture();
     const first = await queueGeoAnalysis(env, owner.userId, id, crypto.randomUUID(), at);
@@ -223,30 +356,7 @@ describe('independent analysis budget and stored capture recovery', () => {
     const { env, owner, id } = await capture();
     const observation = await readGeoObservation(env, owner.userId, id),
       evaluation = buildGeoEvaluation(observation);
-    const native = {
-      model: 'clef-flash',
-      usage: { input_tokens: 100, output_tokens: 0 },
-      answers: Object.fromEntries(
-        Object.entries(evaluation.questions).map(([name, q]) => [
-          name,
-          q.type === 'noul'
-            ? { type: 'noul', noul: 0.9 }
-            : {
-                type: 'choice',
-                choice: name === 'brand_presence' ? 'absent' : Object.keys(q.criteria)[0],
-                confidence: 0.9,
-                probabilities: Object.fromEntries(
-                  Object.keys(q.criteria).map((option) => [
-                    option,
-                    option === (name === 'brand_presence' ? 'absent' : Object.keys(q.criteria)[0])
-                      ? 1
-                      : 0,
-                  ]),
-                ),
-              },
-        ]),
-      ),
-    };
+    const native = nativeAnswer(evaluation);
     const run = vi.fn().mockResolvedValueOnce({ broken: true }).mockResolvedValueOnce(native);
     const classifierEnv = { ...env, AI: { run } as unknown as Ai };
     const requestId = crypto.randomUUID();

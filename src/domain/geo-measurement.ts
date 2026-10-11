@@ -97,8 +97,15 @@ export async function dailySamples(
   rows: GeoMetricObservation[],
   series: string,
   window?: { from: string; to: string; requestedAfter?: string },
+  retained: GeoDailySample[] = [],
 ): Promise<GeoDailySample[]> {
   const samples = new Map<string, GeoDailySample>();
+  const frozenDays = new Set(retained.map((sample) => `${sample.cohort}:${sample.day}`)),
+    frozenMetrics = new Set(
+      retained.map(
+        (sample) => `${sample.observationId}:${sample.metric}:${sample.analysisId ?? ''}`,
+      ),
+    );
   const eligible = rows.filter((row) => {
     const time = Date.parse(row.capturedAt);
     return (
@@ -118,11 +125,13 @@ export async function dailySamples(
     for (const metric of geoMetrics) {
       const value = values[metric];
       if (value === null) continue;
+      const analysisId = metric === 'overview_occurrence' ? null : (row.analysis?.id ?? null);
+      if (frozenMetrics.has(`${row.id}:${metric}:${analysisId ?? ''}`)) continue;
       const cohort = await measurementCohort(row, metric);
       if (!cohort) continue;
       const day = utcDate(new Date(row.capturedAt)),
         key = `${cohort}:${day}`;
-      if (!samples.has(key))
+      if (!frozenDays.has(key) && !samples.has(key))
         samples.set(key, {
           series,
           cohort,
@@ -130,7 +139,7 @@ export async function dailySamples(
           day,
           value,
           observationId: row.id,
-          analysisId: metric === 'overview_occurrence' ? null : (row.analysis?.id ?? null),
+          analysisId,
           capturedAt: row.capturedAt,
         });
     }
@@ -162,12 +171,28 @@ export function compareCohortSamples(
   expected: (string | null)[],
   scopeComplete: boolean,
 ) {
+  const cohorts = [...new Set(expected)],
+    rates = (samples: GeoDailySample[]) =>
+      cohorts.flatMap((cohort) => {
+        const values = samples.filter((sample) => sample.cohort === cohort);
+        return values.length
+          ? [values.reduce((sum, sample) => sum + sample.value, 0) / values.length]
+          : [];
+      }),
+    left = rates(before),
+    right = rates(after);
   return {
     ...compareSamples(
-      before.map((sample) => sample.value),
-      after.map((sample) => sample.value),
-      scopeComplete,
+      left,
+      right,
+      scopeComplete &&
+        cohorts.length > 0 &&
+        !cohorts.includes(null) &&
+        left.length === cohorts.length &&
+        right.length === cohorts.length,
     ),
+    beforeSamples: before.length,
+    afterSamples: after.length,
     limitedData:
       expected.length === 0 ||
       expected.some(

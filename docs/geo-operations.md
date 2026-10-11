@@ -69,7 +69,7 @@ These commands are instructions, not evidence that accounts, secrets or deployme
 
 ## Runs, usage and evidence
 
-Tenant-authenticated routes are mounted at `/api/v2/geo`. Read `/capabilities`, `/allowance`, `/usage`, `/settings`, `/runs/:id` and `/runs/:id/attempts` before diagnosing failures. Settings contain selected `engines`, `dailyEnabled`, `languageCode`, `locationCode` and `device`; missing provider capabilities are explicitly unavailable. Perplexity has no native locale/device control; Google/Bing support locale/device, and ChatGPT Search supports locale with forced web search. Frozen context records unsupported values for audit, but comparability uses only the controls that surface supports.
+Tenant-authenticated routes are mounted at `/api/v2/geo`. Read `/capabilities`, `/allowance`, `/usage`, `/settings`, `/runs`, `/runs/:id` and `/runs/:id/attempts` before diagnosing failures. Settings contain selected `engines`, `dailyEnabled`, `languageCode`, `locationCode` and `device`; missing provider capabilities are explicitly unavailable. Perplexity has no native locale/device control; Google/Bing support locale/device, and ChatGPT Search supports locale with forced web search. Frozen context records unsupported values for audit, but comparability uses only the controls that surface supports.
 
 New manual checks use `POST /api/v2/geo/runs` with a fresh UUID and optional selections:
 
@@ -133,7 +133,15 @@ Only an observed source or configured brand homepage is a known target, and the 
 
 ## Migration, retention and deletion
 
-Apply the ordered migration chain, never a GEO table reset. `0003` adds frozen prompts/context/runs/captures and immutable triggers; `0004` adds separate processing/accounting; `0005` adds actions/evidence/immutable events; `0006` adds frozen measurement samples; `0007_geo_processing_usage.sql` adds/indexes processing `usage_date` and backfills existing rows from their original `created_at` UTC day. These are additive to V1/V2 history/trial/billing tables. Preserve original usage reservations and trial eligibility; do not backfill invented provenance into legacy captures. Review the full SQL chain and database backup/restore strategy before a remote migration:
+`GET /runs` returns the latest ten tenant-owned runs and seven recorded daily outcomes. The dashboard discovers scheduled runs without starting a manual check, including zero-capture failures. A quota/cooldown rejection retains its UTC-day reason without reserving another provider call; later admission updates that day's outcome. Provider pause leaves existing history readable. Uncertain run progress continues polling until operator reconciliation settles the run.
+
+Successful saved-task GET followed by a storage error stays submitted, retaining its task ID, raw response and sticky submission cost for the next GET. Failed persistence after a potentially accepted paid POST stays uncertain for operator recovery. Neither path automatically repeats a paid submission.
+
+Completed analysis atomically marks playbook synchronization pending. Cron retries local, idempotent synchronization while provider flags are paused; ownership/deletion guards still apply. It uses the existing thirty-day playbook evidence eligibility window. Review `geo_processing_attempts.playbook_sync_pending` and `geo_playbook_deferred` when a completed diagnosis lacks its task.
+
+Before/after rates give each distinct frozen cohort the same weight in both windows; sample counts still report actual eligible days, and missing scope remains inconclusive. Trend reads reuse retained samples, and the dashboard refreshes them after run/classification completion or **Refresh saved evidence**, rather than polling retained history every five seconds.
+
+Apply the ordered migration chain, never a GEO table reset. `0003` adds frozen prompts/context/runs/captures and immutable triggers; `0004` adds separate processing/accounting; `0005` adds actions/evidence/immutable events; `0006` adds frozen measurement samples; `0007_geo_processing_usage.sql` adds/indexes processing `usage_date` and backfills existing rows from their original `created_at` UTC day. `0008_geo_playbook_recovery.sql` adds a durable pending playbook marker and backfills completed tenant analyses for idempotent recovery; `0009_geo_daily_outcomes.sql` retains admitted/skipped daily outcomes with a tenant cascade. These are additive to V1/V2 history/trial/billing tables. Preserve original usage reservations and trial eligibility; do not backfill invented provenance into legacy captures. Review the full SQL chain and database backup/restore strategy before a remote migration:
 
 ```powershell
 npx wrangler d1 migrations apply DB --remote --config wrangler.production.jsonc

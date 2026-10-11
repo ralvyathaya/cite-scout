@@ -1,11 +1,12 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import {
   metricValues,
   measurementCohort,
   dailySamples,
   compareSamples,
+  compareCohortSamples,
 } from '../../src/domain/geo-measurement';
-import type { GeoMetricObservation } from '../../src/shared/geo-measurement';
+import type { GeoDailySample, GeoMetricObservation } from '../../src/shared/geo-measurement';
 const row = (
   id: string,
   time = '2026-10-11T09:00:00Z',
@@ -139,6 +140,26 @@ it('selects first eligible daily sample after applying the pin cutoff and exclud
     }),
   ).toEqual([]);
 });
+it('derives only newly eligible metrics while preserving frozen days and admitting changed methods', async () => {
+  const earlier = row('earlier'),
+    first = row('first', '2026-10-11T10:00:00Z');
+  const retained = await dailySamples([first], 'trend');
+  const digest = vi.spyOn(crypto.subtle, 'digest');
+  try {
+    expect(await dailySamples([first], 'trend', undefined, retained)).toEqual([]);
+    expect(digest).not.toHaveBeenCalled();
+  } finally {
+    digest.mockRestore();
+  }
+  expect(await dailySamples([earlier, first], 'trend', undefined, retained)).toEqual([]);
+  const changedMethod = {
+    ...earlier,
+    analysis: { ...earlier.analysis, model: 'clef' },
+  };
+  const newSamples = await dailySamples([first, changedMethod], 'trend', undefined, retained);
+  expect(newSamples.filter((sample) => sample.metric === 'mention')).toHaveLength(1);
+  expect(newSamples.every((sample) => sample.observationId === earlier.id)).toBe(true);
+});
 it('allows a limited descriptive comparison with one sample each and marks empty or missing scope inconclusive', () => {
   expect(compareSamples([0], [1], true)).toMatchObject({
     outcome: 'improved',
@@ -148,6 +169,41 @@ it('allows a limited descriptive comparison with one sample each and marks empty
   });
   expect(compareSamples([], [1], true).outcome).toBe('inconclusive');
   expect(compareSamples([0], [1], false).outcome).toBe('inconclusive');
+});
+it('uses fixed equal cohort weights so changed coverage cannot improve unchanged cohort rates', () => {
+  const samples = (side: string, cohort: string, count: number, value: 0 | 1): GeoDailySample[] =>
+    Array.from({ length: count }, (_, index) => ({
+      series: side,
+      cohort,
+      metric: 'mention',
+      day: `2026-10-${String(index + 1).padStart(2, '0')}`,
+      value,
+      observationId: `${side}-${cohort}-${String(index)}`,
+      analysisId: null,
+      capturedAt: '2026-10-01T09:00:00Z',
+    }));
+  const before = [...samples('before', 'A', 7, 0), ...samples('before', 'B', 1, 1)],
+    after = [...samples('after', 'A', 1, 0), ...samples('after', 'B', 7, 1)];
+  const comparison = compareCohortSamples(before, after, ['A', 'B', 'A'], true);
+  expect(comparison).toMatchObject({
+    outcome: 'unchanged',
+    before: 0.5,
+    after: 0.5,
+    beforeSamples: 8,
+    afterSamples: 8,
+    scopeComplete: true,
+    limitedData: true,
+  });
+  expect(comparison.observationIds).toHaveLength(16);
+  expect(
+    compareCohortSamples(
+      before,
+      after.filter((s) => s.cohort === 'A'),
+      ['A', 'B'],
+      true,
+    ),
+  ).toMatchObject({ outcome: 'inconclusive', scopeComplete: false });
+  expect(compareCohortSamples(before, after, ['A', null], true).outcome).toBe('inconclusive');
 });
 it('distinguishes owned answer references from returned results and verified inline linkage', () => {
   const evidence = row('owned');

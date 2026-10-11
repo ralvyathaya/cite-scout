@@ -32,6 +32,7 @@ import {
   type GeoObservationPage,
   type GeoPromptSet,
   type GeoRun,
+  type GeoRunHistory,
   type GeoSettings,
   type GeoSettingsInput,
 } from '../../../shared/geo';
@@ -222,8 +223,7 @@ function ScopeLabel({ filter }: { filter: ReturnType<typeof useEvidenceFilter> }
     </p>
   );
 }
-const pendingRun = (run: GeoRun) =>
-  run.items.some((item) => ['pending', 'submitting', 'submitted'].includes(item.status));
+const pendingRun = (run: GeoRun) => run.completedAt === null;
 function GeoRunProgress({ id, onComplete }: { id: string; onComplete?: () => void }) {
   const run = useResource<GeoRun>(`/geo/runs/${encodeURIComponent(id)}`, pendingRun);
   const refreshed = useRef(false);
@@ -257,7 +257,13 @@ function GeoRunProgress({ id, onComplete }: { id: string; onComplete?: () => voi
                 {item.terminalReason && (
                   <p className="mt-1 text-sm text-amber-700">{item.terminalReason}</p>
                 )}
-                {!['succeeded', 'failed', 'cancelled'].includes(item.status) && (
+                {item.status === 'submission_uncertain' && (
+                  <p className={small}>
+                    An operator must reconcile this submission before recovery. Another paid
+                    submission will not be started automatically.
+                  </p>
+                )}
+                {['pending', 'submitting', 'submitted'].includes(item.status) && (
                   <p className={small}>
                     Next eligible attempt: {time(item.dueAt)} · attempts {item.attemptsUsed}
                   </p>
@@ -285,6 +291,9 @@ export function GeoMonitor({
   const settings = useResource<GeoSettings>('/geo/settings');
   const allowance = useResource<GeoAllowance>('/geo/allowance');
   const capabilities = useResource<GeoCapabilities>('/geo/capabilities');
+  const history = useResource<GeoRunHistory>('/geo/runs', (value) =>
+    value.runs.some((run) => run.completedAt === null),
+  );
   const mutation = useMutation();
   const [params, setParams] = useSearchParams();
   const scopeEngines = selectedEngines ?? settings.data?.engines ?? [];
@@ -313,7 +322,8 @@ export function GeoMonitor({
                     : !(promptIds?.length ?? active.length)
                       ? 'Add an active prompt before monitoring.'
                       : null));
-  const runId = params.get('geoRun');
+  const runId = params.get('geoRun') ?? history.data?.runs[0]?.id;
+  const selectedRun = history.data?.runs.find((run) => run.id === runId);
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-start gap-4">
@@ -332,6 +342,7 @@ export function GeoMonitor({
                 next.set('geoRun', run.id);
                 setParams(next);
                 await allowance.reload();
+                await history.reload();
               })
             }
           >
@@ -357,15 +368,60 @@ export function GeoMonitor({
         </div>
       </div>
       <ErrorNotice error={mutation.error} />
+      <ErrorNotice error={history.error} />
+      <details className="space-y-3 rounded-lg border px-3 py-2">
+        <summary className="cursor-pointer text-sm font-medium">
+          Recent checks · daily schedule {settings.data?.dailyEnabled ? 'enabled' : 'disabled'}
+        </summary>
+        <p className={small}>
+          Latest ten runs and seven daily outcomes · UTC schedule. Opening a saved check does not
+          start a provider call.
+        </p>
+        {history.data?.dailyOutcomes.map((outcome) => (
+          <div key={outcome.date} className="rounded-lg border p-3 text-sm">
+            Daily {outcome.date} · {outcome.status}
+            <p className={small}>Last admission attempt {time(outcome.lastAttemptAt)}</p>
+            {outcome.reason && (
+              <p className="mt-1 text-amber-700">{allowanceReason(outcome.reason)}</p>
+            )}
+          </div>
+        ))}
+        {history.data?.runs.map((run) => (
+          <Button
+            key={run.id}
+            variant="outline"
+            className="h-auto w-full justify-start whitespace-normal text-left"
+            onClick={() => {
+              const next = new URLSearchParams(params);
+              next.set('geoRun', run.id);
+              setParams(next);
+            }}
+          >
+            {run.trigger} · {time(run.createdAt)} · {run.successfulCount}/{run.totalCount} answers ·{' '}
+            {run.status}
+          </Button>
+        ))}
+        {history.data && !history.data.runs.length && !history.data.dailyOutcomes.length && (
+          <p className={small}>No monitoring outcomes recorded yet.</p>
+        )}
+      </details>
       {runId && (
-        <GeoRunProgress
-          key={runId}
-          id={runId}
-          onComplete={() => {
-            void allowance.reload();
-            onComplete?.();
-          }}
-        />
+        <details className="space-y-3" open={params.get('geoRun') ? true : undefined}>
+          <summary className="cursor-pointer rounded-lg border p-3 text-sm font-medium">
+            {selectedRun
+              ? `${selectedRun.trigger} check · ${String(selectedRun.successfulCount)}/${String(selectedRun.totalCount)} answers · ${selectedRun.status}`
+              : 'Monitoring run details'}
+          </summary>
+          <GeoRunProgress
+            key={runId}
+            id={runId}
+            onComplete={() => {
+              void allowance.reload();
+              void history.reload();
+              onComplete?.();
+            }}
+          />
+        </details>
       )}
     </div>
   );
@@ -910,9 +966,21 @@ export function GeoOverview() {
   const { data } = useOutletContext<WorkspaceContext>();
   const filter = useEvidenceFilter();
   const observations = useResource<GeoObservationPage>(`/geo/observations?${filter.query}`, true);
-  const trends = useResource<GeoTrends>(`/geo/trends?${filter.query}`, true);
+  const trends = useResource<GeoTrends>(`/geo/trends?${filter.query}`);
   const actions = useResource<GeoAction[]>('/geo/actions', true);
   const analyses = useResource<GeoAnalysis[]>('/geo/analyses', true);
+  const completedAnalyses =
+    analyses.data
+      ?.filter((analysis) => analysis.state === 'completed')
+      .map((analysis) => `${analysis.id}:${analysis.completedAt ?? ''}`)
+      .join(',') ?? '';
+  const previousAnalyses = useRef<string | null>(null);
+  const reloadTrends = trends.reload;
+  useEffect(() => {
+    if (previousAnalyses.current !== null && previousAnalyses.current !== completedAnalyses)
+      void reloadTrends();
+    previousAnalyses.current = completedAnalyses;
+  }, [completedAnalyses, reloadTrends]);
   const [selected, setSelected] = useState('');
   const proof =
     observations.data?.observations.find((o) => o.id === selected) ??
@@ -946,6 +1014,18 @@ export function GeoOverview() {
       </div>
       <EvidenceFilters filter={filter} />
       <ScopeLabel filter={filter} />
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          void observations.reload();
+          void trends.reload();
+          void actions.reload();
+          void analyses.reload();
+        }}
+      >
+        Refresh saved evidence
+      </Button>
       <GeoMonitor
         promptIds={filter.promptId ? [filter.promptId] : undefined}
         selectedEngines={filter.engine ? [filter.engine] : undefined}
@@ -1385,7 +1465,7 @@ export function GeoObservationDetail() {
           ),
         ),
       )
-      .map((source) => source.url) ?? [];
+      .map((source) => source.canonicalUrl) ?? [];
   const home = observation.data?.context.brand.domain
     ? `https://${observation.data.context.brand.domain}/`
     : null;

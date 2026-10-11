@@ -15,6 +15,7 @@ import {
   type GeoPromptSetInput,
   type GeoRequestContext,
   type GeoRun,
+  type GeoRunHistory,
   type GeoRunItem,
   type GeoRunRequest,
   type GeoSettings,
@@ -383,6 +384,62 @@ export async function readGeoRun(
   };
 }
 
+export async function readGeoRunHistory(
+  env: CloudflareBindings,
+  userId: string,
+): Promise<GeoRunHistory> {
+  const project = await projectFor(env, userId);
+  const runs = await sql(
+    env,
+    `SELECT r.id,r.trigger_type,r.status,r.created_at,r.completed_at,
+    (SELECT count(*) FROM geo_run_items WHERE run_id=r.id AND status='succeeded') AS successful_count,
+    (SELECT count(*) FROM geo_run_items WHERE run_id=r.id) AS total_count
+    FROM scan_runs r JOIN geo_run_snapshots g ON g.run_id=r.id
+    WHERE r.project_id=? ORDER BY r.created_at DESC,r.id DESC LIMIT 10`,
+    project.id,
+  ).all<{
+    id: string;
+    trigger_type: 'manual' | 'scheduled';
+    status: string;
+    created_at: number;
+    completed_at: number | null;
+    successful_count: number;
+    total_count: number;
+  }>();
+  const outcomes = await sql(
+    env,
+    `SELECT * FROM geo_daily_outcomes WHERE project_id=?
+    ORDER BY usage_date DESC LIMIT 7`,
+    project.id,
+  ).all<{
+    usage_date: string;
+    status: 'admitted' | 'skipped';
+    reason: string | null;
+    run_id: string | null;
+    first_attempt_at: number;
+    last_attempt_at: number;
+  }>();
+  return {
+    runs: runs.results.map((run) => ({
+      id: run.id,
+      trigger: run.trigger_type,
+      status: run.status,
+      createdAt: new Date(run.created_at).toISOString(),
+      completedAt: iso(run.completed_at),
+      successfulCount: run.successful_count,
+      totalCount: run.total_count,
+    })),
+    dailyOutcomes: outcomes.results.map((outcome) => ({
+      date: outcome.usage_date,
+      status: outcome.status,
+      reason: outcome.reason,
+      runId: outcome.run_id,
+      firstAttemptAt: new Date(outcome.first_attempt_at).toISOString(),
+      lastAttemptAt: new Date(outcome.last_attempt_at).toISOString(),
+    })),
+  };
+}
+
 export async function startGeoRun(
   env: CloudflareBindings,
   userId: string,
@@ -620,19 +677,24 @@ export async function createDailyGeoRuns(env: CloudflareBindings, at = new Date(
     return;
   const projects = await sql(
     env,
-    `SELECT p.user_id FROM projects p JOIN geo_settings g ON g.project_id=p.id
+    `SELECT p.id,p.user_id FROM projects p JOIN geo_settings g ON g.project_id=p.id
     WHERE g.daily_enabled=1 AND ${paidGate} ORDER BY p.id`,
     at.getTime(),
     at.getTime(),
-  ).all<{ user_id: string }>();
+  ).all<{ id: string; user_id: string }>();
   for (const project of projects.results) {
+    let runId: string | null = null;
+    let reason: string | null = null;
     try {
-      await startGeoRun(env, project.user_id, { requestId: crypto.randomUUID() }, at, 'scheduled');
+      runId = (
+        await startGeoRun(env, project.user_id, { requestId: crypto.randomUUID() }, at, 'scheduled')
+      ).id;
     } catch (error) {
       const code = error instanceof Error ? error.message : '';
       if (
         ![
           'GEO_QUOTA_EXCEEDED',
+          'GEO_BUDGET_REQUIRED',
           'GEO_COOLDOWN_OR_IN_FLIGHT',
           'GEO_CONFIGURATION_REQUIRED',
           'INVALID_PROMPT_SELECTION',
@@ -644,7 +706,25 @@ export async function createDailyGeoRuns(env: CloudflareBindings, at = new Date(
         ].includes(code)
       )
         throw error;
+      reason = code;
     }
+    // A denied daily intent is observable without reserving a provider call; later cron may admit it.
+    await sql(
+      env,
+      `INSERT INTO geo_daily_outcomes(project_id,usage_date,status,reason,run_id,first_attempt_at,last_attempt_at)
+      SELECT p.id,?,?,?,?,?,? FROM projects p WHERE p.id=? AND p.user_id=?
+      ON CONFLICT(project_id,usage_date) DO UPDATE SET status=excluded.status,reason=excluded.reason,
+      run_id=excluded.run_id,last_attempt_at=excluded.last_attempt_at
+      WHERE geo_daily_outcomes.status='skipped' OR excluded.status='admitted'`,
+      utcDate(at),
+      runId ? 'admitted' : 'skipped',
+      reason,
+      runId,
+      at.getTime(),
+      at.getTime(),
+      project.id,
+      project.user_id,
+    ).run();
   }
 }
 

@@ -260,7 +260,11 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
     const captures = await sql(
       env,
       `SELECT o.id,p.user_id FROM geo_observations o JOIN projects p ON p.id=o.project_id
-      WHERE NOT EXISTS(SELECT 1 FROM geo_processing_attempts a WHERE a.observation_id=o.id AND a.kind='analysis') ORDER BY o.captured_at,o.id LIMIT ?`,
+      WHERE NOT EXISTS(SELECT 1 FROM geo_processing_attempts a WHERE a.observation_id=o.id AND a.kind='analysis')
+      AND (SELECT count(*) FROM geo_processing_attempts a WHERE a.project_id=p.id AND a.usage_date=?)<?
+      ORDER BY o.captured_at,o.id LIMIT ?`,
+      utcDate(new Date(clock())),
+      config.GEO_PROCESSING_PROJECT_DAILY_CAP,
       Math.max(0, Math.min(5, limit)),
     ).all<{ id: string; user_id: string }>();
     for (const capture of captures.results) {
@@ -379,9 +383,9 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
               ? (inputTokens * 0.24) / 1_000_000
               : null;
       }
-      const saved = await sql(
+      await sql(
         env,
-        `UPDATE geo_processing_attempts SET state='completed',result_json=?,input_tokens=?,output_tokens=?,estimated_cost_usd=?,latency_ms=?,completed_at=?,lease_token=NULL,lease_until=NULL WHERE id=? AND state='running' AND lease_token=? AND lease_until>? AND EXISTS(SELECT 1 FROM projects WHERE id=geo_processing_attempts.project_id AND user_id=?)`,
+        `UPDATE geo_processing_attempts SET state='completed',result_json=?,input_tokens=?,output_tokens=?,estimated_cost_usd=?,latency_ms=?,completed_at=?,lease_token=NULL,lease_until=NULL,playbook_sync_pending=CASE WHEN kind='analysis' THEN 1 ELSE 0 END WHERE id=? AND state='running' AND lease_token=? AND lease_until>? AND EXISTS(SELECT 1 FROM projects WHERE id=geo_processing_attempts.project_id AND user_id=?)`,
         JSON.stringify(result),
         inputTokens,
         outputTokens,
@@ -393,13 +397,6 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
         clock(),
         row.user_id,
       ).run();
-      if (saved.meta.changes && row.kind === 'analysis') {
-        try {
-          await syncGeoActions(env, row.user_id, new Date(clock()));
-        } catch {
-          console.error(JSON.stringify({ event: 'geo_playbook_deferred' }));
-        }
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       const code = /^[A-Z_0-9]+$/u.test(message) ? message : 'CLASSIFIER_OUTPUT_INVALID';
@@ -414,6 +411,34 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
         clock(),
         row.user_id,
       ).run();
+    }
+  }
+  // Local reconciliation stays available when paid providers are paused.
+  const projects = await sql(
+    env,
+    `SELECT p.id,p.user_id FROM projects p JOIN geo_processing_attempts a ON a.project_id=p.id
+    WHERE a.kind='analysis' AND a.state='completed' AND a.playbook_sync_pending=1
+    GROUP BY p.id ORDER BY min(a.completed_at),p.id LIMIT ?`,
+    Math.max(0, Math.min(5, Math.floor(limit))),
+  ).all<{ id: string; user_id: string }>();
+  for (const project of projects.results) {
+    try {
+      const pending = await sql(
+        env,
+        "SELECT id FROM geo_processing_attempts WHERE project_id=? AND kind='analysis' AND state='completed' AND playbook_sync_pending=1 ORDER BY completed_at,id LIMIT 20",
+        project.id,
+      ).all<{ id: string }>();
+      await syncGeoActions(env, project.user_id, new Date(clock()));
+      await sql(
+        env,
+        `UPDATE geo_processing_attempts SET playbook_sync_pending=0 WHERE project_id=? AND state='completed'
+        AND id IN (SELECT value FROM json_each(?)) AND EXISTS(SELECT 1 FROM projects WHERE id=geo_processing_attempts.project_id AND user_id=?)`,
+        project.id,
+        JSON.stringify(pending.results.map((attempt) => attempt.id)),
+        project.user_id,
+      ).run();
+    } catch {
+      console.error(JSON.stringify({ event: 'geo_playbook_deferred' }));
     }
   }
 }

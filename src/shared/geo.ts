@@ -156,6 +156,17 @@ export interface GeoRun {
   completedAt: string | null;
   items: GeoRunItem[];
 }
+export interface GeoRunHistory {
+  runs: (Omit<GeoRun, 'items'> & { successfulCount: number; totalCount: number })[];
+  dailyOutcomes: {
+    date: string;
+    status: 'admitted' | 'skipped';
+    reason: string | null;
+    runId: string | null;
+    firstAttemptAt: string;
+    lastAttemptAt: string;
+  }[];
+}
 export interface GeoObservation {
   id: string;
   projectId: string;

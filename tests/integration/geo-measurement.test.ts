@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { seed, withBindings } from './fixtures';
 import { seedGeoEvidence } from './geo-fixtures';
 import { syncGeoActions, readGeoActions, readGeoAction } from '../../src/server/v2/actions';
@@ -100,7 +100,7 @@ it('records idempotent completion with separate implementation time; reopen and 
 });
 it('freezes daily trend evidence, exposes sample counts, and prevents another tenant from reading pins', async () => {
   const env = bindings(),
-    at = new Date(),
+    at = new Date('2026-10-11T10:00:00Z'),
     owner = await seed(1, true, at),
     other = await seed(1, true, at);
   const first = await seedGeoEvidence(env, owner, 'perplexity', at);
@@ -108,7 +108,28 @@ it('freezes daily trend evidence, exposes sample counts, and prevents another te
   expect(trend.samples.find((sample) => sample.metric === 'mention')?.observationId).toBe(
     first.observation.id,
   );
-  await seedGeoEvidence(env, owner, 'perplexity', new Date(at.getTime() + 301_000));
+  const prepared = vi.spyOn(env.DB, 'prepare');
+  try {
+    await readGeoTrends(env, owner.userId, {}, at);
+    expect(
+      prepared.mock.calls.filter(([query]) =>
+        query.includes('INSERT OR IGNORE INTO geo_measurement_samples'),
+      ),
+    ).toHaveLength(0);
+  } finally {
+    prepared.mockRestore();
+  }
+  await seedGeoEvidence(
+    env,
+    owner,
+    'perplexity',
+    new Date(at.getTime() + 301_000),
+    'OrbitCal is recommended.',
+    {
+      presence: 'present',
+      stance: 'recommended',
+    },
+  );
   const later = await readGeoTrends(env, owner.userId, {}, new Date(at.getTime() + 301_000));
   expect(later.samples.find((sample) => sample.metric === 'mention')?.observationId).toBe(
     first.observation.id,
@@ -119,6 +140,63 @@ it('freezes daily trend evidence, exposes sample counts, and prevents another te
   await expect(readGeoMeasurements(env, other.userId, action.id)).rejects.toThrow(
     'GEO_ACTION_NOT_FOUND',
   );
+});
+it('admits late classification without replacing a frozen day or writing it again through a narrower window', async () => {
+  const env = bindings(),
+    at = new Date('2026-10-11T09:00:00Z'),
+    laterAt = new Date(at.getTime() + 301_000),
+    owner = await seed(1, true, at);
+  const earlier = await seedGeoEvidence(env, owner, 'perplexity', at, 'OrbitCal is recommended.', {
+    presence: 'present',
+    stance: 'recommended',
+  });
+  await env.DB.prepare("UPDATE geo_processing_attempts SET state='queued' WHERE id=?")
+    .bind(earlier.analysisId)
+    .run();
+  const first = await seedGeoEvidence(env, owner, 'perplexity', laterAt);
+  expect(
+    (await readGeoTrends(env, owner.userId, {}, laterAt)).samples.find(
+      (s) => s.metric === 'mention',
+    ),
+  ).toMatchObject({ observationId: first.observation.id, value: 0 });
+  await env.DB.prepare("UPDATE geo_processing_attempts SET state='completed' WHERE id=?")
+    .bind(earlier.analysisId)
+    .run();
+  const prepared = vi.spyOn(env.DB, 'prepare');
+  try {
+    const unchanged = await readGeoTrends(env, owner.userId, {}, laterAt);
+    expect(unchanged.samples.find((s) => s.metric === 'mention')).toMatchObject({
+      observationId: first.observation.id,
+      value: 0,
+    });
+    const narrower = await readGeoTrends(
+      env,
+      owner.userId,
+      { days: 1 },
+      new Date(laterAt.getTime() + 86400_000 - 1000),
+    );
+    expect(narrower.samples.find((s) => s.metric === 'mention')?.observationId).toBe(
+      first.observation.id,
+    );
+    expect((await readGeoTrends(env, owner.userId, {}, at)).samples).toEqual([]);
+    expect(
+      prepared.mock.calls.filter(([query]) =>
+        query.includes('INSERT OR IGNORE INTO geo_measurement_samples'),
+      ),
+    ).toHaveLength(0);
+  } finally {
+    prepared.mockRestore();
+  }
+  await env.DB.prepare("UPDATE geo_processing_attempts SET model='clef' WHERE id=?")
+    .bind(earlier.analysisId)
+    .run();
+  const changed = await readGeoTrends(env, owner.userId, {}, laterAt);
+  expect(changed.samples.filter((s) => s.metric === 'mention')).toHaveLength(2);
+  expect(
+    changed.samples.find(
+      (s) => s.observationId === earlier.observation.id && s.metric === 'mention',
+    )?.value,
+  ).toBe(1);
 });
 it('compares frozen matching scope and makes disabled scope inconclusive instead of dropping it', async () => {
   const env = bindings(),

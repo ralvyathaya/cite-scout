@@ -56,3 +56,35 @@ it('validates each redirect, bounds content and reports measured signals without
   });
   expect(checked).not.toHaveProperty('indexed');
 });
+it('cancels streamed HTML as soon as its body exceeds 128 KiB', async () => {
+  const cancel = vi.fn();
+  let pulls = 0;
+  const chunk = new TextEncoder().encode(`<html>${'x'.repeat(64 * 1024 - 6)}`);
+  const body = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        pulls++;
+        controller.enqueue(pulls <= 2 ? chunk : new Uint8Array([120]));
+      },
+      cancel,
+    },
+    { highWaterMark: 0 },
+  );
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(new Response(body, { headers: { 'content-type': 'text/html' } }));
+  const checked = await checkOwnedPage(
+    'https://brand.example/',
+    'brand.example',
+    fetcher,
+    vi.fn().mockResolvedValue(['1.1.1.1']),
+  );
+  expect(checked).toMatchObject({
+    status: 'unavailable',
+    reason: 'PAGE_BYTE_LIMIT',
+    excerpt: null,
+  });
+  expect(cancel).toHaveBeenCalledTimes(1);
+  expect(pulls).toBe(3);
+  expect(body.locked).toBe(false);
+});

@@ -627,6 +627,18 @@ export class GeoFixtureWorkspace {
       this.mutations.set(input.requestId, { hash, value: run });
       return run;
     }
+    if (route === '/geo/runs' && method === 'GET')
+      return {
+        runs: [...this.runs]
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .slice(0, 10)
+          .map(({ items, ...run }) => ({
+            ...run,
+            successfulCount: items.filter((item) => item.status === 'succeeded').length,
+            totalCount: items.length,
+          })),
+        dailyOutcomes: [],
+      };
     if (route.startsWith('/geo/runs/') && method === 'GET') {
       const run = this.runs.find((run) => run.id === route.split('/')[3]);
       if (!run) throw new Error('Fixture run unavailable');
