@@ -1,0 +1,44 @@
+{
+  "rubric_version": "geo-rubric-1",
+  "policy_version": "geo-policy-1",
+  "default_provider": "workers_ai",
+  "default_model": "clef-flash",
+  "alternative_models": ["clef", "jev-1.13.0"],
+  "provider_primary_sources": [
+    "https://developers.cloudflare.com/workers-ai/models/clef-flash/",
+    "https://developers.cloudflare.com/workers-ai/models/clef/",
+    "https://docs.typesafe.ai/api"
+  ],
+  "required_atomic_question_ids": [
+    "answer_quality",
+    "brand_presence",
+    "brand_stance",
+    "evidence_support",
+    "selection_reason",
+    "rejection_reason",
+    "fit_buyer_intent"
+  ],
+  "dynamic_question_ids": [
+    "evidence_segment_<closed_index>",
+    "competitor_<closed_index>",
+    "fit_criterion_<closed_index>",
+    "source_<closed_index>"
+  ],
+  "native_validation": [
+    "exact expected question IDs",
+    "expected answer types",
+    "closed option membership",
+    "finite 0-1 probabilities",
+    "probability sum within 0.01",
+    "winner consistent with probabilities",
+    "expected returned model"
+  ],
+  "maximum_questions": 64,
+  "maximum_input_utf8_bytes": 20000,
+  "maximum_response_bytes": 131072,
+  "timeout_ms": 10000,
+  "promotion_gate": "disabled until human-reviewed held-out evaluation",
+  "confidence_is_accuracy": false,
+  "quote_provenance": "UTF-16 offsets into immutable original answer; no model-generated quotes",
+  "source_linkage": "provider reference capability only; semantic candidate support cannot upgrade retrieved references to citations"
+}

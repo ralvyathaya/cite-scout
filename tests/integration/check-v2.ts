@@ -18,6 +18,7 @@ for (const name of [
   '0001_sticky_the_hand',
   '0002_citescout_v2',
   '0003_geo_action_loop',
+  '0004_geo_analysis',
 ]) {
   if (name === '0002_citescout_v2')
     db.exec(`

@@ -29,6 +29,7 @@
   "triggers": {
     "crons": ["*/5 * * * *"],
   },
+  "ai": { "binding": "AI" },
   // Explicit so `wrangler deploy` never silently disables the public
   // workers.dev route or the staging preview alias used by `deploy:preview`.
   "workers_dev": true,
@@ -44,6 +45,11 @@
     "EXTERNAL_INTEGRATIONS_ENABLED": "true",
     "V2_SCANS_ENABLED": "true",
     "GEO_SCANS_ENABLED": "false",
+    "GEO_ANALYSIS_ENABLED": "false",
+    "GEO_CLASSIFIER_MODEL": "clef-flash",
+    "GEO_PROCESSING_PROJECT_DAILY_CAP": "0",
+    "GEO_PROCESSING_GLOBAL_DAILY_CAP": "0",
+    "GEO_PAGE_CHECKS_ENABLED": "false",
     "GEO_GLOBAL_DAILY_CALL_CAP": "0",
     "GEO_PROJECT_DAILY_CALL_CAP": "0",
     "GEO_PROJECT_MONTHLY_CALL_CAP": "0",

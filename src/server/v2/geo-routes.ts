@@ -15,6 +15,15 @@ import {
 import { geoPromptSetSchema, geoRunRequestSchema, geoSettingsSchema } from '../../shared/geo';
 import { readJson } from '../http';
 import { processGeoCollectors } from './collectors';
+import {
+  processGeoAnalysis,
+  queueGeoAnalysis,
+  queueGeoPageCheck,
+  readGeoAnalyses,
+  readGeoPageChecks,
+} from './analysis';
+import { z } from 'zod';
+import { consumeRateLimit } from '../rate-limit';
 
 export const geoRoutes = new Hono<{
   Bindings: CloudflareBindings;
@@ -43,12 +52,31 @@ const errors: Record<string, string> = {
     'The configuration changed while starting this check. Reload and try again.',
   INVALID_CURSOR: 'This observations page is unavailable. Return to the first page.',
   VALIDATION_ERROR: 'Check the selected prompts, engines and monitoring configuration.',
+  GEO_PROCESSING_DISABLED:
+    'Analysis or page verification is paused. Original answers remain available.',
+  GEO_PROCESSING_BUDGET_REQUIRED:
+    'Configure a positive processing budget before analysis or page verification.',
+  GEO_PROCESSING_QUOTA_EXCEEDED:
+    'Processing budget reached. Stored evidence is still available; retry after reset.',
+  UNKNOWN_PAGE_TARGET: 'Choose an observed owned source or the configured brand homepage.',
 };
 
 // Mounted beneath the authenticated V2 router; standalone mounting must provide the same userId.
 geoRoutes.use('*', async (c, next) => {
   if (!c.get('userId'))
     return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
+  if (
+    !(await consumeRateLimit(
+      c.env.DB,
+      `geo:${c.get('userId')}:${c.req.method === 'GET' ? 'read' : 'write'}`,
+      c.req.method === 'GET' ? 120 : 30,
+      60,
+    ))
+  )
+    return c.json(
+      { error: { code: 'RATE_LIMITED', message: 'Too many requests. Try again in a minute.' } },
+      429,
+    );
   await next();
 });
 geoRoutes.onError((error, c) => {
@@ -146,6 +174,43 @@ geoRoutes.get('/observations', async (c) =>
 geoRoutes.get('/observations/:id', async (c) =>
   c.json({ data: await readGeoObservation(c.env, c.get('userId'), c.req.param('id')) }),
 );
+geoRoutes.get('/analyses', async (c) =>
+  c.json({ data: await readGeoAnalyses(c.env, c.get('userId')) }),
+);
+geoRoutes.get('/observations/:id/analyses', async (c) =>
+  c.json({ data: await readGeoAnalyses(c.env, c.get('userId'), c.req.param('id')) }),
+);
+geoRoutes.post('/observations/:id/analyses', async (c) => {
+  const input = z.object({ requestId: z.uuid() }).parse(await readJson(c.req.raw));
+  const data = await queueGeoAnalysis(c.env, c.get('userId'), c.req.param('id'), input.requestId);
+  c.executionCtx.waitUntil(
+    processGeoAnalysis(c.env, 1).catch(() => {
+      console.error(JSON.stringify({ event: 'geo_analysis_deferred' }));
+    }),
+  );
+  return c.json({ data }, 202);
+});
+geoRoutes.get('/observations/:id/page-checks', async (c) =>
+  c.json({ data: await readGeoPageChecks(c.env, c.get('userId'), c.req.param('id')) }),
+);
+geoRoutes.post('/observations/:id/page-checks', async (c) => {
+  const input = z
+    .object({ requestId: z.uuid(), target: z.url().max(2000) })
+    .parse(await readJson(c.req.raw));
+  const data = await queueGeoPageCheck(
+    c.env,
+    c.get('userId'),
+    c.req.param('id'),
+    input.target,
+    input.requestId,
+  );
+  c.executionCtx.waitUntil(
+    processGeoAnalysis(c.env, 1).catch(() => {
+      console.error(JSON.stringify({ event: 'geo_page_check_deferred' }));
+    }),
+  );
+  return c.json({ data }, 202);
+});
 geoRoutes.get('/observations/:id/raw', async (c) => {
   const observation = await readGeoObservation(c.env, c.get('userId'), c.req.param('id'));
   c.header(

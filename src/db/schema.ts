@@ -529,6 +529,42 @@ export const geoObservations = sqliteTable(
   ],
 );
 
+export const geoProcessingAttempts = sqliteTable(
+  'geo_processing_attempts',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    observationId: text('observation_id').references(() => geoObservations.id, {
+      onDelete: 'set null',
+    }),
+    requestId: text('request_id').notNull(),
+    kind: text('kind', { enum: ['analysis', 'page', 'search'] }).notNull(),
+    provider: text('provider').notNull(),
+    model: text('model'),
+    rubricVersion: text('rubric_version'),
+    policyVersion: text('policy_version'),
+    inputHash: text('input_hash').notNull(),
+    inputJson: text('input_json').notNull(),
+    state: text('state', { enum: ['queued', 'running', 'completed', 'failed'] }).notNull(),
+    resultJson: text('result_json'),
+    failureCode: text('failure_code'),
+    leaseToken: text('lease_token'),
+    leaseUntil: timestamp('lease_until'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    estimatedCostUsd: text('estimated_cost_usd'),
+    latencyMs: integer('latency_ms'),
+    createdAt: timestamp('created_at').notNull(),
+    dueAt: timestamp('due_at').notNull(),
+    completedAt: timestamp('completed_at'),
+  },
+  (table) => [
+    uniqueIndex('geo_processing_request_unique').on(table.projectId, table.requestId),
+    index('geo_processing_due_idx').on(table.state, table.dueAt),
+    index('geo_processing_cache_idx').on(table.projectId, table.kind, table.inputHash),
+  ],
+);
+
 export const projectRelations = relations(projects, ({ one, many }) => ({
   user: one(users, { fields: [projects.userId], references: [users.id] }),
   competitors: many(competitors),
@@ -564,6 +600,7 @@ export const schema = {
   geoRunSnapshots,
   geoRunItems,
   geoObservations,
+  geoProcessingAttempts,
 };
 
 export const sqliteForeignKeys = sql`PRAGMA foreign_keys = ON`;

@@ -12,6 +12,7 @@ import { v2Routes } from './v2/routes';
 import { accountRoutes } from './routes/account';
 import { operatorRoutes } from './routes/operator';
 import { processGeoCollectors } from './v2/collectors';
+import { processGeoAnalysis } from './v2/analysis';
 import { BodyTooLargeError } from './http';
 
 interface AppEnv {
@@ -190,16 +191,18 @@ async function scheduled(controller: ScheduledController, env: CloudflareBinding
       cron: controller.cron,
     }),
   );
+  const callLimit = Number(env.MAX_PROVIDER_CALLS_PER_CRON_INVOCATION);
   await processDueScans(
     env,
-    Number(env.MAX_PROVIDER_CALLS_PER_CRON_INVOCATION),
+    env.GEO_SCANS_ENABLED === 'true' ? Math.floor(callLimit / 2) : callLimit,
     new Date(controller.scheduledTime),
   );
   await processGeoCollectors(
     env,
-    Number(env.MAX_PROVIDER_CALLS_PER_CRON_INVOCATION),
+    env.GEO_SCANS_ENABLED === 'true' ? Math.ceil(callLimit / 2) : callLimit,
     new Date(controller.scheduledTime),
   );
+  await processGeoAnalysis(env, 5, new Date(controller.scheduledTime));
   await env.DB.prepare('DELETE FROM product_events WHERE received_at < ?')
     .bind(Date.now() - 90 * 86400000)
     .run();

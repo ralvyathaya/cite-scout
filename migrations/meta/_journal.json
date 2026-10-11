@@ -29,6 +29,13 @@
       "when": 1791673292929,
       "tag": "0003_geo_action_loop",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791679519148,
+      "tag": "0004_geo_analysis",
+      "breakpoints": true
     }
   ]
 }
