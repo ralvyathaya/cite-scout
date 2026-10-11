@@ -24,6 +24,9 @@ import {
 } from './analysis';
 import { z } from 'zod';
 import { consumeRateLimit } from '../rate-limit';
+import { patchGeoAction, readGeoAction, readGeoActions, readGeoSources } from './actions';
+import { geoActionPatchSchema } from '../../shared/geo-actions';
+import { geoEngineSchema } from '../../shared/geo';
 
 export const geoRoutes = new Hono<{
   Bindings: CloudflareBindings;
@@ -59,6 +62,13 @@ const errors: Record<string, string> = {
   GEO_PROCESSING_QUOTA_EXCEEDED:
     'Processing budget reached. Stored evidence is still available; retry after reset.',
   UNKNOWN_PAGE_TARGET: 'Choose an observed owned source or the configured brand homepage.',
+  GEO_ACTION_NOT_FOUND: 'This action is unavailable.',
+  GEO_ACTION_CHANGED: 'This action changed. Reload its current progress and try again.',
+  GEO_ACTION_REOPEN_REQUIRED: 'Reopen this completed task to record another cycle of work.',
+  INVALID_CHECKLIST: 'Choose checklist steps from this action.',
+  INVALID_EVIDENCE_PERIOD: 'Choose a period from one to thirty days.',
+  GEO_SCOPE_TOO_LARGE:
+    'This scope contains too much evidence. Choose a shorter period or a single engine/prompt.',
 };
 
 // Mounted beneath the authenticated V2 router; standalone mounting must provide the same userId.
@@ -177,6 +187,34 @@ geoRoutes.get('/observations/:id', async (c) =>
 geoRoutes.get('/analyses', async (c) =>
   c.json({ data: await readGeoAnalyses(c.env, c.get('userId')) }),
 );
+geoRoutes.get('/actions', async (c) =>
+  c.json({ data: await readGeoActions(c.env, c.get('userId')) }),
+);
+geoRoutes.get('/actions/:id', async (c) =>
+  c.json({
+    data: await readGeoAction(c.env, c.get('userId'), c.req.param('id'), c.req.query('cursor')),
+  }),
+);
+geoRoutes.patch('/actions/:id', async (c) =>
+  c.json({
+    data: await patchGeoAction(
+      c.env,
+      c.get('userId'),
+      c.req.param('id'),
+      geoActionPatchSchema.parse(await readJson(c.req.raw)),
+    ),
+  }),
+);
+geoRoutes.get('/sources', async (c) => {
+  const filter = z
+    .object({
+      days: z.coerce.number().int().min(1).max(30).default(30),
+      engine: geoEngineSchema.optional(),
+      promptId: z.string().min(1).max(100).optional(),
+    })
+    .parse(c.req.query());
+  return c.json({ data: await readGeoSources(c.env, c.get('userId'), filter) });
+});
 geoRoutes.get('/observations/:id/analyses', async (c) =>
   c.json({ data: await readGeoAnalyses(c.env, c.get('userId'), c.req.param('id')) }),
 );

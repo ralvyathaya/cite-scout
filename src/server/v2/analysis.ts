@@ -13,6 +13,7 @@ import {
 } from '../../shared/geo-analysis';
 import { getConfig } from '../config';
 import { readGeoObservation } from './geo-store';
+import { syncGeoActions } from './actions';
 
 const sql = (env: CloudflareBindings, query: string, ...values: unknown[]) =>
   env.DB.prepare(query).bind(...values);
@@ -356,7 +357,7 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
               ? (inputTokens * 0.24) / 1_000_000
               : null;
       }
-      await sql(
+      const saved = await sql(
         env,
         `UPDATE geo_processing_attempts SET state='completed',result_json=?,input_tokens=?,output_tokens=?,estimated_cost_usd=?,latency_ms=?,completed_at=?,lease_token=NULL,lease_until=NULL WHERE id=? AND state='running' AND lease_token=? AND lease_until>? AND EXISTS(SELECT 1 FROM projects WHERE id=geo_processing_attempts.project_id AND user_id=?)`,
         JSON.stringify(result),
@@ -370,6 +371,13 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
         clock(),
         row.user_id,
       ).run();
+      if (saved.meta.changes && row.kind === 'analysis') {
+        try {
+          await syncGeoActions(env, row.user_id, new Date(clock()));
+        } catch {
+          console.error(JSON.stringify({ event: 'geo_playbook_deferred' }));
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       const code = /^[A-Z_0-9]+$/u.test(message) ? message : 'CLASSIFIER_OUTPUT_INVALID';

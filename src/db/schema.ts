@@ -562,6 +562,82 @@ export const geoProcessingAttempts = sqliteTable(
     uniqueIndex('geo_processing_request_unique').on(table.projectId, table.requestId),
     index('geo_processing_due_idx').on(table.state, table.dueAt),
     index('geo_processing_cache_idx').on(table.projectId, table.kind, table.inputHash),
+    index('geo_processing_observation_idx').on(
+      table.observationId,
+      table.kind,
+      table.state,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const geoActions = sqliteTable(
+  'geo_actions',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    dedupeKey: text('dedupe_key').notNull(),
+    candidateJson: text('candidate_json').notNull(),
+    status: text('status', {
+      enum: ['proposed', 'accepted', 'in_progress', 'dismissed', 'completed'],
+    })
+      .notNull()
+      .default('proposed'),
+    revision: integer('revision').notNull().default(1),
+    checkedIdsJson: text('checked_ids_json').notNull().default('[]'),
+    notes: text('notes').notNull().default(''),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (table) => [uniqueIndex('geo_action_dedupe_unique').on(table.projectId, table.dedupeKey)],
+);
+export const geoActionEvidence = sqliteTable(
+  'geo_action_evidence',
+  {
+    id: text('id').primaryKey(),
+    actionId: text('action_id')
+      .notNull()
+      .references(() => geoActions.id, { onDelete: 'cascade' }),
+    observationId: text('observation_id')
+      .notNull()
+      .references(() => geoObservations.id, { onDelete: 'cascade' }),
+    analysisId: text('analysis_id')
+      .notNull()
+      .references(() => geoProcessingAttempts.id, { onDelete: 'cascade' }),
+    scopeJson: text('scope_json').notNull(),
+    evidenceIdsJson: text('evidence_ids_json').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('geo_action_proof_unique').on(table.actionId, table.analysisId),
+    index('geo_action_proof_cursor_idx').on(table.actionId, table.createdAt, table.id),
+  ],
+);
+export const geoActionEvents = sqliteTable(
+  'geo_action_events',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    actionId: text('action_id')
+      .notNull()
+      .references(() => geoActions.id, { onDelete: 'cascade' }),
+    requestId: text('request_id').notNull(),
+    bodyHash: text('body_hash').notNull(),
+    kind: text('kind', {
+      enum: ['accepted', 'dismissed', 'progress', 'completed', 'reopened'],
+    }).notNull(),
+    detailsJson: text('details_json').notNull(),
+    scopeJson: text('scope_json').notNull(),
+    evidenceJson: text('evidence_json').notNull(),
+    recordedAt: timestamp('recorded_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('geo_action_event_request_unique').on(table.projectId, table.requestId),
+    index('geo_action_event_history_idx').on(table.actionId, table.recordedAt, table.id),
   ],
 );
 
@@ -601,6 +677,9 @@ export const schema = {
   geoRunItems,
   geoObservations,
   geoProcessingAttempts,
+  geoActions,
+  geoActionEvidence,
+  geoActionEvents,
 };
 
 export const sqliteForeignKeys = sql`PRAGMA foreign_keys = ON`;
