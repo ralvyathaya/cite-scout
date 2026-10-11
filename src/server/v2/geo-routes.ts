@@ -27,6 +27,13 @@ import { consumeRateLimit } from '../rate-limit';
 import { patchGeoAction, readGeoAction, readGeoActions, readGeoSources } from './actions';
 import { geoActionPatchSchema } from '../../shared/geo-actions';
 import { geoEngineSchema } from '../../shared/geo';
+import {
+  completeGeoAction,
+  reopenGeoAction,
+  readGeoMeasurements,
+  readGeoTrends,
+} from './measurement';
+import { geoCompletionSchema, geoReopenSchema } from '../../shared/geo-measurement';
 
 export const geoRoutes = new Hono<{
   Bindings: CloudflareBindings;
@@ -65,6 +72,7 @@ const errors: Record<string, string> = {
   GEO_ACTION_NOT_FOUND: 'This action is unavailable.',
   GEO_ACTION_CHANGED: 'This action changed. Reload its current progress and try again.',
   GEO_ACTION_REOPEN_REQUIRED: 'Reopen this completed task to record another cycle of work.',
+  INVALID_IMPLEMENTATION_TIME: 'Implementation time cannot be in the future.',
   INVALID_CHECKLIST: 'Choose checklist steps from this action.',
   INVALID_EVIDENCE_PERIOD: 'Choose a period from one to thirty days.',
   GEO_SCOPE_TOO_LARGE:
@@ -215,6 +223,39 @@ geoRoutes.get('/sources', async (c) => {
     .parse(c.req.query());
   return c.json({ data: await readGeoSources(c.env, c.get('userId'), filter) });
 });
+geoRoutes.get('/trends', async (c) => {
+  const filter = z
+    .object({
+      days: z.coerce.number().int().min(1).max(30).default(30),
+      engine: geoEngineSchema.optional(),
+      promptId: z.string().min(1).max(100).optional(),
+    })
+    .parse(c.req.query());
+  return c.json({ data: await readGeoTrends(c.env, c.get('userId'), filter) });
+});
+geoRoutes.post('/actions/:id/complete', async (c) =>
+  c.json({
+    data: await completeGeoAction(
+      c.env,
+      c.get('userId'),
+      c.req.param('id'),
+      geoCompletionSchema.parse(await readJson(c.req.raw)),
+    ),
+  }),
+);
+geoRoutes.post('/actions/:id/reopen', async (c) =>
+  c.json({
+    data: await reopenGeoAction(
+      c.env,
+      c.get('userId'),
+      c.req.param('id'),
+      geoReopenSchema.parse(await readJson(c.req.raw)),
+    ),
+  }),
+);
+geoRoutes.get('/actions/:id/measurements', async (c) =>
+  c.json({ data: await readGeoMeasurements(c.env, c.get('userId'), c.req.param('id')) }),
+);
 geoRoutes.get('/observations/:id/analyses', async (c) =>
   c.json({ data: await readGeoAnalyses(c.env, c.get('userId'), c.req.param('id')) }),
 );

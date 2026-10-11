@@ -114,6 +114,7 @@ export interface GeoCapture {
   raw: unknown;
   model: string | null;
   modelReported: boolean;
+  inlineReferencesAvailable?: boolean;
   sources: GeoSource[];
   quality: 'complete' | 'partial' | 'no_feature';
   providerRequestId: string | null;

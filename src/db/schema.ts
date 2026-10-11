@@ -641,6 +641,36 @@ export const geoActionEvents = sqliteTable(
   ],
 );
 
+export const geoMeasurementSamples = sqliteTable(
+  'geo_measurement_samples',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    eventId: text('event_id').references(() => geoActionEvents.id, { onDelete: 'cascade' }),
+    observationId: text('observation_id')
+      .notNull()
+      .references(() => geoObservations.id, { onDelete: 'cascade' }),
+    analysisId: text('analysis_id').references(() => geoProcessingAttempts.id, {
+      onDelete: 'cascade',
+    }),
+    series: text('series').notNull(),
+    cohort: text('cohort').notNull(),
+    day: text('day').notNull(),
+    sampleJson: text('sample_json').notNull(),
+    frozenAt: timestamp('frozen_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('geo_measurement_sample_unique').on(
+      table.projectId,
+      table.series,
+      table.cohort,
+      table.day,
+    ),
+  ],
+);
+
 export const projectRelations = relations(projects, ({ one, many }) => ({
   user: one(users, { fields: [projects.userId], references: [users.id] }),
   competitors: many(competitors),
@@ -680,6 +710,7 @@ export const schema = {
   geoActions,
   geoActionEvidence,
   geoActionEvents,
+  geoMeasurementSamples,
 };
 
 export const sqliteForeignKeys = sql`PRAGMA foreign_keys = ON`;

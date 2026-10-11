@@ -20,6 +20,7 @@ for (const name of [
   '0003_geo_action_loop',
   '0004_geo_analysis',
   '0005_geo_actions',
+  '0006_geo_measurement',
 ]) {
   if (name === '0002_citescout_v2')
     db.exec(`

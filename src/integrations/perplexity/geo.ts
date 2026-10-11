@@ -40,6 +40,7 @@ export async function capturePerplexityGeo(
     raw: capture.raw,
     model: capture.model,
     modelReported: true,
+    inlineReferencesAvailable: capture.citationStatus === 'verified',
     sources: capture.sources.map((source) => {
       const spans = capture.links
         .filter((link) => link.status === 'verified' && link.sourceKeys.includes(source.key))

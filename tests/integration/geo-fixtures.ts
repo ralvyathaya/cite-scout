@@ -3,7 +3,7 @@ import { buildGeoEvaluation, projectGeoClassification } from '../../src/domain/g
 import { diagnoseGeo } from '../../src/domain/geo-diagnosis';
 import { validateDecision } from '../../src/integrations/decision/client';
 import type { GeoEngine, GeoObservation } from '../../src/shared/geo';
-import type { NativeDecision } from '../../src/shared/geo-analysis';
+import type { NativeDecision, GeoClassification } from '../../src/shared/geo-analysis';
 
 // Synthetic transport and inference data, confined to Vitest's isolated Worker/D1 database.
 export async function seedGeoEvidence(
@@ -12,6 +12,10 @@ export async function seedGeoEvidence(
   engine: GeoEngine = 'perplexity',
   at = new Date(),
   text = 'Rival is recommended.',
+  labels: {
+    presence?: GeoClassification['brandPresence'];
+    stance?: GeoClassification['brandStance'];
+  } = {},
 ) {
   await env.DB.prepare(
     'INSERT OR IGNORE INTO competitors(id,project_id,name,normalized_name,canonical_domain,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',
@@ -86,9 +90,9 @@ export async function seedGeoEvidence(
             if (question.type === 'noul') return [name, { type: 'noul', noul: 0.9 }];
             const selected =
               name === 'brand_presence'
-                ? 'absent'
+                ? (labels.presence ?? 'absent')
                 : name === 'brand_stance'
-                  ? 'not_applicable'
+                  ? (labels.stance ?? 'not_applicable')
                   : name.startsWith('competitor_')
                     ? 'recommended'
                     : name.startsWith('fit_')
