@@ -252,6 +252,8 @@ export async function readGeoMeasurements(
   at = new Date(),
 ): Promise<GeoPinMeasurement[]> {
   const detail = await readGeoAction(env, userId, actionId);
+  const completions = detail.events.filter((event) => event.kind === 'completed');
+  if (!completions.length) return [];
   const active = await sql(
     env,
     `SELECT q.id FROM prompts q JOIN projects p ON p.id=q.project_id WHERE p.user_id=? AND q.enabled=1 AND q.archived_at IS NULL`,
@@ -264,7 +266,7 @@ export async function readGeoMeasurements(
   ).first<{ engines_json: string }>();
   const engines = settings ? (JSON.parse(settings.engines_json) as string[]) : [];
   const pins: GeoPinMeasurement[] = [];
-  for (const event of detail.events.filter((event) => event.kind === 'completed')) {
+  for (const event of completions) {
     const { requestId, revision, implementedAt, changeDescription, changeUrl } = event.details;
     const input = geoCompletionSchema.parse({
         requestId,
