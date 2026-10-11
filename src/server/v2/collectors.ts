@@ -170,17 +170,6 @@ export async function processGeoCollectors(env: CloudflareBindings, limit = 5, a
     if (!item) continue;
     const now = clock(),
       context = JSON.parse(item.context_json) as GeoRequestContext;
-    const acquired = await sql(
-      env,
-      `UPDATE provider_call_reservations SET lease_token=?,lease_until=? WHERE id=? AND status='reserved'
-      AND EXISTS(SELECT 1 FROM geo_run_items i JOIN projects p ON p.id=i.project_id WHERE i.id=? AND i.lease_token=? AND p.user_id=provider_call_reservations.user_id)`,
-      item.lease_token,
-      item.lease_until,
-      item.reservation_id,
-      item.id,
-      item.lease_token,
-    ).run();
-    if (!acquired.meta.changes) continue;
     if (item.submitted_at !== null && now - item.submitted_at > 24 * 3600_000) {
       await terminal(env, item, 'failed', 'POLL_WINDOW_EXPIRED', null, null, now);
       continue;

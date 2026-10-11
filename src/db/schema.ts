@@ -554,6 +554,7 @@ export const geoProcessingAttempts = sqliteTable(
     outputTokens: integer('output_tokens'),
     estimatedCostUsd: text('estimated_cost_usd'),
     latencyMs: integer('latency_ms'),
+    usageDate: text('usage_date').notNull().default(''),
     createdAt: timestamp('created_at').notNull(),
     dueAt: timestamp('due_at').notNull(),
     completedAt: timestamp('completed_at'),
@@ -561,6 +562,7 @@ export const geoProcessingAttempts = sqliteTable(
   (table) => [
     uniqueIndex('geo_processing_request_unique').on(table.projectId, table.requestId),
     index('geo_processing_due_idx').on(table.state, table.dueAt),
+    index('geo_processing_usage_idx').on(table.usageDate, table.projectId),
     index('geo_processing_cache_idx').on(table.projectId, table.kind, table.inputHash),
     index('geo_processing_observation_idx').on(
       table.observationId,

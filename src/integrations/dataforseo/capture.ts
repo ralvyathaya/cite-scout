@@ -62,7 +62,8 @@ export function normalizeDataForSeo(raw: unknown, context: GeoRequestContext): G
     outputTokens: null,
     textParts: [],
   };
-  if (task.status_code === 40102) return { ...capture, quality: 'no_feature' };
+  // NoSearchResults does not establish that a successfully observed SERP lacked an overview.
+  if (task.status_code === 40102) return { ...capture, quality: 'partial' };
   if (![20000, 40106].includes(task.status_code))
     throw new DataForSeoError(`DATAFORSEO_${String(task.status_code)}`, raw, cost);
   const fail = (): never => {

@@ -57,8 +57,7 @@ export function geoCapabilities(env: CloudflareBindings) {
 }
 export async function geoUsage(env: CloudflareBindings, userId: string, at = new Date()) {
   const date = utcDate(at),
-    config = getConfig(env),
-    day = new Date(date).getTime();
+    config = getConfig(env);
   const project = await env.DB.prepare('SELECT id FROM projects WHERE user_id=?')
     .bind(userId)
     .first<{ id: string }>();
@@ -76,9 +75,9 @@ export async function geoUsage(env: CloudflareBindings, userId: string, at = new
         attempts: number;
       }>(),
     env.DB.prepare(
-      `SELECT COUNT(*) AS attempts,COALESCE(SUM(CASE WHEN created_at>=? THEN 1 ELSE 0 END),0) AS today,COALESCE(SUM(CAST(estimated_cost_usd AS REAL)),0) AS estimatedCostUsd,COALESCE(SUM(CASE WHEN estimated_cost_usd IS NULL THEN 1 ELSE 0 END),0) AS unknownCostAttempts FROM geo_processing_attempts WHERE project_id=? AND created_at>=? AND created_at<=?`,
+      `SELECT COUNT(*) AS attempts,COALESCE(SUM(CASE WHEN usage_date=? THEN 1 ELSE 0 END),0) AS today,COALESCE(SUM(CAST(estimated_cost_usd AS REAL)),0) AS estimatedCostUsd,COALESCE(SUM(CASE WHEN estimated_cost_usd IS NULL THEN 1 ELSE 0 END),0) AS unknownCostAttempts FROM geo_processing_attempts WHERE project_id=? AND usage_date LIKE ?`,
     )
-      .bind(day, project.id, new Date(`${date.slice(0, 7)}-01`).getTime(), at.getTime())
+      .bind(date, project.id, `${date.slice(0, 7)}%`)
       .first<{
         today: number;
         estimatedCostUsd: number;

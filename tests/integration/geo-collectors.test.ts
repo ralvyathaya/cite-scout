@@ -5,6 +5,7 @@ import { processGeoCollectors, reconcileGeoSubmission } from '../../src/server/v
 import { deleteAccountData } from '../../src/server/account-deletion';
 
 const at = new Date('2026-10-11T23:59:00Z');
+const fixtureOwners: { env: CloudflareBindings; userId: string }[] = [];
 const settings = {
   engines: ['google_aio'] as const,
   dailyEnabled: false,
@@ -32,12 +33,107 @@ const reply = (status: number, result: unknown = null) =>
 async function accepted() {
   const env = bindings(),
     owner = await seed(1, true, at);
+  fixtureOwners.push({ env, userId: owner.userId });
   await saveGeoSettings(env, owner.userId, { ...settings, engines: [...settings.engines] }, at);
   const run = await startGeoRun(env, owner.userId, { requestId: crypto.randomUUID() }, at);
   return { env, owner, run };
 }
-afterEach(() => vi.restoreAllMocks());
+afterEach(async () => {
+  vi.restoreAllMocks();
+  for (const owner of fixtureOwners) {
+    await owner.env.DB.prepare('DELETE FROM subscriptions WHERE user_id=?')
+      .bind(owner.userId)
+      .run();
+    await deleteAccountData(owner.env, owner.userId);
+  }
+  fixtureOwners.length = 0;
+});
 describe('durable GEO collectors', () => {
+  it('moves the same pending reservation to the POST day and keeps that date for paused GET recovery', async () => {
+    const { env, owner, run } = await accepted();
+    const item = run.items[0];
+    if (!item) throw new Error('Expected an accepted item');
+    const postedAt = new Date('2026-10-12T00:01:00Z');
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(reply(20100));
+    await processGeoCollectors(env, 1, postedAt);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(
+      await env.DB.prepare(
+        'SELECT id,usage_date,request_context_json FROM provider_call_reservations WHERE scan_run_id=?',
+      )
+        .bind(run.id)
+        .first(),
+    ).toEqual({
+      id: item.reservationId,
+      usage_date: '2026-10-12',
+      request_context_json: JSON.stringify(item.context),
+    });
+    fetcher.mockResolvedValueOnce(reply(20000, [{ items: [] }]));
+    await processGeoCollectors(
+      { ...env, GEO_SCANS_ENABLED: 'false' },
+      1,
+      new Date('2026-10-13T00:01:00Z'),
+    );
+    expect(fetcher.mock.calls.map((call) => call[1]?.method)).toEqual(['POST', 'GET']);
+    expect((await readGeoRun(env, owner.userId, run.id)).items[0]?.reservationId).toBe(
+      item.reservationId,
+    );
+    expect(
+      await env.DB.prepare('SELECT usage_date FROM provider_call_reservations WHERE id=?')
+        .bind(item.reservationId)
+        .first('usage_date'),
+    ).toBe('2026-10-12');
+  });
+  it.each(['projectDay', 'projectMonth', 'globalDay'] as const)(
+    'does not POST accepted prior-day work when the actual %s budget is exhausted',
+    async (cap) => {
+      const { env, owner, run } = await accepted();
+      const item = run.items[0];
+      if (!item) throw new Error('Expected an accepted item');
+      const limits = {
+        ...env,
+        GEO_PROJECT_DAILY_CALL_CAP: cap === 'projectDay' ? '1' : '40',
+        GEO_PROJECT_MONTHLY_CALL_CAP: cap === 'projectMonth' ? '1' : '100',
+        GLOBAL_DAILY_PROVIDER_CALL_CAP: cap === 'globalDay' ? '1' : '150',
+      };
+      const usageDate = cap === 'projectMonth' ? '2026-10-01' : '2026-10-12';
+      await env.DB.prepare(
+        `INSERT INTO provider_call_reservations(id,idempotency_key,project_id,provider,usage_date,status,reserved_at)
+        VALUES (?, ?, ?, 'perplexity', ?, 'failed', ?)`,
+      )
+        .bind(
+          crypto.randomUUID(),
+          crypto.randomUUID(),
+          cap === 'globalDay' ? null : owner.projectId,
+          usageDate,
+          at.getTime(),
+        )
+        .run();
+      const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply(20100));
+      await Promise.all([
+        processGeoCollectors(limits, 1, new Date('2026-10-12T00:01:00Z')),
+        processGeoCollectors(limits, 1, new Date('2026-10-12T00:01:00Z')),
+      ]);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect((await readGeoRun(env, owner.userId, run.id)).items[0]).toMatchObject({
+        status: 'pending',
+        terminalReason: 'GEO_QUOTA_EXCEEDED',
+        providerTaskId: null,
+        reservationId: item.reservationId,
+        context: item.context,
+      });
+      expect(
+        await env.DB.prepare('SELECT count(*) FROM provider_call_reservations WHERE scan_run_id=?')
+          .bind(run.id)
+          .first('count(*)'),
+      ).toBe(1);
+      expect(
+        await env.DB.prepare('SELECT usage_date FROM provider_call_reservations WHERE id=?')
+          .bind(item.reservationId)
+          .first('usage_date'),
+      ).toBe('2026-10-11');
+    },
+  );
   it('saves one POST identity and polls across restart, midnight and paused submissions without charging twice', async () => {
     const { env, owner, run } = await accepted();
     const fetcher = vi

@@ -2,9 +2,11 @@
 
 **Know when AI recommends your competitors instead of you.**
 
-CiteScout records daily, web-grounded observations from the Perplexity Agent API, detects tracked brand and competitor mentions, and turns the archive into transparent visibility trends. It is a focused $19/month alternative to expensive GEO/AEO monitoring suites for founders and small teams.
+CiteScout turns stored AI visibility observations into evidence, diagnoses, Owned/Earned tasks, completion pins and comparable follow-up for founders and marketing teams. The existing subscription is $19/month; it does not establish an affordable four-engine production allowance.
 
-> CiteScout does not monitor ChatGPT's consumer app, Claude's consumer app, Google AI Overviews, or deterministic rankings. API observations are nondeterministic and may differ from the Perplexity consumer application.
+> GEO collectors use the real Perplexity Agent API and optional DataForSEO Google AI Overview, ChatGPT Search and Bing Copilot Answers captures. Missing collectors are explicitly unavailable. API observations are nondeterministic and do not promise consumer-chat parity or deterministic rankings. Production GEO capture, classification and page checks remain disabled pending live release gates.
+
+See [GEO operations](docs/geo-operations.md), [provider audit](docs/geo-provider-audit.md) and [evaluation status](research/geo-evaluation-report.md) for the current configuration and activation blockers.
 
 ## Architecture
 
@@ -17,8 +19,9 @@ One TypeScript repository and one Cloudflare Worker deployment:
 - Drizzle schema and generated SQL migrations
 - Better Auth magic links, Resend, and Turnstile
 - Perplexity Agent API behind `ObservationProvider`
+- Optional native DataForSEO task collectors; Clef Flash through Workers AI, explicit Clef alternative and optional Jev classifier
 - Lemon Squeezy hosted checkout, signed webhooks, and Customer Portal
-- Hourly Cron Trigger for bounded daily scans
+- Five-minute Cron Trigger for bounded scheduling, saved-task polling and processing
 - Vitest, Cloudflare Vitest plugin, and Playwright
 
 D1 was chosen instead of Supabase or Convex because it keeps authentication, product data, quotas, and scheduled coordination in the same Cloudflare deployment with no external database connection pool or additional platform.
@@ -29,17 +32,15 @@ See [docs/architecture.md](docs/architecture.md).
 
 Requirements: Node 22.12+ and npm.
 
-```bash
+```powershell
 npm install
-copy .dev.vars.example .dev.vars
+if (-not (Test-Path -LiteralPath '.dev.vars')) { Copy-Item .dev.vars.example .dev.vars }
 npm run cf:typegen
 npm run db:migrate:local
 npm run dev
 ```
 
-Local development can run with `EXTERNAL_INTEGRATIONS_ENABLED=false`. The UI then renders the public
-fixture and uses a local Turnstile placeholder token. Production fails closed when test authentication is
-enabled.
+Local configuration has `EXTERNAL_INTEGRATIONS_ENABLED=false`, GEO flags disabled and GEO budgets zero. Open `http://localhost:5173/app/overview?fixture=1` for the interactive synthetic workspace. Its persistent banner, separate browser-memory store and intercepted workspace API keep provider, classifier and billing requests out of this flow; fixture requests on non-localhost hosts fail closed. Refresh resets its data; Exit fixture clears its session marker. Production fails closed when test authentication is enabled. Local Wrangler intentionally has no `AI` binding; production Wrangler declares `AI`, so enabling production classification can incur inference cost.
 
 **Never commit `.dev.vars`. Never put secrets in `wrangler.jsonc`. Never expose the Perplexity or Lemon
 Squeezy API key to browser code.**
@@ -56,17 +57,17 @@ npx wrangler login
 npx wrangler d1 create promptwatch
 ```
 
-Replace the placeholder D1 `database_id` in `wrangler.jsonc`, then:
+Review the D1 IDs in both Wrangler files for the intended account. For the production database, review/apply migrations explicitly with the production config, then deploy:
 
 ```bash
 npm run cf:typegen
-npm run db:migrate:remote
+npx wrangler d1 migrations apply DB --remote --config wrangler.production.jsonc
 npm run deploy
 ```
 
 `npm run deploy` targets production via `wrangler.production.jsonc`
 (`wrangler deploy --config wrangler.production.jsonc`), which attaches the
-`cite-scout.com` custom domain, enables integrations, and schedules the hourly
+`cite-scout.com` custom domain, enables external integrations, and schedules the five-minute
 Cron Trigger. `wrangler.jsonc` stays local-dev friendly and is the only file the
 Cloudflare Vite plugin reads — it ignores `env` blocks, which is why production
 lives in a separate file. `npm run dev` is unaffected.
@@ -92,7 +93,7 @@ live in [docs/dogfood.md](docs/dogfood.md). Two hard limits: full login only wor
 on `cite-scout.com` (Turnstile rejects other hostnames), and preview URLs expose
 no logs — debug locally.
 
-Remote migrations are an explicit operator step. Review generated SQL and confirm a backup strategy before applying destructive changes. The Cron Trigger runs at `0 * * * *` UTC and processes no more than `MAX_PROVIDER_CALLS_PER_CRON_INVOCATION` reservations in deterministic order.
+Remote migrations are an explicit operator step. Review SQL and backup/restore strategy first. The Cron Trigger runs at `*/5 * * * *` UTC. `MAX_PROVIDER_CALLS_PER_CRON_INVOCATION` bounds the collector work limit; it is not an end-to-end D1 query or dollar-cost cap. GEO production activation requires the separate gates in the operations document.
 
 ## Secrets and configuration
 
@@ -108,7 +109,7 @@ npx wrangler secret put TURNSTILE_SECRET_KEY --config wrangler.production.jsonc
 npx wrangler secret put OPERATOR_SECRET --config wrangler.production.jsonc
 ```
 
-Set production values for `APP_URL`, Lemon Squeezy IDs and host, `RESEND_FROM_EMAIL`, `TURNSTILE_SITE_KEY`, and cost caps in the production Wrangler environment.
+Set production values for `APP_URL`, Lemon Squeezy IDs and host, `RESEND_FROM_EMAIL`, `TURNSTILE_SITE_KEY`, and reviewed caps in production Wrangler. Optional GEO collectors need server-side `DATAFORSEO_LOGIN` and `DATAFORSEO_PASSWORD`; only the optional Jev selection needs `TYPESAFE_API_KEY`. Clef Flash/Clef use the `AI` binding. See the operations document for all GEO flags, defaults and budgets.
 
 ## Perplexity Agent API
 
@@ -145,18 +146,20 @@ Use the operator-protected reconciliation endpoint with `Authorization: Bearer $
 
 ## Cost controls
 
-- Global provider calls: 100/day
+- Legacy global provider calls: 150/day in both checked-in Wrangler configs
 - Per user: 350/month
 - Cron: 20 calls/invocation
-- Unpaid lifetime trial: maximum 3 prompt calls
+- Legacy unpaid trial: maximum 3 prompt calls; V2 preserves a frozen three-question baseline and eligible follow-up with bounded attempts
 - Paid project: maximum 10 prompt observations/UTC day
 - One project, 10 enabled prompts, 3 competitors
 
-Reservations and trial/manual gates are claimed in one conditional D1 batch before provider calls. Failed and ambiguous interrupted calls remain consumed and are not automatically replayed. Deleting prompts or accounts does not delete usage reservations. Apply `migrations/0001_sticky_the_hand.sql` before deploying this version; it copies existing rows and changes ownership references to nullable `ON DELETE SET NULL`. It cannot reconstruct usage deleted before this migration and never resets trial eligibility.
+These are legacy limits, not a four-engine GEO entitlement. GEO collector daily/global/monthly and processing daily caps are all zero by default. Usage reports distinguish reported collector cost, estimated classifier cost and attempts with unknown cost; no real live workload cost has been measured. Local maximum-scope acceptance now preserves forty items/reservations within fifty prepared statements. Full authenticated/cron maximum scope is not validated on live D1 Free; local no-cost tests do not establish a free production deployment.
+
+Reservations and trial/manual gates are claimed in conditional D1 batches before provider calls. Failed/ambiguous attempts remain consumed; GEO ambiguous submission is never automatically reposted. Deleting prompts or accounts does not delete usage reservations. Apply the ordered migration chain through `0007`, preserving the `0001` nullable ownership/accounting migration and V2 frozen trial context; see GEO operations for retention and remote migration instructions. Usage deleted before the retention migration cannot be reconstructed, and migration never resets trial eligibility.
 
 ## Mention heuristics
 
-Detection is deterministic and does not make a second LLM call. It uses Unicode-safe normalization, token boundaries, exact brand names, canonical domains, and optional aliases. Recommendation context is restricted to brand-specific clauses; negated and ambiguous multi-brand praise cannot produce Recommended. Displacement means a tracked competitor appeared earlier or appeared while the brand was absent; it is not a recommendation ranking. Each actually mentioned entity counts at most once per successful, nonempty response for share of voice. The UI labels metrics as directional.
+Legacy detection is deterministic and uses Unicode-safe normalization, token boundaries, canonical domains and optional aliases. GEO analysis uses Clef Flash by default with native typed questions and probabilities. Probabilities are model outputs, not measured accuracy. Classification failure preserves the original capture; all diagnoses require review. Metrics use explicit eligible samples and coverage, with frozen context/cohorts; completion pins describe correlation, not causal uplift or financial ROI.
 
 ## Tests
 
@@ -179,16 +182,17 @@ uniqueness, multi-tenant authorization guards, and public/mobile/accessibility b
 
 Deletion requires sign-in within 15 minutes and explicit confirmation of permanent removal and forfeited remaining access. Provider-confirmed cancelled or expired subscriptions can be deleted immediately. Renewable, paused, or payment-problem subscriptions must first be cancelled in the portal. Product data and sessions are removed atomically with the local subscription; anonymous usage accounting and minimal retired billing identifiers remain.
 
-## Add another AI provider
+## Collector contract
 
-Implement `ObservationProvider.runObservation`, validate its response, preserve neutral prompting, return citations and usage, and add the provider to reservation uniqueness. Production must never silently fall back to fixtures.
+An additional GEO collector must preserve neutral prompting, identify engine/surface/collector, validate actual target answers and distinguish retrieved links from answer/element/verified inline references. Generic Serper SERP or Tavily search/extract cannot be relabeled target AI answers. These discovery options were audited and remain unwired in this bounded MVP; production never silently falls back to fixtures.
 
 ## Known limitations
 
 - One project per account.
-- Perplexity Agent API only.
+- Real GEO surface availability depends on configured collectors and completed live gates; DataForSEO is optional for local/MVP use.
 - Directional observations, not exact rankings.
-- No team accounts or exports in the MVP.
+- No team accounts; original GEO parsed provider JSON is available through tenant-protected raw downloads.
+- Real classifier quality, p50/p95 latency and workload cost remain unmeasured; no sub-50 ms claim.
 
 ## Real validation quotes
 

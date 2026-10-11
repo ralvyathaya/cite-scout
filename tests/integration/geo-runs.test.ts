@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { seed, withBindings } from './fixtures';
 import {
   readGeoRun,
@@ -31,6 +31,67 @@ const settings = {
 const at = new Date('2026-10-11T12:00:00Z');
 
 describe('GEO accepted work and ownership', () => {
+  it('claims a same-day reservation at exact daily and monthly limits without counting it twice', async () => {
+    const env = {
+      ...bindings(),
+      GLOBAL_DAILY_PROVIDER_CALL_CAP: '1',
+      GEO_PROJECT_DAILY_CALL_CAP: '1',
+      GEO_PROJECT_MONTHLY_CALL_CAP: '1',
+    };
+    const owner = await seed(1, true, at);
+    await saveGeoSettings(env, owner.userId, { ...settings, engines: ['google_aio'] }, at);
+    const run = await startGeoRun(env, owner.userId, { requestId: crypto.randomUUID() }, at);
+    const item = run.items[0];
+    if (!item) throw new Error('Expected an accepted item');
+    expect(await claimGeoItem(env, item.id, at)).toMatchObject({ status: 'submitting' });
+    expect(await claimGeoItem(env, item.id, at)).toBeNull();
+  });
+  it('atomically rebases prior-month pending claims within the shared global cap without counting themselves twice', async () => {
+    const acceptedAt = new Date('2026-09-30T23:59:00Z');
+    const postedAt = new Date('2026-10-01T00:01:00Z');
+    const env = bindings();
+    const owners = await Promise.all([seed(1, true, acceptedAt), seed(1, true, acceptedAt)]);
+    const runs = [];
+    for (const owner of owners) {
+      await saveGeoSettings(
+        env,
+        owner.userId,
+        { ...settings, engines: ['google_aio'] },
+        acceptedAt,
+      );
+      runs.push(
+        await startGeoRun(env, owner.userId, { requestId: crypto.randomUUID() }, acceptedAt),
+      );
+    }
+    const items = runs.map((run) => {
+      const item = run.items[0];
+      if (!item) throw new Error('Fixture requires one pending item');
+      return item;
+    });
+    if (!items[0] || !items[1]) throw new Error('Expected two accepted items');
+    const limited = {
+      ...env,
+      GLOBAL_DAILY_PROVIDER_CALL_CAP: '1',
+      GEO_PROJECT_DAILY_CALL_CAP: '1',
+      GEO_PROJECT_MONTHLY_CALL_CAP: '1',
+    };
+    const claimed = await Promise.all(
+      items.map((item) => claimGeoItem(limited, item.id, postedAt)),
+    );
+    expect(claimed.filter(Boolean)).toHaveLength(1);
+    expect(
+      await env.DB.prepare(
+        "SELECT count(*) FROM provider_call_reservations WHERE usage_date='2026-10-01'",
+      ).first('count(*)'),
+    ).toBe(1);
+    expect(
+      await env.DB.prepare(
+        'SELECT count(*) FROM provider_call_reservations WHERE scan_run_id IN (?,?)',
+      )
+        .bind(...runs.map((run) => run.id))
+        .first('count(*)'),
+    ).toBe(2);
+  });
   it('replays the same payload without new reservations and rejects UUID reuse with changed scope', async () => {
     const env = bindings(),
       owner = await seed(1, true, at);
@@ -141,7 +202,7 @@ describe('GEO accepted work and ownership', () => {
     ).toBe(0);
   });
 
-  it('accepts ten prompts across four engines without exceeding D1 bound-parameter limits', async () => {
+  it('accepts ten prompts across four engines within D1 query and bound-parameter limits', async () => {
     const env = bindings(),
       owner = await seed(10, true, at);
     await saveGeoSettings(
@@ -150,8 +211,17 @@ describe('GEO accepted work and ownership', () => {
       { ...settings, engines: ['perplexity', 'google_aio', 'chatgpt_search', 'bing_copilot'] },
       at,
     );
-    const run = await startGeoRun(env, owner.userId, { requestId: crypto.randomUUID() }, at);
+    const prepared = vi.spyOn(env.DB, 'prepare');
+    let queries: number;
+    let run;
+    try {
+      run = await startGeoRun(env, owner.userId, { requestId: crypto.randomUUID() }, at);
+      queries = prepared.mock.calls.length;
+    } finally {
+      prepared.mockRestore();
+    }
     expect(run.items).toHaveLength(40);
+    expect(queries).toBeLessThanOrEqual(50);
     expect((await geoAllowance(env, owner.userId, at)).today).toBe(40);
   });
 

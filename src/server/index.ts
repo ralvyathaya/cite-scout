@@ -195,14 +195,14 @@ async function scheduled(controller: ScheduledController, env: CloudflareBinding
   await processDueScans(
     env,
     env.GEO_SCANS_ENABLED === 'true' ? Math.floor(callLimit / 2) : callLimit,
-    new Date(controller.scheduledTime),
+    new Date(),
   );
   await processGeoCollectors(
     env,
     env.GEO_SCANS_ENABLED === 'true' ? Math.ceil(callLimit / 2) : callLimit,
-    new Date(controller.scheduledTime),
+    new Date(),
   );
-  await processGeoAnalysis(env, 5, new Date(controller.scheduledTime));
+  await processGeoAnalysis(env, 5, new Date());
   await env.DB.prepare('DELETE FROM product_events WHERE received_at < ?')
     .bind(Date.now() - 90 * 86400000)
     .run();

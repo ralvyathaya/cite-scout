@@ -10,6 +10,7 @@ import {
 } from '../../src/server/v2/analysis';
 import { buildGeoEvaluation } from '../../src/domain/geo-classification';
 import { readGeoObservation } from '../../src/server/v2/geo-store';
+import { geoUsage } from '../../src/server/v2/geo-readiness';
 const at = new Date('2026-10-11T10:00:00Z');
 const fixtureOwners: { env: CloudflareBindings; userId: string }[] = [];
 afterEach(async () => {
@@ -86,6 +87,45 @@ async function capture() {
   return { env, owner, id };
 }
 describe('independent analysis budget and stored capture recovery', () => {
+  it('checks actual processing-day quota across midnight without changing request time or repeating inference', async () => {
+    const { env, owner, id } = await capture();
+    const first = await queueGeoAnalysis(env, owner.userId, id, crypto.randomUUID(), at);
+    const next = new Date('2026-10-12T00:00:00Z');
+    const capped = {
+      ...env,
+      GEO_PAGE_CHECKS_ENABLED: 'true',
+      GEO_PROCESSING_GLOBAL_DAILY_CAP: '1',
+      GEO_PROCESSING_PROJECT_DAILY_CAP: '1',
+    };
+    await queueGeoPageCheck(
+      capped,
+      owner.userId,
+      id,
+      'https://orbitcal.test/',
+      crypto.randomUUID(),
+      next,
+    );
+    const run = vi.fn().mockResolvedValue({ broken: true });
+    await processGeoAnalysis({ ...capped, AI: { run } as unknown as Ai }, 1, next);
+    expect(run).not.toHaveBeenCalled();
+    expect(
+      (await readGeoAnalyses(env, owner.userId, id)).find((row) => row.id === first.id)?.state,
+    ).toBe('queued');
+    const later = new Date('2026-10-13T00:00:00Z');
+    await processGeoAnalysis({ ...capped, AI: { run } as unknown as Ai }, 1, later);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(
+      await env.DB.prepare('SELECT created_at,usage_date FROM geo_processing_attempts WHERE id=?')
+        .bind(first.id)
+        .first(),
+    ).toEqual({ created_at: at.getTime(), usage_date: '2026-10-13' });
+    expect((await geoUsage(env, owner.userId, later)).processing.today).toBe(1);
+    await processGeoAnalysis({ ...capped, AI: { run } as unknown as Ai }, 1, later);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect((await readGeoObservation(env, owner.userId, id)).capture.raw).toEqual({
+      original: true,
+    });
+  });
   it('scrubs private processing data on deletion and keeps anonymous budget usage despite late classifier output', async () => {
     const { env, owner, id } = await capture();
     const attempt = await queueGeoAnalysis(env, owner.userId, id, crypto.randomUUID(), at);

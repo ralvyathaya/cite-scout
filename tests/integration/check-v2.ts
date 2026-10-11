@@ -21,6 +21,7 @@ for (const name of [
   '0004_geo_analysis',
   '0005_geo_actions',
   '0006_geo_measurement',
+  '0007_geo_processing_usage',
 ]) {
   if (name === '0002_citescout_v2')
     db.exec(`
@@ -31,8 +32,25 @@ for (const name of [
     INSERT INTO scan_results(id,scan_run_id,project_id,prompt_id,provider,provider_model,observation_date,raw_response_text,citation_data_json,brand_mentioned,context_classification,created_at)
     VALUES('legacy','legacy','legacy','legacy','perplexity','old','2026-01-01','Retained legacy answer','[{"url":"https://legacy.example/docs"}]',1,'mentioned',1);
   `);
+  if (name === '0007_geo_processing_usage')
+    db.exec(`INSERT INTO geo_processing_attempts(id,request_id,kind,provider,input_hash,input_json,state,estimated_cost_usd,created_at,due_at)
+      VALUES('retained-processing','retained-request','analysis','workers_ai','retained-hash','{}','failed','0.01',1767225600000,1767225600000)`);
   db.exec(readFileSync(`migrations/${name}.sql`, 'utf8'));
 }
+assert.deepEqual(
+  {
+    ...db
+      .prepare(
+        "SELECT usage_date,created_at,estimated_cost_usd FROM geo_processing_attempts WHERE id='retained-processing'",
+      )
+      .get(),
+  },
+  {
+    usage_date: '2026-01-01',
+    created_at: 1767225600000,
+    estimated_cost_usd: '0.01',
+  },
+);
 assert.equal(
   db.prepare("SELECT raw_response_text FROM scan_results WHERE id='legacy'").get()
     ?.raw_response_text,

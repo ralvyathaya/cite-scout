@@ -248,9 +248,8 @@ async function reconcileEligibility(env: CloudflareBindings, now: Date) {
     statement(
       env,
       `UPDATE scan_run_items SET status='cancelled',terminal_reason='geo_schedule_active'
-      WHERE phase='paid' AND status='pending' AND ?=1
+      WHERE phase='paid' AND status='pending'
       AND run_id IN(SELECT r.id FROM scan_runs r JOIN geo_settings g ON g.project_id=r.project_id)`,
-      Number(env.GEO_SCANS_ENABLED === 'true'),
     ),
     statement(
       env,
@@ -452,10 +451,9 @@ async function createDueRuns(env: CloudflareBindings, now: Date) {
   const paid = await statement(
     env,
     `SELECT p.user_id FROM projects p WHERE p.v2_enabled_at IS NOT NULL AND ${paidSql}
-    AND (?<>1 OR NOT EXISTS(SELECT 1 FROM geo_settings g WHERE g.project_id=p.id))
+    AND NOT EXISTS(SELECT 1 FROM geo_settings g WHERE g.project_id=p.id)
     AND NOT EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.paid_starts_at>?)`,
     now.getTime(),
-    Number(env.GEO_SCANS_ENABLED === 'true'),
     now.getTime(),
   ).all<{ user_id: string }>();
   for (const project of paid.results) {

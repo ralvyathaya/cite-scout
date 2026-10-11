@@ -34,6 +34,7 @@ interface ProcessingRow {
   result_json: string | null;
   failure_code: string | null;
   created_at: number;
+  usage_date: string;
   completed_at: number | null;
   latency_ms: number | null;
   input_tokens: number | null;
@@ -115,15 +116,15 @@ async function reserveProcessing(
     throw new Error('GEO_PROCESSING_DISABLED');
   if (config.GEO_PROCESSING_PROJECT_DAILY_CAP <= 0 || config.GEO_PROCESSING_GLOBAL_DAILY_CAP <= 0)
     throw new Error('GEO_PROCESSING_BUDGET_REQUIRED');
-  const day = new Date(utcDate(at)).getTime(),
+  const date = utcDate(at),
     id = crypto.randomUUID();
   await sql(
     env,
-    `INSERT OR IGNORE INTO geo_processing_attempts(id,project_id,observation_id,request_id,kind,provider,model,rubric_version,policy_version,input_hash,input_json,state,created_at,due_at)
-    SELECT ?,p.id,?,?,?,?,?,?,?,?,?,'queued',?,? FROM projects p WHERE p.id=? AND p.user_id=?
+    `INSERT OR IGNORE INTO geo_processing_attempts(id,project_id,observation_id,request_id,kind,provider,model,rubric_version,policy_version,input_hash,input_json,state,created_at,due_at,usage_date)
+    SELECT ?,p.id,?,?,?,?,?,?,?,?,?,'queued',?,?,? FROM projects p WHERE p.id=? AND p.user_id=?
     AND EXISTS(SELECT 1 FROM geo_observations WHERE id=? AND project_id=p.id)
-    AND (SELECT count(*) FROM geo_processing_attempts WHERE project_id=p.id AND created_at>=? AND created_at<?)<?
-    AND (SELECT count(*) FROM geo_processing_attempts WHERE created_at>=? AND created_at<?)<?
+    AND (SELECT count(*) FROM geo_processing_attempts WHERE project_id=p.id AND usage_date=?)<?
+    AND (SELECT count(*) FROM geo_processing_attempts WHERE usage_date=?)<?
     AND NOT EXISTS(SELECT 1 FROM geo_processing_attempts WHERE project_id=p.id AND kind=? AND input_hash=? AND state IN ('queued','running','completed') AND (kind<>'page' OR created_at>?))`,
     id,
     observationId,
@@ -137,14 +138,13 @@ async function reserveProcessing(
     JSON.stringify(input),
     at.getTime(),
     at.getTime(),
+    date,
     observation.projectId,
     userId,
     observationId,
-    day,
-    day + 86400_000,
+    date,
     config.GEO_PROCESSING_PROJECT_DAILY_CAP,
-    day,
-    day + 86400_000,
+    date,
     config.GEO_PROCESSING_GLOBAL_DAILY_CAP,
     kind,
     inputHash,
@@ -308,15 +308,36 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
         : config.GEO_PAGE_CHECKS_ENABLED !== 'true')
     )
       continue;
-    const token = crypto.randomUUID(),
+    const callDate = utcDate(new Date(clock())),
+      token = crypto.randomUUID(),
       claim = await sql(
         env,
-        "UPDATE geo_processing_attempts SET state='running',lease_token=?,lease_until=? WHERE id=? AND state='queued'",
+        `UPDATE geo_processing_attempts SET state='running',lease_token=?,lease_until=?,usage_date=?,failure_code=NULL WHERE id=? AND state='queued'
+        AND EXISTS(SELECT 1 FROM projects p WHERE p.id=geo_processing_attempts.project_id AND p.user_id=?)
+        AND (SELECT count(*) FROM geo_processing_attempts WHERE project_id=? AND usage_date=? AND id<>?)<?
+        AND (SELECT count(*) FROM geo_processing_attempts WHERE usage_date=? AND id<>?)<?`,
         token,
         clock() + 300_000,
+        callDate,
+        row.id,
+        row.user_id,
+        row.project_id,
+        callDate,
+        row.id,
+        config.GEO_PROCESSING_PROJECT_DAILY_CAP,
+        callDate,
+        row.id,
+        config.GEO_PROCESSING_GLOBAL_DAILY_CAP,
+      ).run();
+    if (!claim.meta.changes) {
+      await sql(
+        env,
+        "UPDATE geo_processing_attempts SET failure_code='GEO_PROCESSING_QUOTA_EXCEEDED',due_at=? WHERE id=? AND state='queued'",
+        new Date(callDate).getTime() + 86400_000,
         row.id,
       ).run();
-    if (!claim.meta.changes) continue;
+      continue;
+    }
     const callStarted = Date.now();
     try {
       const observation = await readGeoObservation(env, row.user_id, row.observation_id);

@@ -70,9 +70,23 @@ describe('DataForSEO actual evidence levels', () => {
     expect(normalizeDataForSeo(envelope([{ items: [] }]), context('google_aio')).quality).toBe(
       'no_feature',
     );
-    expect(normalizeDataForSeo(envelope(null, 40102), context('bing_copilot')).quality).toBe(
-      'no_feature',
-    );
+  });
+  it.each(['google_aio', 'bing_copilot', 'chatgpt_search'] as const)(
+    'keeps NoSearchResults unavailable as partial for %s',
+    (engine) => {
+      const raw = envelope(null, 40102);
+      expect(normalizeDataForSeo(raw, context(engine))).toMatchObject({
+        quality: 'partial',
+        raw,
+        answerText: '',
+        providerStatus: '40102',
+      });
+    },
+  );
+  it('keeps an explicitly partial SERP without overview partial', () => {
+    expect(
+      normalizeDataForSeo(envelope([{ items: [] }], 40106), context('google_aio')).quality,
+    ).toBe('partial');
   });
   it('does not treat missing or malformed items as observed no overview', () => {
     expect(() => normalizeDataForSeo(envelope([{ items: null }]), context('google_aio'))).toThrow(

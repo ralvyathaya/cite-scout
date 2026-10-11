@@ -516,6 +516,12 @@ export async function startGeoRun(
       WHERE v.reserved_at>? OR (v.status='reserved' AND v.lease_until>?))`,
     ...params,
   );
+  const items = contexts.map((context) => ({
+    context,
+    itemId: crypto.randomUUID(),
+    reservationId: crypto.randomUUID(),
+  }));
+  const itemsJson = JSON.stringify(items);
   const statements = [
     claim,
     sql(
@@ -531,64 +537,48 @@ export async function startGeoRun(
       settings.revision,
       runId,
     ),
-    ...versioned.map(({ prompt, versionId }) =>
-      sql(
-        env,
-        `INSERT OR IGNORE INTO geo_prompt_versions(id,project_id,prompt_id,text,created_at)
-      SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM scan_runs WHERE id=?)`,
-        versionId,
-        project.id,
-        prompt.id,
-        prompt.text,
-        now,
-        runId,
-      ),
+    sql(
+      env,
+      `INSERT OR IGNORE INTO geo_prompt_versions(id,project_id,prompt_id,text,created_at)
+      SELECT json_extract(value,'$.versionId'),?,json_extract(value,'$.prompt.id'),json_extract(value,'$.prompt.text'),?
+      FROM json_each(?) WHERE EXISTS(SELECT 1 FROM scan_runs WHERE id=?)`,
+      project.id,
+      now,
+      JSON.stringify(versioned),
+      runId,
+    ),
+    sql(
+      env,
+      `INSERT INTO provider_call_reservations
+      (id,idempotency_key,user_id,project_id,prompt_id,scan_run_id,provider,usage_date,status,reserved_at,item_id,request_context_json)
+      SELECT json_extract(value,'$.reservationId'),'geo:'||json_extract(value,'$.itemId')||':1',?,?,
+      json_extract(value,'$.context.promptId'),?,json_extract(value,'$.context.engine'),?,'reserved',?,
+      json_extract(value,'$.itemId'),json_extract(value,'$.context') FROM json_each(?)
+      WHERE EXISTS(SELECT 1 FROM scan_runs WHERE id=?)`,
+      userId,
+      project.id,
+      runId,
+      date,
+      now,
+      itemsJson,
+      runId,
+    ),
+    sql(
+      env,
+      `INSERT INTO geo_run_items
+      (id,run_id,project_id,prompt_id,prompt_version_id,engine,status,context_json,reservation_id,due_at,created_at)
+      SELECT json_extract(value,'$.itemId'),?,?,json_extract(value,'$.context.promptId'),
+      json_extract(value,'$.context.promptVersionId'),json_extract(value,'$.context.engine'),'pending',
+      json_extract(value,'$.context'),json_extract(value,'$.reservationId'),?,? FROM json_each(?)
+      WHERE EXISTS(SELECT 1 FROM scan_runs WHERE id=?)`,
+      runId,
+      project.id,
+      now,
+      now,
+      itemsJson,
+      runId,
     ),
   ];
-  for (const context of contexts) {
-    const contextJson = JSON.stringify(context);
-    const itemId = crypto.randomUUID(),
-      reservationId = crypto.randomUUID();
-    statements.push(
-      sql(
-        env,
-        `INSERT INTO provider_call_reservations
-      (id,idempotency_key,user_id,project_id,prompt_id,scan_run_id,provider,usage_date,status,reserved_at,item_id,request_context_json)
-      SELECT ?,?,?,?,?,?,?,?,'reserved',?,?,? WHERE EXISTS(SELECT 1 FROM scan_runs WHERE id=?)`,
-        reservationId,
-        `geo:${itemId}:1`,
-        userId,
-        project.id,
-        context.promptId,
-        runId,
-        context.engine,
-        date,
-        now,
-        itemId,
-        contextJson,
-        runId,
-      ),
-    );
-    statements.push(
-      sql(
-        env,
-        `INSERT INTO geo_run_items
-      (id,run_id,project_id,prompt_id,prompt_version_id,engine,status,context_json,reservation_id,due_at,created_at)
-      SELECT ?,?,?,?,?,?,'pending',?,?,?,? WHERE EXISTS(SELECT 1 FROM scan_runs WHERE id=?)`,
-        itemId,
-        runId,
-        project.id,
-        context.promptId,
-        context.promptVersionId,
-        context.engine,
-        contextJson,
-        reservationId,
-        now,
-        now,
-        runId,
-      ),
-    );
-  }
   await env.DB.batch(statements);
   const saved = await sql(
     env,
@@ -706,27 +696,67 @@ export async function claimGeoItem(
     config.GEO_GLOBAL_DAILY_CALL_CAP > 0 &&
     config.GEO_PROJECT_DAILY_CALL_CAP > 0 &&
     config.GEO_PROJECT_MONTHLY_CALL_CAP > 0;
+  const date = utcDate(at);
+  const budgetGate = `
+    (SELECT count(*) FROM provider_call_reservations WHERE project_id=geo_run_items.project_id AND usage_date=? AND id<>geo_run_items.reservation_id) < ?
+    AND (SELECT count(*) FROM provider_call_reservations WHERE project_id=geo_run_items.project_id AND usage_date LIKE ? AND id<>geo_run_items.reservation_id) < ?
+    AND (SELECT count(*) FROM provider_call_reservations WHERE usage_date=? AND id<>geo_run_items.reservation_id) < ?`;
+  const budgetParams = [
+    date,
+    config.GEO_PROJECT_DAILY_CALL_CAP,
+    `${date.slice(0, 7)}%`,
+    config.GEO_PROJECT_MONTHLY_CALL_CAP,
+    date,
+    globalCollectorCallCap(env),
+  ];
   // Saved provider task ids are recoverable even when new paid submissions are paused.
-  await sql(
-    env,
-    `UPDATE geo_run_items SET lease_token=?,lease_until=?,status=CASE WHEN status='pending' THEN 'submitting' ELSE status END
+  await env.DB.batch([
+    sql(
+      env,
+      `UPDATE geo_run_items SET lease_token=?,lease_until=?,terminal_reason=NULL,status=CASE WHEN status='pending' THEN 'submitting' ELSE status END
     WHERE id=? AND due_at<=? AND (lease_until IS NULL OR lease_until<=?)
-    AND (status='submitted' OR (status='pending' AND ?=1
+    AND (status='submitted' OR (status='pending' AND ?=1 AND ${budgetGate}
       AND EXISTS(SELECT 1 FROM projects p JOIN geo_settings g ON g.project_id=p.id JOIN prompts q ON q.project_id=p.id
         WHERE p.id=geo_run_items.project_id AND p.context_version=json_extract(geo_run_items.context_json,'$.contextVersion')
         AND g.revision=json_extract(geo_run_items.context_json,'$.settingsRevision')
         AND q.id=geo_run_items.prompt_id AND q.text=json_extract(geo_run_items.context_json,'$.promptText')
         AND q.enabled=1 AND q.archived_at IS NULL AND ${paidGate})))
-    AND EXISTS(SELECT 1 FROM projects WHERE id=geo_run_items.project_id)`,
-    token,
-    now + COOLDOWN,
-    itemId,
-    now,
-    now,
-    pendingAllowed ? 1 : 0,
-    now,
-    now,
-  ).run();
+    AND EXISTS(SELECT 1 FROM projects p JOIN provider_call_reservations v ON v.project_id=p.id
+      WHERE p.id=geo_run_items.project_id AND v.id=geo_run_items.reservation_id AND v.user_id=p.user_id AND v.status='reserved')`,
+      token,
+      now + COOLDOWN,
+      itemId,
+      now,
+      now,
+      pendingAllowed ? 1 : 0,
+      ...budgetParams,
+      now,
+      now,
+    ),
+    // The sticky reservation and its call-start day move with the item claim, never a POST retry.
+    sql(
+      env,
+      `UPDATE provider_call_reservations SET lease_token=?,lease_until=?,usage_date=CASE
+        WHEN EXISTS(SELECT 1 FROM geo_run_items WHERE id=? AND status='submitting') THEN ? ELSE usage_date END
+      WHERE status='reserved' AND EXISTS(SELECT 1 FROM geo_run_items i WHERE i.id=? AND i.reservation_id=provider_call_reservations.id AND i.lease_token=?)`,
+      token,
+      now + COOLDOWN,
+      itemId,
+      date,
+      itemId,
+      token,
+    ),
+    sql(
+      env,
+      `UPDATE geo_run_items SET terminal_reason='GEO_QUOTA_EXCEEDED',due_at=?
+      WHERE id=? AND status='pending' AND due_at<=? AND ?=1 AND NOT (${budgetGate})`,
+      Date.parse(`${date}T00:00:00Z`) + 86400_000,
+      itemId,
+      now,
+      pendingAllowed ? 1 : 0,
+      ...budgetParams,
+    ),
+  ]);
   return sql(
     env,
     'SELECT * FROM geo_run_items WHERE id=? AND lease_token=?',
