@@ -702,7 +702,10 @@ export async function claimGeoItem(
   const pendingAllowed =
     config.GEO_SCANS_ENABLED === 'true' &&
     config.EXTERNAL_INTEGRATIONS_ENABLED === 'true' &&
-    config.V2_SCANS_ENABLED === 'true';
+    config.V2_SCANS_ENABLED === 'true' &&
+    config.GEO_GLOBAL_DAILY_CALL_CAP > 0 &&
+    config.GEO_PROJECT_DAILY_CALL_CAP > 0 &&
+    config.GEO_PROJECT_MONTHLY_CALL_CAP > 0;
   // Saved provider task ids are recoverable even when new paid submissions are paused.
   await sql(
     env,
@@ -758,6 +761,8 @@ export async function readGeoObservations(
   env: CloudflareBindings,
   userId: string,
   cursor?: string,
+  filter: { days?: number; engine?: GeoEngine; promptId?: string } = {},
+  at = new Date(),
 ): Promise<GeoObservationPage> {
   const project = await projectFor(env, userId);
   if (cursor && !/^\d{1,16}\.[a-zA-Z0-9_-]{1,100}$/.test(cursor)) throw new Error('INVALID_CURSOR');
@@ -766,9 +771,12 @@ export async function readGeoObservations(
     env,
     `SELECT id,project_id,run_id,item_id,prompt_version_id,engine,context_json,captured_at,
     json_set(capture_json,'$.raw',NULL,'$.answerText',substr(answer_text,1,1600),'$.textParts',json('[]')) AS capture_json
-    FROM geo_observations WHERE project_id=? ${cursor ? 'AND (captured_at<? OR (captured_at=? AND id<?))' : ''}
+    FROM geo_observations WHERE project_id=? ${filter.days ? 'AND captured_at>=? AND captured_at<=?' : ''} ${filter.engine ? 'AND engine=?' : ''} ${filter.promptId ? "AND json_extract(context_json,'$.promptId')=?" : ''} ${cursor ? 'AND (captured_at<? OR (captured_at=? AND id<?))' : ''}
     ORDER BY captured_at DESC,id DESC LIMIT 21`,
     project.id,
+    ...(filter.days ? [at.getTime() - filter.days * 86400_000, at.getTime()] : []),
+    ...(filter.engine ? [filter.engine] : []),
+    ...(filter.promptId ? [filter.promptId] : []),
     ...(cursor ? [Number(time), Number(time), id] : []),
   ).all<ObservationRow>();
   const page = rows.results.slice(0, 20),

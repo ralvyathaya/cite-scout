@@ -5,6 +5,8 @@ import { Button } from '../../components/ui/button';
 import { api, useResource } from './api';
 import { RunProgress, type WorkspaceContext } from './Workspace';
 import type { V2ObservationPayload, V2QuestionsPayload } from '../../../shared/v2';
+import type { GeoSettings } from '../../../shared/geo';
+import { GeoOverview } from './GeoWorkspace';
 
 const box = 'rounded-xl border bg-card p-5 shadow-sm';
 const time = (at: string | null) =>
@@ -13,6 +15,29 @@ const time = (at: string | null) =>
     : 'No saved check';
 
 export function V2Overview() {
+  const settings = useResource<GeoSettings>('/geo/settings');
+  if (settings.loading) return <p role="status">Loading monitoring configuration…</p>;
+  return settings.data?.configured === true ? (
+    <GeoOverview />
+  ) : (
+    <>
+      <p className="text-xs text-muted-foreground">
+        Legacy Perplexity workspace · frozen trial and saved history.{' '}
+        <Link className="text-primary underline" to="/app/settings">
+          Configure GEO monitoring
+        </Link>
+      </p>
+      {settings.error && (
+        <p role="alert" className="text-sm text-destructive">
+          {settings.error.message}
+        </p>
+      )}
+      <LegacyOverview configurationAvailable={!settings.error} />
+    </>
+  );
+}
+
+function LegacyOverview({ configurationAvailable }: { configurationAvailable: boolean }) {
   const context = useOutletContext<WorkspaceContext>();
   const { data } = context;
   const rows = useResource<V2QuestionsPayload>(data.project ? '/questions' : null, true);
@@ -30,7 +55,9 @@ export function V2Overview() {
   if (!data.project) return <Navigate to="/app/onboarding" replace />;
   const summary = rows.data?.summary;
   let reason: string | null = null;
-  if (!data.scansEnabled) reason = 'Monitoring is paused. Saved answers remain available.';
+  if (!configurationAvailable)
+    reason = 'Monitoring configuration is unavailable. Reload before starting a paid check.';
+  else if (!data.scansEnabled) reason = 'Monitoring is paused. Saved answers remain available.';
   else if (!data.canScan && data.trial?.state !== 'eligible') {
     reason =
       data.trial?.state === 'waiting'
@@ -98,6 +125,14 @@ export function V2Overview() {
           </p>
         </div>
       </div>
+      {(!data.scansEnabled || questions.length === 0) && (
+        <p className="text-xs text-muted-foreground">
+          Explore a local demo:{' '}
+          <a className="text-primary underline" href="/app/overview?fixture=1">
+            Open fixture workspace — synthetic data, no provider calls
+          </a>
+        </p>
+      )}
       {[error, rows.error].filter(Boolean).map((e, i) => (
         <p
           key={i}
@@ -339,29 +374,6 @@ export function V2Overview() {
             </div>
           )}
         </section>
-      </div>
-    </section>
-  );
-}
-
-export function V2DevelopmentSection({ title }: { title: string }) {
-  return (
-    <section className="space-y-5">
-      <div>
-        <p className="text-xs text-muted-foreground">GEO workspace</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{title}</h1>
-      </div>
-      <div className={`${box} max-w-2xl space-y-3`}>
-        <p className="font-medium">This workspace section is being added.</p>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Your existing prompts, original saved answers, history and billing remain available while
-          the diagnosis and action workflow is connected.
-        </p>
-        <Button asChild variant="outline">
-          <Link to="/app/questions">
-            Inspect saved prompt evidence <ArrowRight className="size-4" aria-hidden="true" />
-          </Link>
-        </Button>
       </div>
     </section>
   );

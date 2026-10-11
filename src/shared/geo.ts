@@ -43,11 +43,13 @@ export const geoSurfaces = {
 } as const;
 
 const unique = (items: unknown[]) => new Set(items).size === items.length;
-export const geoRunRequestSchema = z.object({
-  requestId: z.uuid(),
-  promptIds: z.array(z.string().min(1).max(100)).min(1).max(10).refine(unique).optional(),
-  engines: z.array(geoEngineSchema).min(1).max(4).refine(unique).optional(),
-});
+export const geoRunRequestSchema = z
+  .object({
+    requestId: z.uuid(),
+    promptIds: z.array(z.string().min(1).max(100)).min(1).max(10).refine(unique).optional(),
+    engines: z.array(geoEngineSchema).min(1).max(4).refine(unique).optional(),
+  })
+  .strict();
 export type GeoRunRequest = z.infer<typeof geoRunRequestSchema>;
 
 export const geoSettingsSchema = z.object({

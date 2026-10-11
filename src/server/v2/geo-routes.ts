@@ -34,6 +34,7 @@ import {
   readGeoTrends,
 } from './measurement';
 import { geoCompletionSchema, geoReopenSchema } from '../../shared/geo-measurement';
+import { geoCapabilities, geoUsage } from './geo-readiness';
 const evidenceFilterSchema = z.object({
   days: z.coerce.number().int().min(1).max(30).default(30),
   engine: geoEngineSchema.optional(),
@@ -126,6 +127,8 @@ geoRoutes.onError((error, c) => {
 geoRoutes.get('/settings', async (c) =>
   c.json({ data: await readGeoSettings(c.env, c.get('userId')) }),
 );
+geoRoutes.get('/capabilities', (c) => c.json({ data: geoCapabilities(c.env) }));
+geoRoutes.get('/usage', async (c) => c.json({ data: await geoUsage(c.env, c.get('userId')) }));
 geoRoutes.put('/settings', async (c) =>
   c.json({
     data: await saveGeoSettings(
@@ -158,11 +161,30 @@ geoRoutes.delete('/prompt-sets/:id', async (c) => {
   return c.json({ data: { deleted: true } });
 });
 geoRoutes.post('/runs', async (c) => {
-  const data = await startGeoRun(
-    c.env,
-    c.get('userId'),
-    geoRunRequestSchema.parse(await readJson(c.req.raw)),
-  );
+  const input = geoRunRequestSchema.parse(await readJson(c.req.raw));
+  const existing = await c.env.DB.prepare(
+    'SELECT g.run_id FROM geo_run_snapshots g JOIN projects p ON p.id=g.project_id WHERE p.user_id=? AND g.request_id=?',
+  )
+    .bind(c.get('userId'), input.requestId)
+    .first();
+  if (!existing) {
+    const settings = await readGeoSettings(c.env, c.get('userId'));
+    const capabilities = geoCapabilities(c.env);
+    if (
+      (input.engines ?? settings.engines).some((engine) => !capabilities.engines[engine].available)
+    )
+      return c.json(
+        {
+          error: {
+            code: 'GEO_PROVIDER_UNAVAILABLE',
+            message:
+              'One or more selected collectors are unavailable. Review monitoring settings; saved evidence remains readable.',
+          },
+        },
+        409,
+      );
+  }
+  const data = await startGeoRun(c.env, c.get('userId'), input);
   c.executionCtx.waitUntil(
     processGeoCollectors(c.env, 1).catch(() => {
       console.error(JSON.stringify({ event: 'geo_collector_deferred' }));
@@ -192,7 +214,14 @@ geoRoutes.get('/runs/:id/attempts', async (c) => {
   });
 });
 geoRoutes.get('/observations', async (c) =>
-  c.json({ data: await readGeoObservations(c.env, c.get('userId'), c.req.query('cursor')) }),
+  c.json({
+    data: await readGeoObservations(
+      c.env,
+      c.get('userId'),
+      c.req.query('cursor'),
+      evidenceFilterSchema.partial().parse(c.req.query()),
+    ),
+  }),
 );
 geoRoutes.get('/observations/:id', async (c) =>
   c.json({ data: await readGeoObservation(c.env, c.get('userId'), c.req.param('id')) }),
@@ -285,6 +314,11 @@ geoRoutes.post('/observations/:id/page-checks', async (c) => {
 });
 geoRoutes.get('/observations/:id/raw', async (c) => {
   const observation = await readGeoObservation(c.env, c.get('userId'), c.req.param('id'));
+  const requestedAt = await c.env.DB.prepare(
+    'SELECT created_at FROM scan_runs WHERE id=? AND project_id=?',
+  )
+    .bind(observation.runId, observation.projectId)
+    .first<number>('created_at');
   c.header(
     'Content-Disposition',
     `attachment; filename="geo-observation-${observation.id.replace(/[^a-zA-Z0-9_-]/g, '')}.json"`,
@@ -293,6 +327,7 @@ geoRoutes.get('/observations/:id/raw', async (c) => {
   return c.json({
     observationId: observation.id,
     capturedAt: observation.capturedAt,
+    requestedAt: requestedAt === null ? null : new Date(requestedAt).toISOString(),
     context: observation.context,
     provenance:
       'Parsed provider JSON retained with the immutable capture; not a byte-for-byte HTTP archive.',

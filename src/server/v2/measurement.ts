@@ -1,4 +1,8 @@
-import { compareSamples, dailySamples, measurementCohort } from '../../domain/geo-measurement';
+import {
+  compareCohortSamples,
+  dailySamples,
+  measurementCohort,
+} from '../../domain/geo-measurement';
 import { geoHash } from '../../shared/geo';
 import {
   geoCompletionSchema,
@@ -112,6 +116,7 @@ export async function readGeoTrends(
   const samples = await savedSamples(env, userId, 'trend', Array.from(availableIds));
   return {
     version: geoMeasurementVersion,
+    asOf: at.toISOString(),
     samples,
     captures: availableIds.size,
     classifiedCaptures: new Set(
@@ -315,12 +320,7 @@ export async function readGeoMeasurements(
         );
       return {
         metric,
-        ...compareSamples(
-          left.map((sample) => sample.value),
-          right.map((sample) => sample.value),
-          scopeComplete,
-        ),
-        observationIds: [...new Set([...left, ...right].map((sample) => sample.observationId))],
+        ...compareCohortSamples(left, right, expected, scopeComplete),
       };
     });
     pins.push({
@@ -334,6 +334,7 @@ export async function readGeoMeasurements(
       beforeWindow,
       afterWindow,
       windowComplete: at.getTime() >= cutoff + 7 * DAY,
+      cohorts,
       metrics,
       limitations: [
         'Descriptive correlation; no causal or financial ROI attribution.',

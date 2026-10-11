@@ -17,7 +17,17 @@ import {
   V2Settings,
   LegacyEvidenceRedirect,
 } from '@/client/pages/v2/Workspace';
-import { V2DevelopmentSection, V2Overview } from '@/client/pages/v2/Overview';
+import { V2Overview } from '@/client/pages/v2/Overview';
+import {
+  GeoObservations,
+  GeoObservationDetail,
+  GeoDiagnoses,
+  GeoPlaybook,
+  GeoActionPage,
+  GeoSources,
+  GeoCompetitors,
+  GeoBilling,
+} from '@/client/pages/v2/GeoWorkspace';
 import { Login } from '@/client/pages/Login';
 import { usePageTitle } from '@/client/use-page-title';
 
@@ -693,14 +703,16 @@ export function App() {
           <Route path="questions" element={<V2Questions />} />
           <Route path="questions/:questionId" element={<V2QuestionDetail />} />
           <Route path="overview" element={<V2Overview />} />
-          <Route path="observations" element={<V2Questions />} />
-          <Route path="diagnoses" element={<V2DevelopmentSection title="Diagnoses" />} />
-          <Route path="playbook" element={<V2DevelopmentSection title="Action Playbook" />} />
-          <Route path="sources" element={<V2DevelopmentSection title="Sources" />} />
-          <Route path="competitors" element={<V2DevelopmentSection title="Competitors" />} />
+          <Route path="observations" element={<GeoObservations />} />
+          <Route path="observations/:observationId" element={<GeoObservationDetail />} />
+          <Route path="diagnoses" element={<GeoDiagnoses />} />
+          <Route path="playbook" element={<GeoPlaybook />} />
+          <Route path="playbook/:actionId" element={<GeoActionPage />} />
+          <Route path="sources" element={<GeoSources />} />
+          <Route path="competitors" element={<GeoCompetitors />} />
           <Route path="prompts" element={<Navigate to="/app/questions" replace />} />
           <Route path="responses" element={<LegacyEvidenceRedirect />} />
-          <Route path="billing" element={<Navigate to="/app/settings" replace />} />
+          <Route path="billing" element={<GeoBilling />} />
           <Route path="settings" element={<V2Settings />} />
         </Route>
         <Route path="*" element={<MarketingNotFound />} />

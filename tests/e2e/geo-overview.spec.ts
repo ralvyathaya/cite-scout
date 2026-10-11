@@ -1,10 +1,15 @@
 import { expect, test } from '@playwright/test';
+import { legacyGeoFixture } from './geo-legacy-fixtures';
 
 const prompt = 'Which CRM works for a small marketing team?';
 const at = '2026-10-10T10:00:00Z';
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/v2/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path.startsWith('/api/v2/geo/')) {
+      await route.fulfill({ json: { data: legacyGeoFixture(path, 'p') } });
+      return;
+    }
     const question = {
       id: 'q',
       text: prompt,

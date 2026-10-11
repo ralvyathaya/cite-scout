@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { GeoCapture, GeoRequestContext } from './geo';
 import type { GeoClassification } from './geo-analysis';
+import type { GeoActionScope } from './geo-actions';
 export const geoMeasurementVersion = 'geo-measurement-1';
 export const geoMetrics = [
   'mention',
@@ -66,6 +67,7 @@ export interface GeoPinMeasurement {
   beforeWindow: { from: string; to: string };
   afterWindow: { from: string; to: string };
   windowComplete: boolean;
+  cohorts: { scope: GeoActionScope; keys: Record<GeoMetric, string | null> }[];
   metrics: GeoMetricComparison[];
   limitations: string[];
 }

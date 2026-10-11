@@ -32,13 +32,6 @@ const configSchema = z.object({
 
 export function getConfig(env: CloudflareBindings) {
   const config = configSchema.parse(env);
-  if (
-    config.GEO_SCANS_ENABLED === 'true' &&
-    (config.GEO_GLOBAL_DAILY_CALL_CAP === 0 ||
-      config.GEO_PROJECT_DAILY_CALL_CAP === 0 ||
-      config.GEO_PROJECT_MONTHLY_CALL_CAP === 0)
-  )
-    throw new Error('GEO_BUDGET_REQUIRED');
   if (config.APP_ENV === 'production' && config.TEST_AUTH_ENABLED === 'true')
     throw new Error('TEST_AUTH_MUST_BE_DISABLED');
   if (

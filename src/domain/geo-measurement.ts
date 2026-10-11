@@ -156,3 +156,25 @@ export function compareSamples(before: number[], after: number[], scopeComplete:
     scopeComplete,
   };
 }
+export function compareCohortSamples(
+  before: GeoDailySample[],
+  after: GeoDailySample[],
+  expected: (string | null)[],
+  scopeComplete: boolean,
+) {
+  return {
+    ...compareSamples(
+      before.map((sample) => sample.value),
+      after.map((sample) => sample.value),
+      scopeComplete,
+    ),
+    limitedData:
+      expected.length === 0 ||
+      expected.some(
+        (cohort) =>
+          before.filter((sample) => sample.cohort === cohort).length < 7 ||
+          after.filter((sample) => sample.cohort === cohort).length < 7,
+      ),
+    observationIds: [...new Set([...before, ...after].map((sample) => sample.observationId))],
+  };
+}
