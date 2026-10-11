@@ -10,24 +10,10 @@ import {
 import type { GeoObservation } from '../shared/geo';
 
 const labels = {
-  answer_quality: ['usable', 'irrelevant', 'refusal', 'incomplete', 'unknown'],
-  brand_presence: ['present', 'absent', 'ambiguous', 'unknown'],
-  brand_stance: [
-    'recommended',
-    'conditional_recommendation',
-    'neutral_mention',
-    'discouraged',
-    'not_applicable',
-    'unknown',
-  ],
-  evidence_support: [
-    'supported',
-    'insufficient',
-    'contradicted',
-    'unavailable',
-    'not_applicable',
-    'unknown',
-  ],
+  answer_quality: geoClassificationSchema.shape.answerQuality.options,
+  brand_presence: geoClassificationSchema.shape.brandPresence.options,
+  brand_stance: geoClassificationSchema.shape.brandStance.options,
+  evidence_support: geoClassificationSchema.shape.evidenceSupport.options,
 } as const;
 const choice = (instructions: string, options: readonly string[]): DecisionQuestion => ({
   type: 'choice',

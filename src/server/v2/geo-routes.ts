@@ -34,6 +34,11 @@ import {
   readGeoTrends,
 } from './measurement';
 import { geoCompletionSchema, geoReopenSchema } from '../../shared/geo-measurement';
+const evidenceFilterSchema = z.object({
+  days: z.coerce.number().int().min(1).max(30).default(30),
+  engine: geoEngineSchema.optional(),
+  promptId: z.string().min(1).max(100).optional(),
+});
 
 export const geoRoutes = new Hono<{
   Bindings: CloudflareBindings;
@@ -214,23 +219,11 @@ geoRoutes.patch('/actions/:id', async (c) =>
   }),
 );
 geoRoutes.get('/sources', async (c) => {
-  const filter = z
-    .object({
-      days: z.coerce.number().int().min(1).max(30).default(30),
-      engine: geoEngineSchema.optional(),
-      promptId: z.string().min(1).max(100).optional(),
-    })
-    .parse(c.req.query());
+  const filter = evidenceFilterSchema.parse(c.req.query());
   return c.json({ data: await readGeoSources(c.env, c.get('userId'), filter) });
 });
 geoRoutes.get('/trends', async (c) => {
-  const filter = z
-    .object({
-      days: z.coerce.number().int().min(1).max(30).default(30),
-      engine: geoEngineSchema.optional(),
-      promptId: z.string().min(1).max(100).optional(),
-    })
-    .parse(c.req.query());
+  const filter = evidenceFilterSchema.parse(c.req.query());
   return c.json({ data: await readGeoTrends(c.env, c.get('userId'), filter) });
 });
 geoRoutes.post('/actions/:id/complete', async (c) =>

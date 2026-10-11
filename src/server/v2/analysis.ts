@@ -12,6 +12,7 @@ import {
   type GeoPageCheck,
 } from '../../shared/geo-analysis';
 import { getConfig } from '../config';
+import { utcDate } from '../../domain/normalization';
 import { readGeoObservation } from './geo-store';
 import { syncGeoActions } from './actions';
 
@@ -114,7 +115,7 @@ async function reserveProcessing(
     throw new Error('GEO_PROCESSING_DISABLED');
   if (config.GEO_PROCESSING_PROJECT_DAILY_CAP <= 0 || config.GEO_PROCESSING_GLOBAL_DAILY_CAP <= 0)
     throw new Error('GEO_PROCESSING_BUDGET_REQUIRED');
-  const day = new Date(at.toISOString().slice(0, 10)).getTime(),
+  const day = new Date(utcDate(at)).getTime(),
     id = crypto.randomUUID();
   await sql(
     env,

@@ -50,12 +50,7 @@ export interface GeoActionCandidate {
   deliverable: string;
   doneCriteria: string;
   needsReview: true;
-  evidence: {
-    observationId: string;
-    analysisId: string;
-    evidenceIds: string[];
-    scope: GeoActionScope;
-  }[];
+  evidence: GeoActionEvidence[];
 }
 export type GeoActionStatus = 'proposed' | 'accepted' | 'in_progress' | 'dismissed' | 'completed';
 export interface GeoAction extends Omit<GeoActionCandidate, 'evidence'> {

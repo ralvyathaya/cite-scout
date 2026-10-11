@@ -1,11 +1,13 @@
 import { belongsToDomain } from './geo-classification';
 import { geoHash, geoSurfaces } from '../shared/geo';
+import { utcDate } from './normalization';
 import {
   geoMeasurementVersion,
   geoMetrics,
   type GeoDailySample,
   type GeoMetric,
   type GeoMetricObservation,
+  type GeoOutcome,
 } from '../shared/geo-measurement';
 
 export function metricValues(row: GeoMetricObservation): Record<GeoMetric, 0 | 1 | null> {
@@ -118,7 +120,7 @@ export async function dailySamples(
       if (value === null) continue;
       const cohort = await measurementCohort(row, metric);
       if (!cohort) continue;
-      const day = new Date(row.capturedAt).toISOString().slice(0, 10),
+      const day = utcDate(new Date(row.capturedAt)),
         key = `${cohort}:${day}`;
       if (!samples.has(key))
         samples.set(key, {
@@ -140,15 +142,12 @@ export function compareSamples(before: number[], after: number[], scopeComplete:
     values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
   const left = mean(before),
     right = mean(after);
+  let outcome: GeoOutcome = 'unchanged';
+  if (!scopeComplete || left === null || right === null) outcome = 'inconclusive';
+  else if (right > left) outcome = 'improved';
+  else if (right < left) outcome = 'worsened';
   return {
-    outcome:
-      !scopeComplete || left === null || right === null
-        ? ('inconclusive' as const)
-        : right > left
-          ? ('improved' as const)
-          : right < left
-            ? ('worsened' as const)
-            : ('unchanged' as const),
+    outcome,
     before: left,
     after: right,
     beforeSamples: before.length,

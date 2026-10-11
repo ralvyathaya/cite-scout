@@ -84,12 +84,14 @@ async function savedSamples(
   env: CloudflareBindings,
   userId: string,
   series: string,
+  observationIds?: string[],
 ): Promise<GeoDailySample[]> {
   const rows = await sql(
     env,
-    'SELECT s.sample_json FROM geo_measurement_samples s JOIN projects p ON p.id=s.project_id WHERE p.user_id=? AND s.series=? ORDER BY s.day,s.cohort',
+    `SELECT s.sample_json FROM geo_measurement_samples s JOIN projects p ON p.id=s.project_id WHERE p.user_id=? AND s.series=? ${observationIds ? 'AND s.observation_id IN (SELECT value FROM json_each(?))' : ''} ORDER BY s.day,s.cohort`,
     userId,
     series,
+    ...(observationIds ? [JSON.stringify(observationIds)] : []),
   ).all<{ sample_json: string }>();
   return rows.results.map((row) => JSON.parse(row.sample_json) as GeoDailySample);
 }
@@ -107,9 +109,7 @@ export async function readGeoTrends(
   const rows = await metricRows(env, userId, filter, at);
   await freezeSamples(env, userId, await dailySamples(rows, 'trend'), null, at);
   const availableIds = new Set(rows.map((row) => row.id));
-  const samples = (await savedSamples(env, userId, 'trend')).filter((sample) =>
-    availableIds.has(sample.observationId),
-  );
+  const samples = await savedSamples(env, userId, 'trend', Array.from(availableIds));
   return {
     version: geoMeasurementVersion,
     samples,
