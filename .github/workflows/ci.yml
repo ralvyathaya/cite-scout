@@ -34,14 +34,14 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Prepare isolated local authentication
+      - name: Prepare isolated local signing secrets
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync } from 'node:fs';
           import { randomBytes } from 'node:crypto';
           const vars = readFileSync('.dev.vars.example', 'utf8').replace(
-            /^BETTER_AUTH_SECRET=.*$/m,
-            'BETTER_AUTH_SECRET=' + randomBytes(32).toString('hex'),
+            /^(BETTER_AUTH_SECRET|TURNSTILE_SECRET_KEY|LEMON_SQUEEZY_WEBHOOK_SECRET)=.*$/gm,
+            (_, key) => key + '=' + randomBytes(32).toString('hex'),
           );
           writeFileSync('.dev.vars', vars);
           NODE

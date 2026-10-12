@@ -182,7 +182,7 @@ uniqueness, multi-tenant authorization guards, and public/mobile/accessibility b
 
 [CI](.github/workflows/ci.yml) runs on pull requests to `master`, pushes to `master`, and manual dispatch. Its `Checks` job uses locked dependencies and Node 22 to run typecheck, lint, unit and local Worker integration tests, `check:v2`, migration metadata checks, build, and desktop/mobile Chromium tests. Browser failure evidence is retained for seven days.
 
-CI leaves provider credentials empty, generates a disposable local auth secret, and uses fixture/mock providers; no production API credentials or deployment steps are configured. A successful run validates application behavior, not live collector fidelity, classifier accuracy or provider cost. Review the `Checks` result before merging. Required-check enforcement depends on the repository's GitHub branch-protection entitlement; the current private account returns an upgrade-required response.
+CI leaves API credentials empty, generates disposable auth, Turnstile and webhook signing secrets, and uses fixture/mock providers; no production credentials or deployment steps are configured. A successful run validates application behavior, not live collector fidelity, classifier accuracy or provider cost. Review the `Checks` result before merging. Required-check enforcement depends on the repository's GitHub branch-protection entitlement; the current private account returns an upgrade-required response.
 
 ## Account deletion
 
