@@ -5,6 +5,15 @@ const configSchema = z.object({
   APP_ENV: z.enum(['development', 'test', 'production']),
   EXTERNAL_INTEGRATIONS_ENABLED: z.enum(['true', 'false']),
   V2_SCANS_ENABLED: z.enum(['true', 'false']).default('false'),
+  GEO_SCANS_ENABLED: z.enum(['true', 'false']).default('false'),
+  GEO_ANALYSIS_ENABLED: z.enum(['true', 'false']).default('false'),
+  GEO_CLASSIFIER_MODEL: z.enum(['clef-flash', 'clef', 'jev-1.13.0']).default('clef-flash'),
+  GEO_PROCESSING_PROJECT_DAILY_CAP: z.coerce.number().int().nonnegative().default(0),
+  GEO_PROCESSING_GLOBAL_DAILY_CAP: z.coerce.number().int().nonnegative().default(0),
+  GEO_PAGE_CHECKS_ENABLED: z.enum(['true', 'false']).default('false'),
+  GEO_GLOBAL_DAILY_CALL_CAP: z.coerce.number().int().nonnegative().default(0),
+  GEO_PROJECT_DAILY_CALL_CAP: z.coerce.number().int().nonnegative().default(0),
+  GEO_PROJECT_MONTHLY_CALL_CAP: z.coerce.number().int().nonnegative().default(0),
   TEST_AUTH_ENABLED: z.enum(['true', 'false']),
   GLOBAL_DAILY_PROVIDER_CALL_CAP: z.coerce.number().int().positive(),
   PER_USER_MONTHLY_PROVIDER_CALL_CAP: z.coerce.number().int().positive(),
@@ -31,4 +40,11 @@ export function getConfig(env: CloudflareBindings) {
   )
     throw new Error('OPERATOR_SECRET_REQUIRED');
   return config;
+}
+
+export function globalCollectorCallCap(env: CloudflareBindings): number {
+  const legacy = Number(env.GLOBAL_DAILY_PROVIDER_CALL_CAP);
+  return env.GEO_SCANS_ENABLED === 'true'
+    ? Math.min(legacy, Number(env.GEO_GLOBAL_DAILY_CALL_CAP) || 0)
+    : legacy;
 }

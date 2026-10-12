@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { fixtureMode, fixtureRequest } from './geo-fixture-mode';
 
 export class ApiError extends Error {
   constructor(
@@ -14,6 +15,7 @@ export async function api<T>(
   body?: unknown,
   method = body === undefined ? 'GET' : 'POST',
 ): Promise<T> {
+  if (fixtureMode().requested) return (await fixtureRequest(path, body, method)) as T;
   const response = await fetch(path.startsWith('/api/') ? path : `/api/v2${path}`, {
     method,
     credentials: 'same-origin',
@@ -30,7 +32,7 @@ export async function api<T>(
       response.status,
       value.error?.code ?? 'REQUEST_FAILED',
     );
-  return value.data as T;
+  return (/^\/geo\/observations\/[^/]+\/raw$/u.test(path) ? value : value.data) as T;
 }
 export function useResource<T>(
   path: string | null,

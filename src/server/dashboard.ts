@@ -228,7 +228,7 @@ export async function getEntitlementSnapshot(
   const [monthStart, monthEnd] = monthBounds(now);
   const counts = await env.DB.prepare(
     `SELECT
-    (SELECT count(*) FROM provider_call_reservations WHERE provider = 'perplexity' AND usage_date = ?) AS globalCount,
+    (SELECT count(*) FROM provider_call_reservations WHERE usage_date = ?) AS globalCount,
     (SELECT count(*) FROM provider_call_reservations WHERE user_id = ? AND usage_date >= ? AND usage_date < ?) AS userCount,
     (SELECT count(*) FROM provider_call_reservations WHERE project_id = ? AND usage_date = ?) AS projectCount`,
   )
@@ -245,7 +245,7 @@ export async function getEntitlementSnapshot(
     : { results: [] };
   const budget = Boolean(
     counts &&
-    counts.globalCount < Number(env.GLOBAL_DAILY_PROVIDER_CALL_CAP) &&
+    counts.globalCount < globalCollectorCallCap(env) &&
     counts.userCount < Number(env.PER_USER_MONTHLY_PROVIDER_CALL_CAP) &&
     counts.projectCount < 10,
   );
@@ -300,3 +300,4 @@ export async function getEntitlementSnapshot(
     scanAvailability,
   };
 }
+import { globalCollectorCallCap } from './config';

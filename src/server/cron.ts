@@ -2,6 +2,7 @@ import { utcDate } from '../domain/normalization';
 import type { ObservationProvider } from '../integrations/perplexity/provider';
 import { monthBounds, paidProjectSql } from './scan-policy';
 import { runScan } from './scans';
+import { globalCollectorCallCap } from './config';
 
 export async function runScheduledScans(
   env: CloudflareBindings,
@@ -18,7 +19,7 @@ export async function runScheduledScans(
     WHERE ${paidProjectSql}
       AND NOT EXISTS (SELECT 1 FROM provider_call_reservations r
         WHERE r.idempotency_key = 'perplexity:' || p.id || ':' || pr.id || ':' || ?)
-      AND (SELECT count(*) FROM provider_call_reservations WHERE provider = 'perplexity' AND usage_date = ?) < ?
+      AND (SELECT count(*) FROM provider_call_reservations WHERE usage_date = ?) < ?
       AND (SELECT count(*) FROM provider_call_reservations WHERE user_id = p.user_id AND usage_date >= ? AND usage_date < ?) < ?
       AND (SELECT count(*) FROM provider_call_reservations WHERE project_id = p.id AND usage_date = ?) < 10
     ORDER BY p.created_at, p.id, pr.created_at, pr.id LIMIT ?
@@ -28,7 +29,7 @@ export async function runScheduledScans(
       now.getTime(),
       date,
       date,
-      Number(env.GLOBAL_DAILY_PROVIDER_CALL_CAP),
+      globalCollectorCallCap(env),
       start,
       end,
       Number(env.PER_USER_MONTHLY_PROVIDER_CALL_CAP),

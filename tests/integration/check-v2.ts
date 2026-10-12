@@ -13,7 +13,18 @@ import { highlight } from '../../src/client/lib/highlight';
 // In-memory SQLite and synthetic provider responses only; never reads credentials or calls a service.
 const db = new DatabaseSync(':memory:');
 db.exec('PRAGMA foreign_keys=ON');
-for (const name of ['0000_careless_selene', '0001_sticky_the_hand', '0002_citescout_v2']) {
+for (const name of [
+  '0000_careless_selene',
+  '0001_sticky_the_hand',
+  '0002_citescout_v2',
+  '0003_geo_action_loop',
+  '0004_geo_analysis',
+  '0005_geo_actions',
+  '0006_geo_measurement',
+  '0007_geo_processing_usage',
+  '0008_geo_playbook_recovery',
+  '0009_geo_daily_outcomes',
+]) {
   if (name === '0002_citescout_v2')
     db.exec(`
     INSERT INTO users(id,name,email,created_at,updated_at) VALUES('legacy','Legacy','legacy@example.test',1,1);
@@ -23,8 +34,25 @@ for (const name of ['0000_careless_selene', '0001_sticky_the_hand', '0002_citesc
     INSERT INTO scan_results(id,scan_run_id,project_id,prompt_id,provider,provider_model,observation_date,raw_response_text,citation_data_json,brand_mentioned,context_classification,created_at)
     VALUES('legacy','legacy','legacy','legacy','perplexity','old','2026-01-01','Retained legacy answer','[{"url":"https://legacy.example/docs"}]',1,'mentioned',1);
   `);
+  if (name === '0007_geo_processing_usage')
+    db.exec(`INSERT INTO geo_processing_attempts(id,request_id,kind,provider,input_hash,input_json,state,estimated_cost_usd,created_at,due_at)
+      VALUES('retained-processing','retained-request','analysis','workers_ai','retained-hash','{}','failed','0.01',1767225600000,1767225600000)`);
   db.exec(readFileSync(`migrations/${name}.sql`, 'utf8'));
 }
+assert.deepEqual(
+  {
+    ...db
+      .prepare(
+        "SELECT usage_date,created_at,estimated_cost_usd FROM geo_processing_attempts WHERE id='retained-processing'",
+      )
+      .get(),
+  },
+  {
+    usage_date: '2026-01-01',
+    created_at: 1767225600000,
+    estimated_cost_usd: '0.01',
+  },
+);
 assert.equal(
   db.prepare("SELECT raw_response_text FROM scan_results WHERE id='legacy'").get()
     ?.raw_response_text,
@@ -280,6 +308,22 @@ try {
       )
       .get()?.n,
     0,
+  );
+  const sharedBudgetDay = new Date('2026-11-01T12:00:00Z');
+  db.prepare(
+    `INSERT INTO provider_call_reservations
+    (id,idempotency_key,provider,usage_date,status,reserved_at,item_id,lease_until)
+    VALUES('geo-ledger','geo-ledger','dataforseo','2026-11-01','reserved',?,'geo-item',?)`,
+  ).run(sharedBudgetDay.getTime() - 600000, sharedBudgetDay.getTime() - 1);
+  seed('cross-provider-cap');
+  await startScan(env, 'cross-provider-cap', 'baseline', sharedBudgetDay);
+  const beforeSharedBudget = calls;
+  await processDueScans({ ...env, GLOBAL_DAILY_PROVIDER_CALL_CAP: '1' }, 20, sharedBudgetDay);
+  assert.equal(calls, beforeSharedBudget, 'Global cap includes every collector provider');
+  assert.equal(
+    db.prepare("SELECT status FROM provider_call_reservations WHERE id='geo-ledger'").get()?.status,
+    'reserved',
+    'Legacy recovery cannot retire a GEO collector lease',
   );
   console.log(
     'V2 self-check passed: migration, trial/retry/caps, concurrent claims, paid scheduling, evidence, ownership, refund ordering, cohort SQL and deletion.',

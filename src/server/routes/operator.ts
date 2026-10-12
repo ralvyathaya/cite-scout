@@ -6,12 +6,13 @@ import { subscriptions } from '../../db/schema';
 import { syncSubscription } from '../billing-sync';
 import { readJson } from '../http';
 import { getConfig } from '../config';
+import { reconcileGeoSubmission } from '../v2/collectors';
 
 const inputSchema = z
   .object({ userId: z.string().min(1).optional(), subscriptionId: z.string().min(1).optional() })
   .refine((value) => Boolean(value.userId ?? value.subscriptionId));
 export const operatorRoutes = new Hono<{ Bindings: CloudflareBindings }>();
-operatorRoutes.post('/billing/reconcile', async (c) => {
+operatorRoutes.use('*', async (c, next) => {
   const config = getConfig(c.env);
   const authorization = c.req.header('Authorization');
   if (!authorization?.startsWith('Bearer ') || !config.OPERATOR_SECRET)
@@ -34,6 +35,9 @@ operatorRoutes.post('/billing/reconcile', async (c) => {
       { error: { code: 'UNAUTHORIZED', message: 'Invalid operator credential.' } },
       401,
     );
+  await next();
+});
+operatorRoutes.post('/billing/reconcile', async (c) => {
   const parsed = inputSchema.safeParse(await readJson(c.req.raw));
   if (!parsed.success)
     return c.json(
@@ -57,4 +61,36 @@ operatorRoutes.post('/billing/reconcile', async (c) => {
     return c.json({ error: { code: 'NOT_FOUND', message: 'Subscription was not found.' } }, 404);
   await syncSubscription(c.env, local.lemonSqueezySubscriptionId, local.userId);
   return c.json({ data: { reconciled: true, subscriptionId: local.lemonSqueezySubscriptionId } });
+});
+operatorRoutes.post('/geo/reconcile', async (c) => {
+  const parsed = z
+    .object({ itemId: z.string().min(1).max(100), taskId: z.string().min(1).max(100).nullable() })
+    .safeParse(await readJson(c.req.raw));
+  if (!parsed.success)
+    return c.json(
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message:
+            'Provide an uncertain item and a recovered task ID, or null to close without retry.',
+        },
+      },
+      422,
+    );
+  try {
+    await reconcileGeoSubmission(c.env, parsed.data.itemId, parsed.data.taskId);
+    return c.json({ data: { reconciled: true } });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'RECONCILIATION_FAILED';
+    return c.json(
+      {
+        error: {
+          code: /^[A-Z_]+$/u.test(code) ? code : 'RECONCILIATION_FAILED',
+          message:
+            'The submission could not be reconciled. Check task identity and collector configuration.',
+        },
+      },
+      409,
+    );
+  }
 });

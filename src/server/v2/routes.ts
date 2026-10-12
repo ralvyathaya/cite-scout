@@ -9,6 +9,7 @@ import { readJson } from '../http';
 import { consumeRateLimit } from '../rate-limit';
 import { eventStatement } from './events';
 import { cancelTrial, processDueScans, readRun, startScan } from './scans';
+import { geoRoutes } from './geo-routes';
 import {
   ownedProject,
   paidAccess,
@@ -124,6 +125,7 @@ v2Routes.use('*', async (c, next) => {
     );
   }
 });
+v2Routes.route('/geo', geoRoutes);
 v2Routes.get('/project', async (c) =>
   c.json({ data: await projectPayload(c.env, c.get('userId')) }),
 );
@@ -606,6 +608,23 @@ v2Routes.post('/scans', async (c) => {
     z.object({ mode: z.enum(['baseline', 'today']) }),
     await readJson(c.req.raw),
   );
+  if (
+    input.mode === 'today' &&
+    (await c.env.DB.prepare(
+      'SELECT s.project_id FROM geo_settings s JOIN projects p ON p.id=s.project_id WHERE p.user_id=?',
+    )
+      .bind(c.get('userId'))
+      .first())
+  )
+    return c.json(
+      {
+        error: {
+          code: 'GEO_RUN_REQUIRED',
+          message: 'Use Monitor Prompts in Overview for a fresh check with your selected engines.',
+        },
+      },
+      409,
+    );
   const runId = await startScan(c.env, c.get('userId'), input.mode);
   c.executionCtx.waitUntil(
     processDueScans(c.env, 1).catch(() => {

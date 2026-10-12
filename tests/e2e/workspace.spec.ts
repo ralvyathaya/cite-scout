@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { V2ProjectPayload, V2QuestionsPayload, V2Observation } from '../../src/shared/v2';
 import type { RequestContext } from '../../src/shared/evidence';
 import { analyzeEvidence, compareEvidence } from '../../src/domain/evidence';
+import { legacyGeoFixture } from './geo-legacy-fixtures';
 
 const date = '2026-10-08T12:00:00Z';
 const question = {
@@ -113,7 +114,9 @@ async function workspace(page: Page, data = project) {
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     let body: unknown = { data: {} };
-    if (url.pathname === '/api/v2/project') body = { data };
+    if (url.pathname.startsWith('/api/v2/geo/'))
+      body = { data: legacyGeoFixture(url.pathname, 'project') };
+    else if (url.pathname === '/api/v2/project') body = { data };
     else if (url.pathname === '/api/v2/questions') body = { data: rows };
     else if (url.pathname === '/api/billing/status') body = { data: billing };
     else if (url.pathname === '/api/v2/questions/question/history')
@@ -288,7 +291,9 @@ test('unpaid checkout return does not unlock monitoring', async ({ page }) => {
   );
   await page.goto('/app/settings?checkout=complete');
   await expect(page.getByText(/Subscription: unpaid/)).toBeVisible();
-  await page.getByRole('link', { name: 'Questions', exact: true }).click();
+  if ((page.viewportSize()?.width ?? 1440) < 1024)
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('link', { name: 'Prompt Sets', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Check today' })).toHaveCount(0);
 });
 test('account deletion preserves confirmation after a verification failure', async ({ page }) => {
@@ -302,7 +307,11 @@ test('account deletion preserves confirmation after a verification failure', asy
   await page.goto('/app/settings');
   await page.getByText('Delete account permanently', { exact: true }).click();
   await page.getByLabel('Type DELETE', { exact: true }).fill('DELETE');
-  await page.getByRole('checkbox').check();
+  await page
+    .getByRole('checkbox', {
+      name: 'I forfeit any remaining access and understand my evidence will be deleted.',
+    })
+    .check();
   await page.getByRole('button', { name: 'Delete account', exact: true }).click();
   await expect(page.getByRole('alert')).toHaveText('Subscription could not be verified.');
   await expect(page.getByLabel('Type DELETE', { exact: true })).toHaveValue('DELETE');
@@ -313,6 +322,10 @@ for (const width of [320, 390, 1440])
     await workspace(page);
     await page.goto('/app/questions');
     await expect(page.getByRole('heading', { name: 'Buyer questions', exact: true })).toBeVisible();
+    if (width < 1024) {
+      await page.getByRole('button', { name: 'Open navigation' }).focus();
+      await page.keyboard.press('Enter');
+    }
     const settings = page
       .getByRole('navigation', { name: 'Application' })
       .getByRole('link', { name: 'Settings' });

@@ -13,6 +13,7 @@ import { getEntitlement } from '../domain/entitlements';
 import { analyzeMentions } from '../domain/mentions';
 import { utcDate } from '../domain/normalization';
 import { monthBounds, paidProjectSql } from './scan-policy';
+import { globalCollectorCallCap } from './config';
 import {
   neutralResearchInstruction,
   PerplexityProvider,
@@ -100,7 +101,7 @@ export async function runScan(env: CloudflareBindings, input: ScanRequest): Prom
     SELECT ?,?,p.user_id,p.id,?,?,'perplexity',?,'reserved',? FROM projects p
     WHERE p.id = ? AND p.user_id = ? AND ${gate}
       AND EXISTS (SELECT 1 FROM prompts WHERE id = ? AND project_id = p.id AND enabled = 1)
-      AND (SELECT count(*) FROM provider_call_reservations WHERE provider = 'perplexity' AND usage_date = ?) < ?
+      AND (SELECT count(*) FROM provider_call_reservations WHERE usage_date = ?) < ?
       AND (SELECT count(*) FROM provider_call_reservations WHERE user_id = p.user_id AND usage_date >= ? AND usage_date < ?) < ?
       AND (SELECT count(*) FROM provider_call_reservations WHERE project_id = p.id AND usage_date = ?) < 10
     ON CONFLICT(idempotency_key) DO NOTHING RETURNING id, prompt_id
@@ -118,7 +119,7 @@ export async function runScan(env: CloudflareBindings, input: ScanRequest): Prom
       ...(input.trigger === 'manual' ? [date] : []),
       prompt.id,
       date,
-      Number(env.GLOBAL_DAILY_PROVIDER_CALL_CAP),
+      globalCollectorCallCap(env),
       monthStart,
       monthEnd,
       Number(env.PER_USER_MONTHLY_PROVIDER_CALL_CAP),

@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Prepare isolated local signing secrets
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { randomBytes } from 'node:crypto';
+          const vars = readFileSync('.dev.vars.example', 'utf8').replace(
+            /^(BETTER_AUTH_SECRET|TURNSTILE_SECRET_KEY|LEMON_SQUEEZY_WEBHOOK_SECRET)=.*$/gm,
+            (_, key) => key + '=' + randomBytes(32).toString('hex'),
+          );
+          writeFileSync('.dev.vars', vars);
+          NODE
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Worker integration tests
+        run: npm run test:integration
+      - name: V2 migration and retention checks
+        run: npm run check:v2
+      - name: Check migration metadata
+        run: |
+          npm run db:generate
+          git diff --exit-code -- migrations/
+          test -z "$(git ls-files --others --exclude-standard -- migrations/)"
+      - name: Build
+        run: npm run build
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Desktop and mobile browser tests
+        run: npm run test:e2e -- --workers=2 --reporter=line,html
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-failure-evidence
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7

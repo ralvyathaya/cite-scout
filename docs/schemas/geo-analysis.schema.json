@@ -1,0 +1,1021 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "observationId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string",
+          "enum": ["clef-flash", "clef", "jev-1.13.0"]
+        },
+        "rubricVersion": {
+          "type": "string"
+        },
+        "policyVersion": {
+          "type": "string"
+        },
+        "inputHash": {
+          "type": ["string", "null"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "completedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latencyMs": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimatedCostUsd": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "const": "completed"
+        },
+        "classification": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "string",
+              "const": "geo-analysis-1"
+            },
+            "observationId": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string",
+              "enum": ["workers_ai", "typesafe"]
+            },
+            "rubricVersion": {
+              "type": "string"
+            },
+            "policyVersion": {
+              "type": "string"
+            },
+            "ownershipVersion": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string",
+              "enum": ["complete", "partial"]
+            },
+            "needsReview": {
+              "type": "boolean",
+              "const": true
+            },
+            "answerQuality": {
+              "type": "string",
+              "enum": ["usable", "irrelevant", "refusal", "incomplete", "unknown"]
+            },
+            "brandPresence": {
+              "type": "string",
+              "enum": ["present", "absent", "ambiguous", "unknown"]
+            },
+            "brandStance": {
+              "type": "string",
+              "enum": [
+                "recommended",
+                "conditional_recommendation",
+                "neutral_mention",
+                "discouraged",
+                "not_applicable",
+                "unknown"
+              ]
+            },
+            "fitByCriterion": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "enum": ["meets", "partial", "mismatch", "unclear", "not_applicable"]
+              }
+            },
+            "evidenceSupport": {
+              "type": "string",
+              "enum": [
+                "supported",
+                "insufficient",
+                "contradicted",
+                "unavailable",
+                "not_applicable",
+                "unknown"
+              ]
+            },
+            "competitors": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "stance": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "stance"],
+                "additionalProperties": false
+              }
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "end": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "quote": {
+                    "type": "string"
+                  },
+                  "supportProbability": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": ["id", "start", "end", "quote", "supportProbability"],
+                "additionalProperties": false
+              }
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": ["owned", "competitor_owned", "third_party", "unknown"]
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "editorial",
+                      "review_directory",
+                      "community",
+                      "official_product",
+                      "other",
+                      "unknown"
+                    ]
+                  }
+                },
+                "required": ["id", "role", "type"],
+                "additionalProperties": false
+              }
+            },
+            "native": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "answers": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "choice"
+                          },
+                          "choice": {
+                            "type": "string"
+                          },
+                          "confidence": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "probabilities": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            }
+                          }
+                        },
+                        "required": ["type", "choice", "confidence", "probabilities"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "noul"
+                          },
+                          "noul": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          }
+                        },
+                        "required": ["type", "noul"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "usage": {
+                  "type": "object",
+                  "properties": {
+                    "input_tokens": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "output_tokens": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["input_tokens", "output_tokens"],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["model", "answers", "usage"],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "observationId",
+            "model",
+            "provider",
+            "rubricVersion",
+            "policyVersion",
+            "ownershipVersion",
+            "scope",
+            "needsReview",
+            "answerQuality",
+            "brandPresence",
+            "brandStance",
+            "fitByCriterion",
+            "evidenceSupport",
+            "competitors",
+            "evidence",
+            "sources",
+            "native"
+          ],
+          "additionalProperties": false
+        },
+        "diagnoses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["retrieval_problem", "evidence_problem", "recommendation_fit_problem"]
+              },
+              "status": {
+                "type": "string",
+                "enum": ["suspected", "supported", "ruled_out", "unknown"]
+              },
+              "reasonCode": {
+                "type": "string"
+              },
+              "evidenceIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "checkIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "targetUrl": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "missingChecks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "templateIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "inspect_owned_page",
+                    "fix_page_access",
+                    "verify_buyer_evidence",
+                    "clarify_product_fit"
+                  ]
+                }
+              },
+              "needsReview": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "status",
+              "reasonCode",
+              "evidenceIds",
+              "missingChecks",
+              "templateIds",
+              "needsReview"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "failureCode": {
+          "type": "null"
+        }
+      },
+      "required": [
+        "id",
+        "observationId",
+        "model",
+        "rubricVersion",
+        "policyVersion",
+        "inputHash",
+        "createdAt",
+        "completedAt",
+        "latencyMs",
+        "inputTokens",
+        "outputTokens",
+        "estimatedCostUsd",
+        "state",
+        "classification",
+        "diagnoses",
+        "failureCode"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "observationId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string",
+          "enum": ["clef-flash", "clef", "jev-1.13.0"]
+        },
+        "rubricVersion": {
+          "type": "string"
+        },
+        "policyVersion": {
+          "type": "string"
+        },
+        "inputHash": {
+          "type": ["string", "null"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "completedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latencyMs": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimatedCostUsd": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "const": "queued"
+        },
+        "classification": {
+          "type": "null"
+        },
+        "diagnoses": {
+          "maxItems": 0,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["retrieval_problem", "evidence_problem", "recommendation_fit_problem"]
+              },
+              "status": {
+                "type": "string",
+                "enum": ["suspected", "supported", "ruled_out", "unknown"]
+              },
+              "reasonCode": {
+                "type": "string"
+              },
+              "evidenceIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "checkIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "targetUrl": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "missingChecks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "templateIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "inspect_owned_page",
+                    "fix_page_access",
+                    "verify_buyer_evidence",
+                    "clarify_product_fit"
+                  ]
+                }
+              },
+              "needsReview": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "status",
+              "reasonCode",
+              "evidenceIds",
+              "missingChecks",
+              "templateIds",
+              "needsReview"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "failureCode": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": [
+        "id",
+        "observationId",
+        "model",
+        "rubricVersion",
+        "policyVersion",
+        "inputHash",
+        "createdAt",
+        "completedAt",
+        "latencyMs",
+        "inputTokens",
+        "outputTokens",
+        "estimatedCostUsd",
+        "state",
+        "classification",
+        "diagnoses",
+        "failureCode"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "observationId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string",
+          "enum": ["clef-flash", "clef", "jev-1.13.0"]
+        },
+        "rubricVersion": {
+          "type": "string"
+        },
+        "policyVersion": {
+          "type": "string"
+        },
+        "inputHash": {
+          "type": ["string", "null"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "completedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latencyMs": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimatedCostUsd": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "const": "running"
+        },
+        "classification": {
+          "type": "null"
+        },
+        "diagnoses": {
+          "maxItems": 0,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["retrieval_problem", "evidence_problem", "recommendation_fit_problem"]
+              },
+              "status": {
+                "type": "string",
+                "enum": ["suspected", "supported", "ruled_out", "unknown"]
+              },
+              "reasonCode": {
+                "type": "string"
+              },
+              "evidenceIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "checkIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "targetUrl": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "missingChecks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "templateIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "inspect_owned_page",
+                    "fix_page_access",
+                    "verify_buyer_evidence",
+                    "clarify_product_fit"
+                  ]
+                }
+              },
+              "needsReview": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "status",
+              "reasonCode",
+              "evidenceIds",
+              "missingChecks",
+              "templateIds",
+              "needsReview"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "failureCode": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": [
+        "id",
+        "observationId",
+        "model",
+        "rubricVersion",
+        "policyVersion",
+        "inputHash",
+        "createdAt",
+        "completedAt",
+        "latencyMs",
+        "inputTokens",
+        "outputTokens",
+        "estimatedCostUsd",
+        "state",
+        "classification",
+        "diagnoses",
+        "failureCode"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "observationId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string",
+          "enum": ["clef-flash", "clef", "jev-1.13.0"]
+        },
+        "rubricVersion": {
+          "type": "string"
+        },
+        "policyVersion": {
+          "type": "string"
+        },
+        "inputHash": {
+          "type": ["string", "null"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "completedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latencyMs": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimatedCostUsd": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "const": "failed"
+        },
+        "classification": {
+          "type": "null"
+        },
+        "diagnoses": {
+          "maxItems": 0,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["retrieval_problem", "evidence_problem", "recommendation_fit_problem"]
+              },
+              "status": {
+                "type": "string",
+                "enum": ["suspected", "supported", "ruled_out", "unknown"]
+              },
+              "reasonCode": {
+                "type": "string"
+              },
+              "evidenceIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "checkIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "targetUrl": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "missingChecks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "templateIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "inspect_owned_page",
+                    "fix_page_access",
+                    "verify_buyer_evidence",
+                    "clarify_product_fit"
+                  ]
+                }
+              },
+              "needsReview": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "type",
+              "status",
+              "reasonCode",
+              "evidenceIds",
+              "missingChecks",
+              "templateIds",
+              "needsReview"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "failureCode": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": [
+        "id",
+        "observationId",
+        "model",
+        "rubricVersion",
+        "policyVersion",
+        "inputHash",
+        "createdAt",
+        "completedAt",
+        "latencyMs",
+        "inputTokens",
+        "outputTokens",
+        "estimatedCostUsd",
+        "state",
+        "classification",
+        "diagnoses",
+        "failureCode"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}
