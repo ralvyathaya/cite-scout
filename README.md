@@ -155,7 +155,7 @@ Use the operator-protected reconciliation endpoint with `Authorization: Bearer $
 
 These are legacy limits, not a four-engine GEO entitlement. GEO collector daily/global/monthly and processing daily caps are all zero by default. Usage reports distinguish reported collector cost, estimated classifier cost and attempts with unknown cost; no real live workload cost has been measured. Local maximum-scope acceptance now preserves forty items/reservations within fifty prepared statements. Full authenticated/cron maximum scope is not validated on live D1 Free; local no-cost tests do not establish a free production deployment.
 
-Reservations and trial/manual gates are claimed in conditional D1 batches before provider calls. Failed/ambiguous attempts remain consumed; GEO ambiguous submission is never automatically reposted. Deleting prompts or accounts does not delete usage reservations. Apply the ordered migration chain through `0007`, preserving the `0001` nullable ownership/accounting migration and V2 frozen trial context; see GEO operations for retention and remote migration instructions. Usage deleted before the retention migration cannot be reconstructed, and migration never resets trial eligibility.
+Reservations and trial/manual gates are claimed in conditional D1 batches before provider calls. Failed/ambiguous attempts remain consumed; GEO ambiguous submission is never automatically reposted. Deleting prompts or accounts does not delete usage reservations. Apply the ordered migration chain through `0009`, preserving the `0001` nullable ownership/accounting migration and V2 frozen trial context; see GEO operations for retention and remote migration instructions. Usage deleted before the retention migration cannot be reconstructed, and migration never resets trial eligibility.
 
 ## Mention heuristics
 
@@ -177,6 +177,12 @@ Coverage includes deterministic normalization and mention matching, metric formu
 behaviour, subscription entitlement transitions, provider prompt neutrality and bounded retries, webhook
 signature verification over exact raw bytes, D1 constraint and cascade behaviour, one-observation-per-day
 uniqueness, multi-tenant authorization guards, and public/mobile/accessibility browser flows.
+
+### Continuous integration
+
+[CI](.github/workflows/ci.yml) runs on pull requests to `master`, pushes to `master`, and manual dispatch. Its `Checks` job uses locked dependencies and Node 22 to run typecheck, lint, unit and local Worker integration tests, `check:v2`, migration metadata checks, build, and desktop/mobile Chromium tests. Browser failure evidence is retained for seven days.
+
+CI leaves provider credentials empty, generates a disposable local auth secret, and uses fixture/mock providers; no production API credentials or deployment steps are configured. A successful run validates application behavior, not live collector fidelity, classifier accuracy or provider cost. Review the `Checks` result before merging. Required-check enforcement depends on the repository's GitHub branch-protection entitlement; the current private account returns an upgrade-required response.
 
 ## Account deletion
 
