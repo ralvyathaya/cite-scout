@@ -186,8 +186,10 @@ test.describe('accessibility and keyboard', () => {
 
   test('keyboard navigation can reach the primary call to action', async ({ page }) => {
     await page.goto('/');
+    const skip = page.locator('a.skip-link');
+    await expect(skip).toHaveAttribute('href', '#main');
     await page.keyboard.press('Tab');
-    await expect(page.locator('a.skip-link')).toBeFocused();
+    await expect(skip).toBeFocused();
   });
 
   test('login form labels every input and blocks submit without verification', async ({ page }) => {
