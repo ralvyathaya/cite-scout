@@ -52,7 +52,7 @@ This command must pass before any Worker is deployed. CI uses `node scripts/chec
 
 ## 3. Bootstrap authentication secrets, then configure providers
 
-The first deployment needs a private secrets file because Wrangler cannot inherit required secrets from a Worker that does not exist yet. This account's ignored `.env.staging.bootstrap` already contains independent staging authentication/operator/Turnstile secrets, a newly created sending-only Resend key, and the existing Perplexity key. Add OpenAI and SerpApi keys locally. The Resend creation requested the verified sender domain, but the key-list response does not expose that restriction; actual staging login email delivery remains unverified. For another account, create the file in a local editor with these four authentication values:
+The first deployment needs a private secrets file because Wrangler cannot inherit required secrets from a Worker that does not exist yet. This account's ignored `.env.staging.bootstrap` contains independent staging authentication/operator/Turnstile secrets and the Resend, Perplexity, OpenAI and SerpApi keys. Real owner magic-link delivery and login were verified on 2026-10-13. For another account, create the file in a local editor with these four authentication values:
 
 ```dotenv
 BETTER_AUTH_SECRET=
@@ -68,7 +68,7 @@ git check-ignore .env.staging.bootstrap
 npm run deploy:staging -- --secrets-file .env.staging.bootstrap
 ```
 
-Delete the private bootstrap file after a successful deployment. For all subsequent secret setup/rotation, use Wrangler's interactive prompt with the staging config. Do not put values in command arguments:
+After deployment, move any values still needed locally to your local secret manager before removing the temporary bootstrap file. Never delete the only copy of an operator or provider key. For subsequent secret setup/rotation, use Wrangler's interactive prompt with the staging config. Do not put values in command arguments:
 
 ```powershell
 npx wrangler secret put OPENAI_API_KEY --config wrangler.staging.jsonc
@@ -101,21 +101,22 @@ For the maximum test, require:
 6 × OpenAI ceiling + 6 × Perplexity ceiling + 24 × classifier ceiling ≤ US$5
 ```
 
-Set these non-secret vars in `wrangler.staging.jsonc` only after the ceilings are confirmed:
+Supply these non-secret vars as deployment CLI overrides only after the ceilings are confirmed. Keep the committed staging configuration disabled:
 
-| Variable                           | Test value    |
-| ---------------------------------- | ------------- |
-| `GEO_INTERNAL_TEST_SPEND_CAP_USD`  | `5` (or less) |
-| `GEO_GLOBAL_DAILY_CALL_CAP`        | `12`          |
-| `GEO_PROJECT_DAILY_CALL_CAP`       | `12`          |
-| `GEO_PROJECT_MONTHLY_CALL_CAP`     | `24`          |
-| `GEO_SERPAPI_MONTHLY_REQUEST_CAP`  | `18`          |
-| `GEO_PROCESSING_PROJECT_DAILY_CAP` | `12`          |
-| `GEO_PROCESSING_GLOBAL_DAILY_CAP`  | `12`          |
-| `GEO_SCANS_ENABLED`                | `true`        |
-| `GEO_ANALYSIS_ENABLED`             | `true`        |
+| Variable                                 | Test value    |
+| ---------------------------------------- | ------------- |
+| `GEO_INTERNAL_TEST_SPEND_CAP_USD`        | `5` (or less) |
+| `GEO_GLOBAL_DAILY_CALL_CAP`              | `12`          |
+| `GEO_PROJECT_DAILY_CALL_CAP`             | `12`          |
+| `GEO_PROJECT_MONTHLY_CALL_CAP`           | `24`          |
+| `GEO_SERPAPI_MONTHLY_REQUEST_CAP`        | `18`          |
+| `GEO_PROCESSING_PROJECT_DAILY_CAP`       | `12`          |
+| `GEO_PROCESSING_GLOBAL_DAILY_CAP`        | `12`          |
+| `GEO_SCANS_ENABLED`                      | `true`        |
+| `GEO_ANALYSIS_ENABLED`                   | `true`        |
+| `MAX_PROVIDER_CALLS_PER_CRON_INVOCATION` | `24`          |
 
-Keep page checks off, `GEO_SERP_COLLECTOR=serpapi`, `GEO_CLASSIFIER_MODEL=clef-flash`, and the project's daily schedule off. `GEO_OPENAI_MODEL` defaults to `gpt-6-luna`; changing it creates a new measurement cohort. Deploy the reviewed configuration with `npm run deploy:staging`. Counts and the cumulative spend cap apply to actual provider requests/reservations, not just successful observations. An unknown cost pauses further internal testing until the operator checks the provider usage.
+Keep page checks off, `GEO_SERP_COLLECTOR=serpapi`, `GEO_CLASSIFIER_MODEL=clef-flash`, and the project's daily schedule off. `GEO_OPENAI_MODEL` defaults to `gpt-6-luna`; changing it creates a new measurement cohort. Deploy with `npm run deploy:staging -- --var NAME:value`, repeating `--var` for every reviewed override on each deployment. The cron call limit is split between legacy and GEO work; 24 allows up to 12 GEO items per tick while legacy paid collectors remain disabled in staging. Counts and the cumulative spend cap apply to actual provider requests/reservations, not just successful observations. An unknown cost pauses further internal testing until the operator checks the provider usage.
 
 ## 5. Validate the action loop on two UTC days
 

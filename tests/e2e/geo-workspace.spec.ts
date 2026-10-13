@@ -53,7 +53,7 @@ test('local fixture workspace completes the evidence-action loop without any API
   await expect(page.locator('.recharts-reference-line-line')).toHaveCount(1);
   await page.locator('a[href="/app/playbook/fixture-action-1"]').first().click();
   await page.getByRole('button', { name: 'Monitor Prompts', exact: true }).click();
-  await expect(page.getByText(/answers captured/).first()).toBeVisible();
+  await expect(page.getByText(/observations saved/).first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('geo-action-pin.png'), fullPage: true });
   expect(requests).toEqual([]);
 });
@@ -143,7 +143,7 @@ test('GEO quota and partial run retain original evidence when classification fai
   await expect(monitor).toBeEnabled();
   await monitor.focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByText('6 of 8 answers captured · running')).toBeVisible();
+  await expect(page.getByText('6 of 8 observations saved · running')).toBeVisible();
   await expect(page.getByText('provider_unavailable', { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'View full answer & provenance' }).first().click();
   await expect(

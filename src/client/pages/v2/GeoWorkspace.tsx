@@ -261,7 +261,7 @@ function GeoRunProgress({ id, onComplete }: { id: string; onComplete?: () => voi
         <>
           <h2 className="font-semibold">
             {run.data.items.filter((i) => i.status === 'succeeded').length} of{' '}
-            {run.data.items.length} answers captured · {run.data.status}
+            {run.data.items.length} observations saved · {run.data.status}
           </h2>
           <p className={small}>
             {run.data.trigger} run · requested {time(run.data.createdAt)}. Successful captures
@@ -460,8 +460,8 @@ export function GeoMonitor({
               setParams(next);
             }}
           >
-            {run.trigger} · {time(run.createdAt)} · {run.successfulCount}/{run.totalCount} answers ·{' '}
-            {run.status}
+            {run.trigger} · {time(run.createdAt)} · {run.successfulCount}/{run.totalCount}{' '}
+            observations · {run.status}
           </Button>
         ))}
         {history.data && !history.data.runs.length && !history.data.dailyOutcomes.length && (
@@ -472,7 +472,7 @@ export function GeoMonitor({
         <details className="space-y-3" open={params.get('geoRun') ? true : undefined}>
           <summary className="cursor-pointer rounded-lg border p-3 text-sm font-medium">
             {selectedRun
-              ? `${selectedRun.trigger} check · ${String(selectedRun.successfulCount)}/${String(selectedRun.totalCount)} answers · ${selectedRun.status}`
+              ? `${selectedRun.trigger} check · ${String(selectedRun.successfulCount)}/${String(selectedRun.totalCount)} observations · ${selectedRun.status}`
               : 'Monitoring run details'}
           </summary>
           <GeoRunProgress
@@ -1105,9 +1105,9 @@ export function GeoOverview() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           [
-            'Captured answers',
+            'Saved observations',
             String(trends.data?.captures ?? '—'),
-            `Selected ${filter.days}-day scope · failed captures excluded`,
+            `Selected ${filter.days}-day scope · includes absent AI features; failed captures excluded`,
           ],
           [
             'Classification coverage',
