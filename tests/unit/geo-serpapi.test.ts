@@ -56,7 +56,7 @@ describe('bounded SerpApi captures', () => {
       device: 'desktop',
       no_cache: 'true',
     });
-    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: 'GET', redirect: 'error' });
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: 'GET', redirect: 'manual' });
     expect(before).toHaveBeenCalledTimes(1);
     expect(capture).toMatchObject({
       answerText: 'Orbit is an option.',
@@ -292,6 +292,23 @@ describe('bounded SerpApi captures', () => {
     );
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+
+  it.each([301, 302, 307, 308])(
+    'refuses HTTP %s without forwarding credentials or retrying',
+    async (status) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          new Response(null, { status, headers: { Location: 'https://other.example/' } }),
+        );
+      await expect(captureSerpApiGeo('private', context(), allow, fetcher)).rejects.toMatchObject({
+        code: 'SERPAPI_REDIRECT_REFUSED',
+        uncertain: true,
+      });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(fetcher.mock.calls[0]?.[1]?.redirect).toBe('manual');
+    },
+  );
 
   it('does not retry ambiguous transport and never leaks a key in the thrown error', async () => {
     const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new Error('Request api_key=private'));

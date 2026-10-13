@@ -295,7 +295,9 @@ export async function processGeoCollectors(env: CloudflareBindings, limit = 5, a
             ? (error.raw ?? error.diagnostic)
             : null;
       const cost = error instanceof DataForSeoError ? error.cost : null;
-      const transient = /TIMEOUT|TRANSPORT|BODY_ERROR|HTTP_(429|5\d\d)/u.test(code);
+      const transient = /TIMEOUT|TRANSPORT|BODY_ERROR|REDIRECT_REFUSED|HTTP_(429|5\d\d)/u.test(
+        code,
+      );
       if (
         !polling &&
         [

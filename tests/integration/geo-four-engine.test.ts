@@ -646,21 +646,39 @@ describe('four-engine staging observation loop', () => {
     ).toBe(1);
   });
 
+  it('captures SerpApi answers through a native Workers Request without following redirects', async () => {
+    const { env, owner, run, at } = await accepted(['bing_copilot']);
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const request = new Request(input, init);
+      expect(request.redirect).toBe('manual');
+      return Promise.resolve(
+        serpReply({ copilot_answer: { overview: { snippet: 'Synthetic AI answer.' } } }),
+      );
+    });
+    await processGeoCollectors(env, 1, at);
+    expect((await readGeoRun(env, owner.userId, run.id)).items[0]?.status).toBe('succeeded');
+  });
+
   it('honors frozen historical DataForSEO collector after the current default changes to SerpApi', async () => {
     const { env, owner, run, at } = await accepted(['google_aio'], 'dataforseo_standard', true);
     expect(run.items[0]?.context.collector).toBe('dataforseo_standard');
-    const fetcher = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(dfsReply(20100))
-      .mockResolvedValueOnce(
-        dfsReply(20000, [
-          {
-            items: [
-              { type: 'ai_overview', markdown: 'Historical collector answer.', references: [] },
-            ],
-          },
-        ]),
-      );
+    const replies = [
+      dfsReply(20100),
+      new Response(null, { status: 302, headers: { Location: 'https://other.example/' } }),
+      dfsReply(20000, [
+        {
+          items: [
+            { type: 'ai_overview', markdown: 'Historical collector answer.', references: [] },
+          ],
+        },
+      ]),
+    ];
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      expect(new Request(input, init).redirect).toBe('manual');
+      const reply = replies.shift();
+      if (!reply) throw new Error('Expected synthetic DataForSEO response');
+      return Promise.resolve(reply);
+    });
     const changed = {
       ...env,
       GEO_SERP_COLLECTOR: 'serpapi',
@@ -670,11 +688,20 @@ describe('four-engine staging observation loop', () => {
     };
     await processGeoCollectors(changed, 1, at);
     await processGeoCollectors(changed, 1, new Date(at.getTime() + 301_000));
+    const deferred = await readGeoRun(env, owner.userId, run.id);
+    expect(deferred.items[0]?.status).toBe('submitted');
+    expect(
+      await env.DB.prepare('SELECT provider_task_id FROM geo_run_items WHERE id=?')
+        .bind(run.items[0]?.id)
+        .first('provider_task_id'),
+    ).toBe('historical-dfs-task');
+    await processGeoCollectors(changed, 1, new Date(at.getTime() + 602_000));
     expect(fetcher.mock.calls.map(([input]) => requestUrl(input).hostname)).toEqual([
       'api.dataforseo.com',
       'api.dataforseo.com',
+      'api.dataforseo.com',
     ]);
-    expect(fetcher.mock.calls.map((call) => call[1]?.method)).toEqual(['POST', 'GET']);
+    expect(fetcher.mock.calls.map((call) => call[1]?.method)).toEqual(['POST', 'GET', 'GET']);
     expect((await readGeoRun(env, owner.userId, run.id)).items[0]?.context.collector).toBe(
       'dataforseo_standard',
     );
@@ -683,6 +710,26 @@ describe('four-engine staging observation loop', () => {
         .bind(run.id)
         .first('answer_text'),
     ).toBe('Historical collector answer.');
+  });
+
+  it('retains SerpApi redirect uncertainty without repeating a provider request', async () => {
+    const { env, owner, run, at } = await accepted(['bing_copilot']);
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(null, { status: 302, headers: { Location: 'https://other.example/' } }),
+      );
+    await processGeoCollectors(env, 1, at);
+    await processGeoCollectors(env, 1, new Date(at.getTime() + 600_000));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect((await readGeoRun(env, owner.userId, run.id)).items[0]?.status).toBe(
+      'submission_uncertain',
+    );
+    expect(
+      await env.DB.prepare('SELECT state FROM geo_provider_requests WHERE reservation_id=?')
+        .bind(run.items[0]?.reservationId)
+        .first('state'),
+    ).toBe('uncertain');
   });
 
   it('never repeats an ambiguous OpenAI paid submission and retains durable uncertainty', async () => {

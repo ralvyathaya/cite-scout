@@ -271,7 +271,7 @@ export async function captureSerpApiGeo(
     try {
       response = await fetcher(url.href, {
         method: 'GET',
-        redirect: 'error',
+        redirect: 'manual',
         headers: { Accept: 'application/json' },
         signal,
       });
@@ -282,6 +282,8 @@ export async function captureSerpApiGeo(
         true,
       );
     }
+    if (response.status >= 300 && response.status < 400)
+      throw new SerpApiError('SERPAPI_REDIRECT_REFUSED', null, true);
     let raw: unknown;
     try {
       raw = await readProviderJson(response, 512 * 1024);

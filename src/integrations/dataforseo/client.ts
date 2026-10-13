@@ -28,7 +28,7 @@ async function request(
   try {
     response = await fetcher(url, {
       method,
-      redirect: 'error',
+      redirect: 'manual',
       headers: {
         Authorization: `Basic ${btoa(`${login}:${password}`)}`,
         'Content-Type': 'application/json',
@@ -44,6 +44,8 @@ async function request(
       submitting,
     );
   }
+  if (response.status >= 300 && response.status < 400)
+    throw new DataForSeoError('PROVIDER_REDIRECT_REFUSED', null, null, submitting);
   const retryHeader = response.headers.get('retry-after');
   const retryAfter =
     retryHeader !== null && /^\d+$/u.test(retryHeader) ? Math.min(Number(retryHeader), 3600) : null;
