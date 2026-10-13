@@ -15,9 +15,10 @@ const time = (at: string | null) =>
     : 'No saved check';
 
 export function V2Overview() {
+  const { data } = useOutletContext<WorkspaceContext>();
   const settings = useResource<GeoSettings>('/geo/settings');
   if (settings.loading) return <p role="status">Loading monitoring configuration…</p>;
-  return settings.data?.configured === true ? (
+  return settings.data?.configured === true || data.internalTestAccess ? (
     <GeoOverview />
   ) : (
     <>

@@ -86,6 +86,7 @@ export class GeoFixtureWorkspace {
       },
       enrolled: true,
       canScan: true,
+      internalTestAccess: false,
       trial: null,
       scansEnabled: true,
       supportEmail: 'support@cite-scout.com',

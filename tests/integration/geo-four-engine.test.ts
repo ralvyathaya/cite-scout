@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { seed, withBindings } from './fixtures';
+import { cookie, seed, withBindings } from './fixtures';
 import { deleteAccountData } from '../../src/server/account-deletion';
 import { getConfig } from '../../src/server/config';
 import { runScan } from '../../src/server/scans';
@@ -11,6 +11,8 @@ import { geoUsage } from '../../src/server/v2/geo-readiness';
 import type { GeoEvaluation } from '../../src/shared/geo-analysis';
 import { Hono } from 'hono';
 import { operatorRoutes } from '../../src/server/routes/operator';
+import { v2Routes } from '../../src/server/v2/routes';
+import { projectPayload } from '../../src/server/v2/read-model';
 import {
   claimGeoItem,
   geoAllowance,
@@ -171,6 +173,65 @@ afterEach(async () => {
 });
 
 describe('four-engine staging observation loop', () => {
+  it('lets only the active staging owner create a project without enrollment or legacy scans', async () => {
+    const at = new Date(),
+      owner = await seed(0, false, at);
+    const env = bindings(owner.userId, at);
+    const tracked: (typeof owners)[number] = { env, ...owner };
+    owners.push(tracked);
+    await env.DB.prepare('DELETE FROM projects WHERE id=?').bind(owner.projectId).run();
+    const app = new Hono<{ Bindings: CloudflareBindings }>().route('/api/v2', v2Routes);
+    const headers = { Cookie: await cookie(owner.userId), 'Content-Type': 'application/json' };
+    const body = JSON.stringify({
+      brandName: 'OrbitCal',
+      canonicalDomain: 'orbitcal.test',
+      competitors: [{ name: 'Other', canonicalDomain: null }],
+      questions: [
+        'Which scheduling tools suit founders?',
+        'Which calendar tools suit marketing teams?',
+        'How do scheduling tools compare for small teams?',
+      ],
+      idempotencyKey: crypto.randomUUID(),
+    });
+    expect((await projectPayload(env, owner.userId)).internalTestAccess).toBe(true);
+    expect((await app.request('/api/v2/project', { method: 'POST', body }, env)).status).toBe(401);
+    expect((await projectPayload(env, owner.userId)).project).toBeNull();
+    const expired = {
+      ...env,
+      GEO_INTERNAL_TEST_EXPIRES_AT: new Date(at.getTime() - 1000).toISOString(),
+    };
+    expect((await projectPayload(expired, owner.userId)).internalTestAccess).toBe(false);
+    expect(
+      (await app.request('/api/v2/project', { method: 'POST', headers, body }, expired)).status,
+    ).toBe(403);
+    const foreign = { ...env, GEO_INTERNAL_TEST_USER_ID: crypto.randomUUID() };
+    expect(
+      (await app.request('/api/v2/project', { method: 'POST', headers, body }, foreign)).status,
+    ).toBe(403);
+    const created = await app.request('/api/v2/project', { method: 'POST', headers, body }, env);
+    expect(created.status).toBe(201);
+    const saved = await projectPayload(env, owner.userId);
+    if (!saved.project) throw new Error('Staging project was not created');
+    tracked.projectId = saved.project.id;
+    expect(saved.canScan).toBe(false);
+    expect(saved.enrolled).toBe(false);
+    expect(saved.trial).toBeNull();
+    expect(saved.project.questions).toHaveLength(3);
+    expect(
+      (await app.request('/api/v2/project', { method: 'POST', headers, body }, env)).status,
+    ).toBe(200);
+    expect(
+      await env.DB.prepare('SELECT count(*) AS count FROM scan_runs WHERE project_id=?')
+        .bind(tracked.projectId)
+        .first('count'),
+    ).toBe(0);
+    expect(
+      await env.DB.prepare('SELECT count(*) AS count FROM geo_provider_requests WHERE project_id=?')
+        .bind(tracked.projectId)
+        .first('count'),
+    ).toBe(0);
+  });
+
   it('denies even a paid account when the staging grant is absent or expired', async () => {
     const { env, run, at } = await accepted(['openai_web_search']);
     const other = await seed(1, true, at);

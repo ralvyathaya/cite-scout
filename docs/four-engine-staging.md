@@ -91,6 +91,8 @@ npx wrangler secret put GEO_INTERNAL_TEST_EXPIRES_AT --config wrangler.staging.j
 
 This grants GEO access to that authenticated account only; it does not disable authentication, enroll other users, or change their trials/billing. The grant is rejected in the production deployment. Removing the grant or passing its expiry stops new internal test work.
 
+The active staging owner can complete project onboarding without a pilot enrollment or subscription. **Create staging project** saves the brand, competitors and three questions without starting the legacy Perplexity baseline. It opens the GEO overview; provider selection and **Monitor Prompts** are separate steps. Other accounts retain the existing enrollment requirement.
+
 Before enabling collection, verify the current provider tariffs and access to the requested OpenAI model. Set conservative **per-call USD ceilings** in `GEO_INTERNAL_TEST_OPENAI_MAX_COST_USD`, `GEO_INTERNAL_TEST_PERPLEXITY_MAX_COST_USD`, and `GEO_INTERNAL_TEST_PROCESSING_MAX_COST_USD`. All three default to zero, so paid work stays blocked until reviewed. Include the OpenAI search tool and token budget in its ceiling. Treat free allowances as a provider-side limit, not unlimited usage.
 
 For the maximum test, require:

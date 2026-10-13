@@ -30,6 +30,7 @@ test.beforeEach(async ({ page }) => {
           },
           enrolled: true,
           canScan: true,
+          internalTestAccess: false,
           trial: null,
           scansEnabled: true,
           supportEmail: 'support@cite-scout.com',
