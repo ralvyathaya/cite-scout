@@ -23,7 +23,10 @@
     "db:seed:demo": "tsx scripts/seed-demo.ts",
     "cf:typegen": "wrangler types --env-interface CloudflareBindings --strict-vars=false --env-file .dev.vars.example",
     "deploy": "npm run build && wrangler deploy --config wrangler.production.jsonc",
-    "deploy:preview": "npm run build && wrangler versions upload --config wrangler.production.jsonc --preview-alias staging"
+    "deploy:preview": "npm run deploy:staging",
+    "check:staging": "node scripts/check-staging.mjs",
+    "deploy:staging": "npm run check:staging && npm run build && wrangler deploy --config wrangler.staging.jsonc",
+    "db:migrate:staging": "wrangler d1 migrations apply DB --config wrangler.staging.jsonc --remote"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.5",

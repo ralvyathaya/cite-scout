@@ -2,6 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { geoPayloadHash, geoRunRequestSchema, geoSurfaces } from '../../src/shared/geo';
 
 describe('GEO request identity', () => {
+  it('allows the OpenAI API surface while retaining a four-engine run limit', () => {
+    const requestId = '85c8d620-b09b-4a38-9dfd-5db653f5f083';
+    expect(
+      geoRunRequestSchema.safeParse({ requestId, engines: ['openai_web_search'] }).success,
+    ).toBe(true);
+    expect(
+      geoRunRequestSchema.safeParse({
+        requestId,
+        engines: [
+          'perplexity',
+          'openai_web_search',
+          'google_aio',
+          'bing_copilot',
+          'chatgpt_search',
+        ],
+      }).success,
+    ).toBe(false);
+    expect(Object.keys(geoSurfaces)).toHaveLength(5);
+  });
   it('rejects repeated engines and prompt ids before accepting work', () => {
     const requestId = '85c8d620-b09b-4a38-9dfd-5db653f5f083';
     expect(

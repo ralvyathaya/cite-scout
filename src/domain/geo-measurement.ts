@@ -79,6 +79,7 @@ export async function measurementCohort(
     surface: c.surface,
     collector: c.collector,
     collectorVersion: c.collectorVersion,
+    ...(c.requestedModel ? { requestedModel: c.requestedModel } : {}),
     brand: c.brand,
     competitors: [...c.competitors].sort((a, b) => a.id.localeCompare(b.id)),
     instructionVersion: c.instructionVersion,

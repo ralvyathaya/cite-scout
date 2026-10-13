@@ -62,13 +62,24 @@ const allowanceReasons: Record<string, string> = {
   GEO_BUDGET_REQUIRED:
     'The operator must configure a positive monitoring budget before new checks can start.',
   GEO_QUOTA_EXCEEDED: 'Monitoring allowance reached. Review Usage or wait for the UTC reset.',
+  GEO_COST_UNKNOWN: 'Review unknown provider costs in Billing & usage before another paid check.',
+  GEO_SPEND_CAP_EXCEEDED: 'The test spend cap has been reached. Review Billing & usage.',
 };
 const allowanceReason = (reason: string | null | undefined) =>
   reason
     ? (allowanceReasons[reason] ?? reason)
     : 'New checks are unavailable. Saved evidence remains readable.';
 export interface GeoCapabilities {
-  engines: Record<GeoEngine, { available: boolean; reason: string | null }>;
+  engines: Record<
+    GeoEngine,
+    {
+      available: boolean;
+      reason: string | null;
+      collector?: string;
+      requestedModel?: string | null;
+      nextStep?: string | null;
+    }
+  >;
   classifier: {
     available: boolean;
     model: DecisionModel;
@@ -224,6 +235,14 @@ function ScopeLabel({ filter }: { filter: ReturnType<typeof useEvidenceFilter> }
   );
 }
 const pendingRun = (run: GeoRun) => run.completedAt === null;
+const collectorLabels: Record<string, string> = {
+  perplexity_api: 'Perplexity Agent API',
+  openai_responses: 'OpenAI Responses API',
+  serpapi: 'SerpApi',
+  dataforseo_standard: 'DataForSEO Standard',
+};
+const collectorLabel = (collector: string | undefined) =>
+  collector ? (collectorLabels[collector] ?? words(collector)) : 'Collector not reported';
 function GeoRunProgress({ id, onComplete }: { id: string; onComplete?: () => void }) {
   const run = useResource<GeoRun>(`/geo/runs/${encodeURIComponent(id)}`, pendingRun);
   const refreshed = useRef(false);
@@ -356,6 +375,9 @@ export function GeoMonitor({
             {reason ??
               `Fresh check · ${scopeEngines.map((engine) => geoSurfaces[engine].label).join(', ')} · five-minute prompt/engine cooldown`}
           </p>
+          {unavailable && capabilities.data?.engines[unavailable].nextStep && (
+            <p className={small}>{capabilities.data.engines[unavailable].nextStep}</p>
+          )}
         </div>
         <div className={`ml-auto ${small}`}>
           {allowance.data && (
@@ -369,6 +391,47 @@ export function GeoMonitor({
       </div>
       <ErrorNotice error={mutation.error} />
       <ErrorNotice error={history.error} />
+      <details
+        className="rounded-lg border bg-card px-4 py-3"
+        open={settings.data ? !settings.data.configured : undefined}
+      >
+        <summary className="cursor-pointer text-sm font-medium">
+          Monitoring setup · {scopeEngines.length} selected engines
+        </summary>
+        <ol className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+          <li className="space-y-2">
+            <p className="font-medium">1. Choose answer engines</p>
+            <p className={small}>
+              Select up to four engines. Daily monitoring is{' '}
+              {settings.data?.dailyEnabled ? 'enabled' : 'disabled'}; availability reflects
+              configuration, with live access checked by your first capture.
+            </p>
+            <Link to="/app/settings" className="inline-block text-xs text-primary underline">
+              Configure engines
+            </Link>
+          </li>
+          <li className="space-y-2">
+            <p className="font-medium">2. Set buyer prompts</p>
+            <p className={small}>
+              {active.length} active prompts. Use the same neutral questions for the baseline and
+              follow-up.
+            </p>
+            <Link to="/app/questions" className="inline-block text-xs text-primary underline">
+              Review prompt sets
+            </Link>
+          </li>
+          <li className="space-y-2">
+            <p className="font-medium">3. Capture and review</p>
+            <p className={small}>
+              Monitor Prompts creates fresh observations. Review original answers and diagnoses
+              before accepting a playbook task.
+            </p>
+            <Link to="/app/observations" className="inline-block text-xs text-primary underline">
+              Inspect captured answers
+            </Link>
+          </li>
+        </ol>
+      </details>
       <details className="space-y-3 rounded-lg border px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium">
           Recent checks · daily schedule {settings.data?.dailyEnabled ? 'enabled' : 'disabled'}
@@ -2191,6 +2254,16 @@ export function GeoCompetitors() {
   );
 }
 interface GeoUsage {
+  providerRequests?: {
+    total: number;
+    serpapi: number;
+    reportedCostUsd: number;
+    estimatedCostUsd: number;
+    unknownCostRequests: number;
+    reservedCostUsd: number;
+    spendCapUsd: number;
+    serpapiMonthlyCap: number;
+  };
   collectors: {
     today: number;
     month: number;
@@ -2262,6 +2335,71 @@ export function GeoBilling() {
           </div>
         )
       )}
+      {usage.data?.providerRequests && (
+        <section className={`${box} space-y-4`} aria-label="Provider request accounting">
+          <h2 className="font-semibold">Provider requests & test budget</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <p className="text-xl font-semibold tabular-nums">
+                {usage.data.providerRequests.total} provider requests
+              </p>
+              <p className={small}>
+                Request attempts are counted separately from answer observations. Google AI Overview
+                may require two requests for one answer.
+              </p>
+            </div>
+            <div>
+              <p className="text-xl font-semibold tabular-nums">
+                {usage.data.providerRequests.serpapi} /{' '}
+                {usage.data.providerRequests.serpapiMonthlyCap} SerpApi requests
+              </p>
+              <p className={small}>
+                This UTC calendar month · includes overview follow-up requests
+              </p>
+            </div>
+          </div>
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="inline">Reported charges: </dt>
+              <dd className="inline tabular-nums">
+                ${usage.data.providerRequests.reportedCostUsd.toFixed(6)} USD
+              </dd>
+            </div>
+            <div>
+              <dt className="inline">Estimated charges: </dt>
+              <dd className="inline tabular-nums">
+                ${usage.data.providerRequests.estimatedCostUsd.toFixed(6)} USD
+              </dd>
+            </div>
+            <div>
+              <dt className="inline">Reserved budget: </dt>
+              <dd className="inline tabular-nums">
+                ${usage.data.providerRequests.reservedCostUsd.toFixed(6)} USD
+              </dd>
+            </div>
+            <div>
+              <dt className="inline">Test spend cap: </dt>
+              <dd className="inline tabular-nums">
+                ${usage.data.providerRequests.spendCapUsd.toFixed(2)} USD
+              </dd>
+            </div>
+          </dl>
+          <p className={small}>
+            Reported charges come from provider responses; estimates use configured rates. Reserved
+            budget protects pending requests. These figures do not replace your provider bills.
+          </p>
+          {usage.data.providerRequests.unknownCostRequests > 0 && (
+            <p
+              role="alert"
+              className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+            >
+              {usage.data.providerRequests.unknownCostRequests}{' '}
+              {usage.data.providerRequests.unknownCostRequests === 1 ? 'request' : 'requests'} with
+              unknown cost. Review unknown costs before another paid check.
+            </p>
+          )}
+        </section>
+      )}
       {allowance.data && (
         <Empty>
           {allowance.data.enabled
@@ -2325,6 +2463,7 @@ export function GeoSettingsPanel() {
           >
             <fieldset className="space-y-3">
               <legend className="mb-2 text-sm font-medium">Selected AI answer engines</legend>
+              <p className={small}>{value.engines.length} of 4 engine slots selected.</p>
               {engines.map((engine) => {
                 const capability = capabilities.data?.engines[engine];
                 return (
@@ -2332,8 +2471,12 @@ export function GeoSettingsPanel() {
                     <input
                       type="checkbox"
                       className="mt-1 size-4 shrink-0 accent-primary"
+                      aria-label={geoSurfaces[engine].label}
                       checked={value.engines.includes(engine)}
-                      disabled={!capability?.available && !value.engines.includes(engine)}
+                      disabled={
+                        !value.engines.includes(engine) &&
+                        (!capability?.available || value.engines.length >= 4)
+                      }
                       onChange={(event) => {
                         setSaved(false);
                         setDraft({
@@ -2348,9 +2491,17 @@ export function GeoSettingsPanel() {
                       <span className="block text-sm font-medium">{geoSurfaces[engine].label}</span>
                       <span className={`block ${small}`}>
                         {capability?.available
-                          ? `Configured · ${words(geoSurfaces[engine].collector)}`
+                          ? `Configured · ${collectorLabel(capability.collector)}`
                           : `Unavailable · ${capability?.reason ?? 'Provider is not configured.'}`}
                       </span>
+                      {capability?.requestedModel && (
+                        <span className={`mt-1 block ${small}`}>
+                          Requested model: {capability.requestedModel}
+                        </span>
+                      )}
+                      {capability?.nextStep && (
+                        <span className={`mt-1 block ${small}`}>{capability.nextStep}</span>
+                      )}
                     </span>
                   </label>
                 );
@@ -2360,6 +2511,10 @@ export function GeoSettingsPanel() {
               Availability reflects server configuration and secrets, not a validated live capture.
               Unavailable engines cannot be newly selected; their stored answers remain readable.
               Neutral prompts are sent without hidden brand or competitor hints.
+            </p>
+            <p className={small}>
+              OpenAI and Perplexity observe their API surfaces. Each capture records the collector
+              and reported model for comparison.
             </p>
             {selectedUnavailable.length > 0 && (
               <Empty>
@@ -2388,33 +2543,44 @@ export function GeoSettingsPanel() {
               </span>
             </label>
             <div className="grid gap-3 sm:grid-cols-3">
-              <label className="space-y-2 text-sm">
-                Language code
-                <Input
-                  required
-                  pattern="[a-z]{2}(-[A-Z]{2})?"
-                  value={value.languageCode}
-                  placeholder="en"
-                  onChange={(event) => {
-                    setSaved(false);
-                    setDraft({ ...value, languageCode: event.target.value });
-                  }}
-                />
-              </label>
-              <label className="space-y-2 text-sm">
-                Provider location code
-                <Input
-                  required
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={value.locationCode}
-                  onChange={(event) => {
-                    setSaved(false);
-                    setDraft({ ...value, locationCode: Number(event.target.value) });
-                  }}
-                />
-              </label>
+              <Choice
+                label="Language"
+                value={value.languageCode}
+                set={(languageCode) => {
+                  setSaved(false);
+                  setDraft({ ...value, languageCode });
+                }}
+                options={[
+                  { value: 'en', label: 'English (en)' },
+                  ...(value.languageCode === 'en'
+                    ? []
+                    : [
+                        {
+                          value: value.languageCode,
+                          label: `Saved language (${value.languageCode})`,
+                        },
+                      ]),
+                ]}
+              />
+              <Choice
+                label="Market"
+                value={String(value.locationCode)}
+                set={(locationCode) => {
+                  setSaved(false);
+                  setDraft({ ...value, locationCode: Number(locationCode) });
+                }}
+                options={[
+                  { value: '2840', label: 'United States (US)' },
+                  ...(value.locationCode === 2840
+                    ? []
+                    : [
+                        {
+                          value: String(value.locationCode),
+                          label: `Saved market (${String(value.locationCode)})`,
+                        },
+                      ]),
+                ]}
+              />
               <Choice
                 label="Device"
                 value={value.device}
@@ -2436,6 +2602,7 @@ export function GeoSettingsPanel() {
               disabled={
                 mutation.busy ||
                 !value.engines.length ||
+                value.engines.length > 4 ||
                 (value.dailyEnabled && selectedUnavailable.length > 0) ||
                 !capabilities.data
               }

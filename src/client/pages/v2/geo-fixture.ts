@@ -41,6 +41,8 @@ export const fixtureDisposition = (hostname: string, requested: boolean) => ({
   enabled: requested && ['localhost', '127.0.0.1', '[::1]'].includes(hostname),
 });
 const DAY = 86400_000;
+const fixtureCollector = (engine: GeoEngine) =>
+  engine === 'google_aio' || engine === 'bing_copilot' ? 'serpapi' : geoSurfaces[engine].collector;
 // Separate browser-memory store and transport; no fetch, production database or provider client.
 export class GeoFixtureWorkspace {
   private observations: GeoObservation[] = [];
@@ -153,12 +155,16 @@ export class GeoFixtureWorkspace {
             promptText: question.text,
             engine,
             surface: surface.surface,
-            collector: surface.collector,
-            collectorVersion: 'geo-collector-1',
+            collector: fixtureCollector(engine),
+            collectorVersion:
+              engine === 'openai_web_search' || fixtureCollector(engine) === 'serpapi'
+                ? 'geo-collector-2'
+                : 'geo-collector-1',
+            ...(engine === 'openai_web_search' ? { requestedModel: 'fixture-model' } : {}),
             languageCode: this.settings.languageCode,
             locationCode: this.settings.locationCode,
             device: this.settings.device,
-            forceWebSearch: engine === 'chatgpt_search',
+            forceWebSearch: engine === 'chatgpt_search' || engine === 'openai_web_search',
             brand: { id: project.id, name: project.brandName, domain: project.canonicalDomain },
             competitors: project.competitors.map((rival) => ({
               id: rival.id,
@@ -529,7 +535,17 @@ export class GeoFixtureWorkspace {
     if (route === '/geo/capabilities')
       return {
         engines: Object.fromEntries(
-          Object.keys(geoSurfaces).map((engine) => [engine, { available: true, reason: null }]),
+          (Object.keys(geoSurfaces) as GeoEngine[]).map((engine) => [
+            engine,
+            {
+              available: true,
+              reason: null,
+              collector: fixtureCollector(engine),
+              requestedModel: engine === 'openai_web_search' ? 'fixture-model' : null,
+              nextStep:
+                'Synthetic provider configuration. No credentials or provider calls are used.',
+            },
+          ]),
         ),
         classifier: { available: true, model: 'clef-flash', needsReview: true, reason: null },
         pageChecks: { available: false, reason: 'No real page requests in the fixture workspace.' },
@@ -559,6 +575,16 @@ export class GeoFixtureWorkspace {
         processing: { today: 0, estimatedCostUsd: 0, unknownCostAttempts: 0, attempts: 0 },
         limits: { collectorDaily: 100, collectorMonthly: 1000, processingDaily: 100 },
         classifierModel: 'clef-flash',
+        providerRequests: {
+          total: 0,
+          serpapi: 0,
+          reportedCostUsd: 0,
+          estimatedCostUsd: 0,
+          unknownCostRequests: 0,
+          reservedCostUsd: 0,
+          spendCapUsd: 5,
+          serpapiMonthlyCap: 250,
+        },
       };
     if (route === '/geo/prompt-sets') {
       if (method === 'POST') {
