@@ -1,6 +1,6 @@
 # Owner staging validation: first UTC day
 
-The first real CiteScout run completed on 2026-10-13 in isolated staging. This is a partial validation result; the second UTC day and a genuine completed-action comparison remain pending.
+The first real CiteScout run completed on 2026-10-13 in isolated staging. This report preserves the first-day result; see [the second-day follow-up](2026-10-14-four-engine-staging.md) for the subsequent run, corrected Owned completion and remaining post-implementation comparison gate.
 
 ## Scope and result
 
