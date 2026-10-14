@@ -70,10 +70,11 @@ describe('durable GEO collectors', () => {
       request_context_json: JSON.stringify(item.context),
     });
     fetcher.mockResolvedValueOnce(reply(20000, [{ items: [] }]));
+    // Cross UTC midnight while staying inside the collector's 24-hour polling window.
     await processGeoCollectors(
       { ...env, GEO_SCANS_ENABLED: 'false' },
       1,
-      new Date('2026-10-13T00:01:00Z'),
+      new Date('2026-10-13T00:00:00Z'),
     );
     expect(fetcher.mock.calls.map((call) => call[1]?.method)).toEqual(['POST', 'GET']);
     expect((await readGeoRun(env, owner.userId, run.id)).items[0]?.reservationId).toBe(
