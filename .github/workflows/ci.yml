@@ -34,6 +34,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Audit dependency vulnerabilities
+        run: npm audit --audit-level=low
       - name: Prepare isolated local signing secrets
         run: |
           node --input-type=module <<'NODE'
