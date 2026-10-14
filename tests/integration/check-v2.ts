@@ -24,6 +24,7 @@ for (const name of [
   '0007_geo_processing_usage',
   '0008_geo_playbook_recovery',
   '0009_geo_daily_outcomes',
+  '0010_tough_gamma_corps',
 ]) {
   if (name === '0002_citescout_v2')
     db.exec(`

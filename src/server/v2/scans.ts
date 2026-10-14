@@ -729,7 +729,10 @@ export async function processDueScans(
   await reconcileEligibility(env, now);
   await finishRuns(env, now);
   await createDueRuns(env, now);
-  const enabled = env.EXTERNAL_INTEGRATIONS_ENABLED === 'true' && env.V2_SCANS_ENABLED === 'true';
+  const enabled =
+    env.DEPLOYMENT_ENV !== 'staging' &&
+    env.EXTERNAL_INTEGRATIONS_ENABLED === 'true' &&
+    env.V2_SCANS_ENABLED === 'true';
   if (!enabled) {
     await statement(
       env,

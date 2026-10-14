@@ -7,6 +7,7 @@ import { normalizeDomain, normalizeText } from '../../domain/normalization';
 import { createAuth } from '../auth';
 import { readJson } from '../http';
 import { consumeRateLimit } from '../rate-limit';
+import { internalTestUserId } from '../config';
 import { eventStatement } from './events';
 import { cancelTrial, processDueScans, readRun, startScan } from './scans';
 import { geoRoutes } from './geo-routes';
@@ -157,8 +158,16 @@ v2Routes.post('/project', async (c) => {
     .from(pilotEnrollments)
     .where(eq(pilotEnrollments.userId, userId))
     .get();
-  if (!enrollment && !(await paidAccess(c.env, userId)))
-    throw new Error('PILOT_ENROLLMENT_REQUIRED');
+  if (!enrollment && internalTestUserId(c.env) !== userId && !(await paidAccess(c.env, userId)))
+    return c.json(
+      {
+        error: {
+          code: 'PILOT_ENROLLMENT_REQUIRED',
+          message: errorMessages.PILOT_ENROLLMENT_REQUIRED,
+        },
+      },
+      403,
+    );
   const projectId = crypto.randomUUID();
   const now = Date.now();
   const statements = [

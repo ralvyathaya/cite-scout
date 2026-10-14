@@ -40,6 +40,7 @@ export interface ScanSummary {
 }
 
 export async function runScan(env: CloudflareBindings, input: ScanRequest): Promise<ScanSummary> {
+  if (env.DEPLOYMENT_ENV === 'staging') throw new Error('LEGACY_STAGING_SCANS_DISABLED');
   const now = input.now ?? new Date();
   const date = utcDate(now);
   const db = drizzle(env.DB);

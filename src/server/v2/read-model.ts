@@ -10,6 +10,7 @@ import {
   subscriptions,
 } from '../../db/schema';
 import { getEntitlement } from '../../domain/entitlements';
+import { internalTestUserId } from '../config';
 import { canonicalSourceUrl, compareEvidence } from '../../domain/evidence';
 import type { EvidenceCapture, RequestContext, ComparableObservation } from '../../shared/evidence';
 import type {
@@ -88,6 +89,7 @@ export async function projectPayload(
       : null,
     enrolled: Boolean(enrollment),
     canScan: paid,
+    internalTestAccess: env.DEPLOYMENT_ENV === 'staging' && internalTestUserId(env) === userId,
     trial: enrollment
       ? {
           state: enrollment.trialState,
@@ -100,9 +102,11 @@ export async function projectPayload(
       today: counts?.today ?? 0,
       month: counts?.month ?? 0,
       dailyLimit: 10,
-      monthlyLimit: Math.min(350,Number(env.PER_USER_MONTHLY_PROVIDER_CALL_CAP)),
+      monthlyLimit: Math.min(350, Number(env.PER_USER_MONTHLY_PROVIDER_CALL_CAP)),
       resetAt: nextDay(now).toISOString(),
-      monthlyResetAt: new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()+1,1)).toISOString(),
+      monthlyResetAt: new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+      ).toISOString(),
     },
     scansEnabled: env.EXTERNAL_INTEGRATIONS_ENABLED === 'true' && env.V2_SCANS_ENABLED === 'true',
     supportEmail: 'support@cite-scout.com',

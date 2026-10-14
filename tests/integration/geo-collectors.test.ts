@@ -16,6 +16,7 @@ const settings = {
 const bindings = () =>
   withBindings({
     GEO_SCANS_ENABLED: 'true',
+    GEO_SERP_COLLECTOR: 'dataforseo_standard',
     EXTERNAL_INTEGRATIONS_ENABLED: 'true',
     V2_SCANS_ENABLED: 'true',
     GEO_GLOBAL_DAILY_CALL_CAP: '100',

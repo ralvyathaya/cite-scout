@@ -22,7 +22,13 @@ export async function api<T>(
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const value = (await response.json()) as {
+  const value = (await response.json().catch(() => {
+    throw new ApiError(
+      'Workspace response unavailable. Refresh the page and sign in again if requested.',
+      response.status,
+      'INVALID_API_RESPONSE',
+    );
+  })) as {
     data?: T;
     error?: { message?: string; code?: string };
   };

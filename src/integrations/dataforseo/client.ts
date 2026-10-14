@@ -9,7 +9,8 @@ const paths = {
   chatgpt_search: '/ai_optimization/chat_gpt/llm_scraper',
 };
 function path(context: GeoRequestContext): string {
-  if (context.engine === 'perplexity') throw new DataForSeoError('UNSUPPORTED_ENGINE');
+  if (context.engine === 'perplexity' || context.engine === 'openai_web_search')
+    throw new DataForSeoError('UNSUPPORTED_ENGINE');
   return paths[context.engine];
 }
 
@@ -27,7 +28,7 @@ async function request(
   try {
     response = await fetcher(url, {
       method,
-      redirect: 'error',
+      redirect: 'manual',
       headers: {
         Authorization: `Basic ${btoa(`${login}:${password}`)}`,
         'Content-Type': 'application/json',
@@ -43,6 +44,8 @@ async function request(
       submitting,
     );
   }
+  if (response.status >= 300 && response.status < 400)
+    throw new DataForSeoError('PROVIDER_REDIRECT_REFUSED', null, null, submitting);
   const retryHeader = response.headers.get('retry-after');
   const retryAfter =
     retryHeader !== null && /^\d+$/u.test(retryHeader) ? Math.min(Number(retryHeader), 3600) : null;

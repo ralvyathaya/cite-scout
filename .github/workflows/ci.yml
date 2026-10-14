@@ -47,6 +47,8 @@ jobs:
           NODE
       - name: Typecheck
         run: npm run typecheck
+      - name: Check staging isolation without credentials
+        run: npm run check:staging -- --allow-unprovisioned
       - name: Lint
         run: npm run lint
       - name: Unit tests

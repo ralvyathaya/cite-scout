@@ -286,11 +286,13 @@ export function V2Shell() {
 function TrialStatus({ data }: { data: V2ProjectPayload }) {
   return (
     <Notice>
-      {data.canScan
-        ? 'Perplexity monitoring access · legacy plan & history'
-        : data.trial
-          ? `Pilot · ${data.trial.state}`
-          : 'Founder-assisted pilot'}
+      {data.internalTestAccess
+        ? 'Owner staging validation · daily monitoring off by default'
+        : data.canScan
+          ? 'Perplexity monitoring access · legacy plan & history'
+          : data.trial
+            ? `Pilot · ${data.trial.state}`
+            : 'Founder-assisted pilot'}
       {data.trial?.followupDueAt && !data.canScan && (
         <> · Follow-up: {time(data.trial.followupDueAt)}</>
       )}
@@ -419,8 +421,9 @@ export function V2Onboarding() {
   const [questions, setQuestions] = useState(['', '', '']);
   const [review, setReview] = useState(false);
   const [key] = useState(() => crypto.randomUUID());
-  if (data.project) return <Navigate to="/app/questions" replace />;
-  if (!data.enrolled && !data.canScan)
+  if (data.project)
+    return <Navigate to={data.internalTestAccess ? '/app/overview' : '/app/questions'} replace />;
+  if (!data.enrolled && !data.canScan && !data.internalTestAccess)
     return (
       <section className="mx-auto max-w-xl space-y-5 py-12">
         <h1 className="text-3xl font-semibold">Run your first buyer-question baseline</h1>
@@ -441,6 +444,11 @@ export function V2Onboarding() {
     }
     await action.run(async () => {
       await api('/project', { ...identity, questions, idempotencyKey: key });
+      if (data.internalTestAccess) {
+        await reload();
+        await navigate('/app/overview');
+        return;
+      }
       const result = await api<{ runId: string }>('/scans', {
         mode: data.canScan ? 'today' : 'baseline',
       });
@@ -452,7 +460,9 @@ export function V2Onboarding() {
   return (
     <section className="mx-auto max-w-2xl space-y-6">
       <div>
-        <p className="text-sm text-muted-foreground">Your first baseline</p>
+        <p className="text-sm text-muted-foreground">
+          {data.internalTestAccess ? 'Owner staging validation' : 'Your first baseline'}
+        </p>
         <h1 className="text-3xl font-semibold tracking-tight">What do your buyers ask?</h1>
       </div>
       <TrialStatus data={data} />
@@ -482,14 +492,16 @@ export function V2Onboarding() {
           </label>
         ))}
         <p className="text-sm text-muted-foreground">
-          Use questions a buyer would ask when comparing options. All three questions will be
-          checked.
+          Use questions a buyer would ask when comparing options.
+          {data.internalTestAccess
+            ? ' Saving creates your project without calling a provider. Choose engines and use Monitor Prompts afterward.'
+            : ' All three questions will be checked.'}
         </p>
         {review && (
           <Notice>
-            We will save a baseline, then re-check successful questions 72 hours after baseline
-            processing finishes. Your trial ends after 14 days. Questions stay fixed during the
-            trial. No card required.
+            {data.internalTestAccess
+              ? 'Save these three questions for GEO validation. Daily monitoring stays off. Review provider setup and quota before starting a manual check.'
+              : 'We will save a baseline, then re-check successful questions 72 hours after baseline processing finishes. Your trial ends after 14 days. Questions stay fixed during the trial. No card required.'}
           </Notice>
         )}
         <Failure error={action.error} />
@@ -506,7 +518,15 @@ export function V2Onboarding() {
             </Button>
           )}
           <Button disabled={action.busy}>
-            {action.busy ? 'Starting…' : review ? 'Run my baseline' : 'Review baseline'}
+            {action.busy
+              ? 'Starting…'
+              : review
+                ? data.internalTestAccess
+                  ? 'Create staging project'
+                  : 'Run my baseline'
+                : data.internalTestAccess
+                  ? 'Review project'
+                  : 'Review baseline'}
           </Button>
         </div>
       </form>
