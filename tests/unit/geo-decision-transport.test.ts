@@ -47,7 +47,7 @@ describe('optional Jev transport with synthetic responses', () => {
     expect(url).toBe('https://api.typesafe.ai/v1/systemone');
     expect(request).toMatchObject({
       method: 'POST',
-      redirect: 'error',
+      redirect: 'manual',
       headers: {
         Authorization: 'Bearer fake-test-token',
         'Content-Type': 'application/json',
@@ -70,6 +70,12 @@ describe('optional Jev transport with synthetic responses', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
   it.each([
+    {
+      name: 'redirect',
+      response: () =>
+        new Response(null, { status: 302, headers: { Location: 'https://other.example/' } }),
+      error: 'CLASSIFIER_HTTP_302',
+    },
     {
       name: 'HTTP failure',
       response: () => new Response('Rate limited', { status: 429 }),

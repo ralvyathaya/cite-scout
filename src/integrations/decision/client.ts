@@ -56,7 +56,7 @@ export async function evaluateDecision(
     if (!env.TYPESAFE_API_KEY) throw new Error('CLASSIFIER_UNAVAILABLE');
     const response = await fetcher('https://api.typesafe.ai/v1/systemone', {
       method: 'POST',
-      redirect: 'error',
+      redirect: 'manual',
       headers: {
         Authorization: `Bearer ${env.TYPESAFE_API_KEY}`,
         'Content-Type': 'application/json',

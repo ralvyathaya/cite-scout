@@ -11,10 +11,11 @@ import {
   type GeoEvaluation,
   type GeoPageCheck,
 } from '../../shared/geo-analysis';
-import { getConfig } from '../config';
+import { getConfig, internalTestUserId } from '../config';
 import { utcDate } from '../../domain/normalization';
 import { readGeoObservation } from './geo-store';
 import { syncGeoActions } from './actions';
+import { reserveGeoProviderRequest, completeGeoProcessingRequest } from './geo-provider-budget';
 
 const sql = (env: CloudflareBindings, query: string, ...values: unknown[]) =>
   env.DB.prepare(query).bind(...values);
@@ -88,6 +89,8 @@ async function reserveProcessing(
       rubric: geoVersions.rubric,
       policy: geoVersions.policy,
     });
+  if (config.DEPLOYMENT_ENV === 'staging' && internalTestUserId(env, at) !== userId)
+    throw new Error('PAID_ACCESS_REQUIRED');
   const replay = await sql(
     env,
     'SELECT * FROM geo_processing_attempts WHERE project_id=? AND request_id=?',
@@ -284,6 +287,7 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
             'GEO_OBSERVATION_NOT_FOUND',
             'GEO_PROCESSING_DISABLED',
             'GEO_PROCESSING_BUDGET_REQUIRED',
+            'PAID_ACCESS_REQUIRED',
           ].includes(error.message)
         )
           throw error;
@@ -345,6 +349,11 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
     const callStarted = Date.now();
     try {
       const observation = await readGeoObservation(env, row.user_id, row.observation_id);
+      if (
+        config.DEPLOYMENT_ENV === 'staging' &&
+        internalTestUserId(env, new Date(clock())) !== row.user_id
+      )
+        throw new Error('PAID_ACCESS_REQUIRED');
       let result: unknown,
         inputTokens: number | null = null,
         outputTokens: number | null = null,
@@ -353,6 +362,12 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
         const input = JSON.parse(row.input_json) as { target: string; domain: string };
         result = await checkOwnedPage(input.target, input.domain);
       } else {
+        await reserveGeoProviderRequest(env, {
+          operationKey: `processing:${row.id}`,
+          processingId: row.id,
+          collector: row.provider,
+          at: new Date(clock()),
+        });
         const evaluation = JSON.parse(row.input_json) as GeoEvaluation;
         const native = await evaluateDecision(
           {
@@ -383,6 +398,7 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
               ? (inputTokens * 0.24) / 1_000_000
               : null;
       }
+      await completeGeoProcessingRequest(env, row.id, cost);
       await sql(
         env,
         `UPDATE geo_processing_attempts SET state='completed',result_json=?,input_tokens=?,output_tokens=?,estimated_cost_usd=?,latency_ms=?,completed_at=?,lease_token=NULL,lease_until=NULL,playbook_sync_pending=CASE WHEN kind='analysis' THEN 1 ELSE 0 END WHERE id=? AND state='running' AND lease_token=? AND lease_until>? AND EXISTS(SELECT 1 FROM projects WHERE id=geo_processing_attempts.project_id AND user_id=?)`,
@@ -400,6 +416,28 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       const code = /^[A-Z_0-9]+$/u.test(message) ? message : 'CLASSIFIER_OUTPUT_INVALID';
+      if (
+        [
+          'GEO_PROVIDER_BUDGET_BLOCKED',
+          'GEO_TEST_BUDGET_REQUIRED',
+          'GEO_PROVIDER_QUOTA_EXCEEDED',
+          'PAID_ACCESS_REQUIRED',
+        ].includes(code)
+      ) {
+        const paused = await sql(
+          env,
+          `UPDATE geo_processing_attempts SET state='queued',failure_code=?,due_at=?,lease_token=NULL,lease_until=NULL
+          WHERE id=? AND state='running' AND lease_token=? AND lease_until>?
+          AND NOT EXISTS(SELECT 1 FROM geo_provider_requests WHERE processing_id=geo_processing_attempts.id)`,
+          code,
+          clock() + 300_000,
+          row.id,
+          token,
+          clock(),
+        ).run();
+        if (paused.meta.changes) continue;
+      }
+      await completeGeoProcessingRequest(env, row.id, null, true);
       await sql(
         env,
         "UPDATE geo_processing_attempts SET state='failed',failure_code=?,latency_ms=?,completed_at=?,lease_token=NULL,lease_until=NULL WHERE id=? AND state='running' AND lease_token=? AND lease_until>? AND EXISTS(SELECT 1 FROM projects WHERE id=geo_processing_attempts.project_id AND user_id=?)",

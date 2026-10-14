@@ -67,6 +67,7 @@ const project: V2ProjectPayload = {
   },
   enrolled: true,
   canScan: true,
+  internalTestAccess: false,
   trial: null,
   usage: {
     today: 1,
@@ -171,6 +172,62 @@ test('opens exact evidence through the list and an old deep link', async ({ page
   await page.goto('/app/responses?observation=older-answer');
   await expect(page).toHaveURL(/questions\/question\?observation=older-answer/);
   await expect(page.getByRole('heading', { name: 'Brand match appeared' })).toBeVisible();
+});
+test('staging owner onboarding saves a project without launching a legacy baseline', async ({
+  page,
+}) => {
+  let saved = false;
+  const legacyScans: string[] = [];
+  await workspace(page, {
+    ...project,
+    project: null,
+    enrolled: false,
+    canScan: false,
+    internalTestAccess: true,
+  });
+  await page.route('**/api/v2/geo/runs', (route) =>
+    route.fulfill({ json: { data: { runs: [], dailyOutcomes: [] } } }),
+  );
+  await page.route('**/api/v2/project', async (route) => {
+    if (route.request().method() === 'POST') {
+      saved = true;
+      await route.fulfill({ status: 201, json: { data: { projectId: 'project' } } });
+    } else
+      await route.fulfill({
+        json: {
+          data: {
+            ...project,
+            project: saved ? project.project : null,
+            enrolled: false,
+            canScan: false,
+            internalTestAccess: true,
+          },
+        },
+      });
+  });
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/v2/scans') legacyScans.push(request.url());
+  });
+  await page.goto('/app/onboarding');
+  await page.getByLabel('Company name', { exact: true }).fill('CedarFlow');
+  await page.getByLabel('Company domain', { exact: true }).fill('cedarflow.example');
+  await page.getByLabel('Competitor 1 name', { exact: true }).fill('Rival');
+  for (let index = 1; index <= 3; index++)
+    await page
+      .getByLabel(`Buyer question ${String(index)}`)
+      .fill(`Which scheduling tools suit marketing team ${String(index)}?`);
+  await page.getByRole('button', { name: 'Review project', exact: true }).click();
+  await expect(page.getByText(/Daily monitoring stays off/)).toBeVisible();
+  await page.getByRole('button', { name: 'Create staging project', exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/overview$/);
+  await expect(page.getByRole('link', { name: 'Configure engines', exact: true })).toBeVisible();
+  await expect(page.getByText(/Legacy Perplexity workspace/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Monitor Prompts', exact: true })).toBeDisabled();
+  await expect(
+    page.getByText('Save monitoring engines and configuration in Settings.'),
+  ).toBeVisible();
+  expect(saved).toBe(true);
+  expect(legacyScans).toEqual([]);
 });
 test('a failed older history request leaves the selected answer readable', async ({ page }) => {
   await workspace(page);

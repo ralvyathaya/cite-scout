@@ -36,6 +36,8 @@ for (const [path, trigger] of [
     } catch (error) {
       const code = error instanceof Error ? error.message : 'SCAN_FAILED';
       const messages: Record<string, string> = {
+        LEGACY_STAGING_SCANS_DISABLED:
+          'Use Monitor Prompts in the GEO workspace for bounded staging checks.',
         PROJECT_NOT_FOUND: 'Project not found.',
         INVALID_PROMPTS: 'Select unique, enabled prompts from your project.',
         TRIAL_INVALID: 'The free trial supports up to three prompts on an unpaid account.',

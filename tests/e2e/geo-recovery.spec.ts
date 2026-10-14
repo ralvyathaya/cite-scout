@@ -4,6 +4,47 @@ import type { GeoRun, GeoObservation, GeoRunHistory } from '../../src/shared/geo
 import type { GeoAnalysis } from '../../src/shared/geo-analysis';
 import type { GeoCapabilities } from '../../src/client/pages/v2/GeoWorkspace';
 
+test('keeps saved evidence readable when a workspace endpoint returns HTML', async ({ page }) => {
+  const fixture = new GeoFixtureWorkspace();
+  const saved = (await fixture.request('/geo/observations')) as { observations: GeoObservation[] };
+  const savedAnswer = saved.observations[0]?.capture.answerText.slice(0, 100);
+  if (!savedAnswer) throw new Error('Saved answer fixture missing');
+  let unavailable = true;
+  let posts = 0;
+  await page.route('**/api/v2/**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'POST') posts++;
+    if (unavailable && url.pathname.endsWith('/geo/analyses')) {
+      await route.fulfill({
+        status: 503,
+        contentType: 'text/html',
+        body: '<!DOCTYPE html>Unavailable',
+      });
+      return;
+    }
+    const data = await fixture.request(
+      url.pathname.replace('/api/v2', '') + url.search,
+      request.method() === 'GET' ? undefined : request.postDataJSON(),
+      request.method(),
+    );
+    await route.fulfill({ json: { data } });
+  });
+  await page.goto('/app/overview');
+  const message = page.getByText(
+    'Workspace response unavailable. Refresh the page and sign in again if requested.',
+  );
+  await expect(message).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Original answer evidence' })).toBeVisible();
+  await expect(page.getByText(savedAnswer, { exact: false }).first()).toBeVisible();
+  await expect(page.getByText(/Unexpected token/)).toHaveCount(0);
+  unavailable = false;
+  await page.getByRole('button', { name: 'Refresh saved evidence' }).click();
+  await expect(message).toHaveCount(0);
+  await expect(page.getByText(savedAnswer, { exact: false }).first()).toBeVisible();
+  expect(posts).toBe(0);
+});
+
 test('discovers scheduled uncertainty and follows operator settlement without paid POST', async ({
   page,
 }) => {
@@ -71,11 +112,11 @@ test('discovers scheduled uncertainty and follows operator settlement without pa
   await page.goto('/app/overview');
   const summary = page
     .locator('summary')
-    .filter({ hasText: 'scheduled check · 0/8 answers · partial' });
+    .filter({ hasText: 'scheduled check · 0/8 observations · partial' });
   await expect(summary).toBeVisible();
   await summary.focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByText('0 of 8 answers captured · partial')).toBeVisible();
+  await expect(page.getByText('0 of 8 observations saved · partial')).toBeVisible();
   await expect(page.getByText('SUBMISSION_LEASE_EXPIRED').first()).toBeVisible();
   run.status = 'failed';
   run.completedAt = new Date().toISOString();
@@ -83,7 +124,9 @@ test('discovers scheduled uncertainty and follows operator settlement without pa
     item.status = 'failed';
     item.terminalReason = 'OPERATOR_CLOSED';
   }
-  await expect(page.getByText('0 of 8 answers captured · failed')).toBeVisible({ timeout: 12_000 });
+  await expect(page.getByText('0 of 8 observations saved · failed')).toBeVisible({
+    timeout: 12_000,
+  });
   await expect(page.getByText('OPERATOR_CLOSED').first()).toBeVisible();
   expect(reads).toBeGreaterThan(1);
   expect(posts).toBe(0);

@@ -464,7 +464,7 @@ export const geoRunItems = sqliteTable(
       .notNull()
       .references(() => geoPromptVersions.id, { onDelete: 'cascade' }),
     engine: text('engine', {
-      enum: ['perplexity', 'google_aio', 'chatgpt_search', 'bing_copilot'],
+      enum: ['perplexity', 'openai_web_search', 'google_aio', 'chatgpt_search', 'bing_copilot'],
     }).notNull(),
     status: text('status', {
       enum: [
@@ -516,7 +516,7 @@ export const geoObservations = sqliteTable(
       .notNull()
       .references(() => geoPromptVersions.id, { onDelete: 'cascade' }),
     engine: text('engine', {
-      enum: ['perplexity', 'google_aio', 'chatgpt_search', 'bing_copilot'],
+      enum: ['perplexity', 'openai_web_search', 'google_aio', 'chatgpt_search', 'bing_copilot'],
     }).notNull(),
     model: text('model'),
     status: text('status', { enum: ['complete', 'partial', 'no_feature'] }).notNull(),
@@ -601,6 +601,29 @@ export const geoDailyOutcomes = sqliteTable(
     lastAttemptAt: timestamp('last_attempt_at').notNull(),
   },
   (table) => [primaryKey({ columns: [table.projectId, table.usageDate] })],
+);
+
+export const geoProviderRequests = sqliteTable(
+  'geo_provider_requests',
+  {
+    operationKey: text('operation_key').primaryKey(),
+    reservationId: text('reservation_id').references(() => providerCallReservations.id, {
+      onDelete: 'set null',
+    }),
+    processingId: text('processing_id').references(() => geoProcessingAttempts.id, {
+      onDelete: 'set null',
+    }),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    collector: text('collector').notNull(),
+    usageDate: text('usage_date').notNull(),
+    reservedCostUsd: text('reserved_cost_usd').notNull(),
+    reportedCostUsd: text('reported_cost_usd'),
+    estimatedCostUsd: text('estimated_cost_usd'),
+    pricingVersion: text('pricing_version'),
+    state: text('state', { enum: ['started', 'completed', 'uncertain'] }).notNull(),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (table) => [index('geo_provider_usage_idx').on(table.collector, table.usageDate)],
 );
 
 export const geoActions = sqliteTable(

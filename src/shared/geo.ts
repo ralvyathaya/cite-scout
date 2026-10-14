@@ -2,16 +2,27 @@ import { z } from 'zod';
 
 export const geoEngineSchema = z.enum([
   'perplexity',
+  'openai_web_search',
   'google_aio',
   'chatgpt_search',
   'bing_copilot',
 ]);
 export type GeoEngine = z.infer<typeof geoEngineSchema>;
+export type GeoCollector =
+  'perplexity_api' | 'openai_responses' | 'serpapi' | 'dataforseo_standard';
 export const geoSurfaces = {
   perplexity: {
     label: 'Perplexity',
     surface: 'perplexity_agent',
     collector: 'perplexity_api',
+    reportsModel: true,
+    supportsLocale: false,
+    supportsDevice: false,
+  },
+  openai_web_search: {
+    label: 'OpenAI Web Search API',
+    surface: 'openai_web_search',
+    collector: 'openai_responses',
     reportsModel: true,
     supportsLocale: false,
     supportsDevice: false,
@@ -89,8 +100,9 @@ export interface GeoRequestContext {
   promptText: string;
   engine: GeoEngine;
   surface: (typeof geoSurfaces)[GeoEngine]['surface'];
-  collector: (typeof geoSurfaces)[GeoEngine]['collector'];
-  collectorVersion: 'geo-collector-1';
+  collector: GeoCollector;
+  collectorVersion: 'geo-collector-1' | 'geo-collector-2';
+  requestedModel?: string;
   languageCode: string;
   locationCode: number;
   device: 'desktop' | 'mobile';

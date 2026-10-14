@@ -7,6 +7,7 @@ import { syncSubscription } from '../billing-sync';
 import { readJson } from '../http';
 import { getConfig } from '../config';
 import { reconcileGeoSubmission } from '../v2/collectors';
+import { reconcileGeoProviderCost } from '../v2/geo-provider-budget';
 
 const inputSchema = z
   .object({ userId: z.string().min(1).optional(), subscriptionId: z.string().min(1).optional() })
@@ -91,6 +92,39 @@ operatorRoutes.post('/geo/reconcile', async (c) => {
         },
       },
       409,
+    );
+  }
+});
+operatorRoutes.post('/geo/cost', async (c) => {
+  const parsed = z
+    .object({
+      operationKey: z.string().min(1).max(150),
+      reportedCostUsd: z.number().nonnegative().max(1000),
+    })
+    .strict()
+    .safeParse(await readJson(c.req.raw));
+  if (!parsed.success)
+    return c.json(
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Provide a request ID and verified invoice cost in USD.',
+        },
+      },
+      422,
+    );
+  try {
+    await reconcileGeoProviderCost(c.env, parsed.data.operationKey, parsed.data.reportedCostUsd);
+    return c.json({ data: { reconciled: true } });
+  } catch {
+    return c.json(
+      {
+        error: {
+          code: 'PROVIDER_REQUEST_NOT_FOUND',
+          message: 'This provider request is unavailable.',
+        },
+      },
+      404,
     );
   }
 });

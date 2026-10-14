@@ -21,12 +21,21 @@ import {
   type GeoSettings,
   type GeoSettingsInput,
 } from '../../shared/geo';
-import { getConfig, globalCollectorCallCap } from '../config';
+import { getConfig, globalCollectorCallCap, internalTestUserId } from '../config';
 import { paidProjectSql } from '../scan-policy';
 import { utcDate } from '../../domain/normalization';
+import { redactProviderData } from '../../integrations/provider-redaction';
 
 const COOLDOWN = 300_000;
-const paidGate = `${paidProjectSql} AND NOT EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.paid_starts_at>?)`;
+export function geoAccessSql(env: CloudflareBindings, at: Date): string {
+  const owner = internalTestUserId(env, at);
+  if (getConfig(env).DEPLOYMENT_ENV === 'staging')
+    return `(${paidProjectSql} AND 0=1${owner ? ` OR p.user_id='${owner}'` : ''})`;
+  // Owner IDs are restricted to alphanumeric, underscore and hyphen by getConfig.
+  return owner ? `(${paidProjectSql} OR p.user_id='${owner}')` : paidProjectSql;
+}
+const paidGate = (env: CloudflareBindings, at: Date) =>
+  `${geoAccessSql(env, at)} AND NOT EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.paid_starts_at>?)`;
 const sql = (env: CloudflareBindings, query: string, ...params: unknown[]) =>
   env.DB.prepare(query).bind(...params);
 const iso = (at: number | null) => (at === null ? null : new Date(at).toISOString());
@@ -86,7 +95,7 @@ async function hasPaidAccess(env: CloudflareBindings, userId: string, at: Date) 
   return Boolean(
     await sql(
       env,
-      `SELECT p.id FROM projects p WHERE p.user_id=? AND ${paidProjectSql}`,
+      `SELECT p.id FROM projects p WHERE p.user_id=? AND ${geoAccessSql(env, at)}`,
       userId,
       at.getTime(),
     ).first(),
@@ -303,19 +312,24 @@ export async function geoAllowance(
     `SELECT
     (SELECT count(*) FROM provider_call_reservations WHERE project_id=? AND usage_date=?) AS today,
     (SELECT count(*) FROM provider_call_reservations WHERE project_id=? AND usage_date LIKE ?) AS month,
-    (SELECT count(*) FROM provider_call_reservations WHERE usage_date=?) AS globalToday`,
+    (SELECT count(*) FROM provider_call_reservations WHERE usage_date=?) AS globalToday,
+    (SELECT count(*) FROM provider_call_reservations) AS testTotal`,
     project.id,
     date,
     project.id,
     month,
     date,
-  ).first<{ today: number; month: number; globalToday: number }>();
+  ).first<{ today: number; month: number; globalToday: number; testTotal: number }>();
   const limits = {
     projectDaily: config.GEO_PROJECT_DAILY_CALL_CAP,
     projectMonthly: config.GEO_PROJECT_MONTHLY_CALL_CAP,
     globalDaily: globalCollectorCallCap(env),
   };
-  const count = counts ?? { today: 0, month: 0, globalToday: 0 };
+  const count = {
+    today: counts?.today ?? 0,
+    month: counts?.month ?? 0,
+    globalToday: counts?.globalToday ?? 0,
+  };
   let reason: string | null = null;
   if (
     config.GEO_SCANS_ENABLED !== 'true' ||
@@ -329,7 +343,8 @@ export async function geoAllowance(
   else if (
     count.today >= limits.projectDaily ||
     count.month >= limits.projectMonthly ||
-    count.globalToday >= limits.globalDaily
+    count.globalToday >= limits.globalDaily ||
+    (config.DEPLOYMENT_ENV === 'staging' && (counts?.testTotal ?? 0) >= 24)
   )
     reason = 'GEO_QUOTA_EXCEEDED';
   return { ...count, limits, enabled: reason === null, reason, cooldownSeconds: 300 };
@@ -448,7 +463,8 @@ export async function startGeoRun(
   trigger: 'manual' | 'scheduled' = 'manual',
 ): Promise<GeoRun> {
   const input = geoRunRequestSchema.parse(value),
-    project = await projectFor(env, userId);
+    project = await projectFor(env, userId),
+    config = getConfig(env);
   const payloadHash = await geoPayloadHash(input);
   const existing = await sql(
     env,
@@ -490,12 +506,21 @@ export async function startGeoRun(
       promptText: prompt.text,
       engine,
       surface: geoSurfaces[engine].surface,
-      collector: geoSurfaces[engine].collector,
-      collectorVersion: 'geo-collector-1',
+      collector:
+        engine === 'google_aio' || engine === 'bing_copilot'
+          ? config.GEO_SERP_COLLECTOR
+          : geoSurfaces[engine].collector,
+      collectorVersion:
+        engine === 'openai_web_search' ||
+        ((engine === 'google_aio' || engine === 'bing_copilot') &&
+          config.GEO_SERP_COLLECTOR === 'serpapi')
+          ? 'geo-collector-2'
+          : 'geo-collector-1',
+      ...(engine === 'openai_web_search' ? { requestedModel: config.GEO_OPENAI_MODEL } : {}),
       languageCode: settings.languageCode,
       locationCode: settings.locationCode,
       device: settings.device,
-      forceWebSearch: engine === 'chatgpt_search',
+      forceWebSearch: engine === 'chatgpt_search' || engine === 'openai_web_search',
       brand: { id: project.id, name: project.brand_name, domain: project.canonical_domain },
       competitors,
       instructionVersion: 'neutral-research-1',
@@ -547,6 +572,8 @@ export async function startGeoRun(
     date,
     contexts.length,
     allowance.limits.globalDaily,
+    config.DEPLOYMENT_ENV === 'staging' ? 1 : 0,
+    contexts.length,
     contextsJson,
     contextsJson,
     now - COOLDOWN,
@@ -557,7 +584,7 @@ export async function startGeoRun(
     `INSERT OR IGNORE INTO scan_runs
     (id,project_id,trigger_type,provider,status,observation_date,intent_key,context_version,due_at,created_at)
     SELECT ?,?,?,'geo','pending',?,?,?, ?,? FROM projects p
-    WHERE p.id=? AND p.user_id=? AND p.context_version=? AND p.updated_at=? AND ${paidGate}
+    WHERE p.id=? AND p.user_id=? AND p.context_version=? AND p.updated_at=? AND ${paidGate(env, at)}
     AND EXISTS(SELECT 1 FROM geo_settings WHERE project_id=p.id AND revision=?)
     AND NOT EXISTS(SELECT 1 FROM json_each(?) selected WHERE NOT EXISTS(SELECT 1 FROM prompts q
       WHERE q.project_id=? AND q.id=json_extract(selected.value,'$.id') AND q.text=json_extract(selected.value,'$.text')
@@ -565,6 +592,7 @@ export async function startGeoRun(
     AND (SELECT count(*) FROM provider_call_reservations WHERE project_id=? AND usage_date=?) + ? <= ?
     AND (SELECT count(*) FROM provider_call_reservations WHERE project_id=? AND usage_date LIKE ?) + ? <= ?
     AND (SELECT count(*) FROM provider_call_reservations WHERE usage_date=?) + ? <= ?
+    AND (?=0 OR (SELECT count(*) FROM provider_call_reservations) + ? <= 24)
     AND NOT EXISTS(SELECT 1 FROM json_each(?) selected JOIN geo_run_items i
       ON i.project_id=p.id AND i.prompt_id=json_extract(selected.value,'$.promptId') AND i.engine=json_extract(selected.value,'$.engine')
       WHERE i.status IN ('pending','submitting','submitted','submission_uncertain'))
@@ -659,7 +687,13 @@ export async function startGeoRun(
   if (
     quota.today + contexts.length > quota.limits.projectDaily ||
     quota.month + contexts.length > quota.limits.projectMonthly ||
-    quota.globalToday + contexts.length > quota.limits.globalDaily
+    quota.globalToday + contexts.length > quota.limits.globalDaily ||
+    (config.DEPLOYMENT_ENV === 'staging' &&
+      Number(
+        await sql(env, 'SELECT count(*) AS total FROM provider_call_reservations').first('total'),
+      ) +
+        contexts.length >
+        24)
   )
     throw new Error('GEO_QUOTA_EXCEEDED');
   if (!(await hasPaidAccess(env, userId, at))) throw new Error('PAID_ACCESS_REQUIRED');
@@ -678,7 +712,7 @@ export async function createDailyGeoRuns(env: CloudflareBindings, at = new Date(
   const projects = await sql(
     env,
     `SELECT p.id,p.user_id FROM projects p JOIN geo_settings g ON g.project_id=p.id
-    WHERE g.daily_enabled=1 AND ${paidGate} ORDER BY p.id`,
+    WHERE g.daily_enabled=1 AND ${paidGate(env, at)} ORDER BY p.id`,
     at.getTime(),
     at.getTime(),
   ).all<{ id: string; user_id: string }>();
@@ -735,10 +769,10 @@ export async function reconcileGeoItems(env: CloudflareBindings, at = new Date()
       env,
       `UPDATE geo_run_items SET status='cancelled',terminal_reason=CASE
       WHEN NOT EXISTS(SELECT 1 FROM prompts q WHERE q.id=geo_run_items.prompt_id AND q.enabled=1 AND q.archived_at IS NULL) THEN 'prompt_inactive'
-      WHEN NOT EXISTS(SELECT 1 FROM projects p WHERE p.id=geo_run_items.project_id AND ${paidProjectSql}) THEN 'paid_access_ended'
+      WHEN NOT EXISTS(SELECT 1 FROM projects p WHERE p.id=geo_run_items.project_id AND ${geoAccessSql(env, at)}) THEN 'paid_access_ended'
       ELSE 'configuration_changed' END
       WHERE status='pending' AND (
-      NOT EXISTS(SELECT 1 FROM projects p WHERE p.id=geo_run_items.project_id AND p.context_version=json_extract(geo_run_items.context_json,'$.contextVersion') AND ${paidProjectSql})
+      NOT EXISTS(SELECT 1 FROM projects p WHERE p.id=geo_run_items.project_id AND p.context_version=json_extract(geo_run_items.context_json,'$.contextVersion') AND ${geoAccessSql(env, at)})
       OR NOT EXISTS(SELECT 1 FROM geo_settings g WHERE g.project_id=geo_run_items.project_id AND g.revision=json_extract(geo_run_items.context_json,'$.settingsRevision'))
       OR NOT EXISTS(SELECT 1 FROM prompts q WHERE q.id=geo_run_items.prompt_id AND q.text=json_extract(geo_run_items.context_json,'$.promptText') AND q.enabled=1 AND q.archived_at IS NULL)
       )`,
@@ -800,7 +834,7 @@ export async function claimGeoItem(
         WHERE p.id=geo_run_items.project_id AND p.context_version=json_extract(geo_run_items.context_json,'$.contextVersion')
         AND g.revision=json_extract(geo_run_items.context_json,'$.settingsRevision')
         AND q.id=geo_run_items.prompt_id AND q.text=json_extract(geo_run_items.context_json,'$.promptText')
-        AND q.enabled=1 AND q.archived_at IS NULL AND ${paidGate})))
+        AND q.enabled=1 AND q.archived_at IS NULL AND ${paidGate(env, at)})))
     AND EXISTS(SELECT 1 FROM projects p JOIN provider_call_reservations v ON v.project_id=p.id
       WHERE p.id=geo_run_items.project_id AND v.id=geo_run_items.reservation_id AND v.user_id=p.user_id AND v.status='reserved')`,
       token,
@@ -856,17 +890,30 @@ interface ObservationRow {
   capture_json: string;
   captured_at: number;
 }
-const observationView = (row: ObservationRow): GeoObservation => ({
-  id: row.id,
-  projectId: row.project_id,
-  runId: row.run_id,
-  itemId: row.item_id,
-  promptVersionId: row.prompt_version_id,
-  engine: row.engine,
-  capturedAt: new Date(row.captured_at).toISOString(),
-  context: JSON.parse(row.context_json) as GeoRequestContext,
-  capture: JSON.parse(row.capture_json) as GeoCapture,
-});
+function observationView(row: ObservationRow, env: CloudflareBindings): GeoObservation {
+  const capture = JSON.parse(row.capture_json) as GeoCapture;
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    runId: row.run_id,
+    itemId: row.item_id,
+    promptVersionId: row.prompt_version_id,
+    engine: row.engine,
+    capturedAt: new Date(row.captured_at).toISOString(),
+    context: JSON.parse(row.context_json) as GeoRequestContext,
+    capture: {
+      ...capture,
+      raw: redactProviderData(capture.raw, [
+        env.OPENAI_API_KEY,
+        env.SERPAPI_API_KEY,
+        env.PERPLEXITY_API_KEY,
+        env.DATAFORSEO_LOGIN,
+        env.DATAFORSEO_PASSWORD,
+        env.TYPESAFE_API_KEY,
+      ]),
+    },
+  };
+}
 export async function readGeoObservations(
   env: CloudflareBindings,
   userId: string,
@@ -892,7 +939,7 @@ export async function readGeoObservations(
   const page = rows.results.slice(0, 20),
     last = page.at(-1);
   return {
-    observations: page.map(observationView),
+    observations: page.map((row) => observationView(row, env)),
     nextCursor: rows.results.length > 20 && last ? `${String(last.captured_at)}.${last.id}` : null,
   };
 }
@@ -908,5 +955,5 @@ export async function readGeoObservation(
     userId,
   ).first<ObservationRow>();
   if (!row) throw new Error('GEO_OBSERVATION_NOT_FOUND');
-  return observationView(row);
+  return observationView(row, env);
 }

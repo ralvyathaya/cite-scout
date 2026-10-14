@@ -36,6 +36,7 @@ import {
 } from './measurement';
 import { geoCompletionSchema, geoReopenSchema } from '../../shared/geo-measurement';
 import { geoCapabilities, geoUsage } from './geo-readiness';
+import { redactProviderData } from '../../integrations/provider-redaction';
 const evidenceFilterSchema = z.object({
   days: z.coerce.number().int().min(1).max(30).default(30),
   engine: geoEngineSchema.optional(),
@@ -84,6 +85,12 @@ const errors: Record<string, string> = {
   INVALID_EVIDENCE_PERIOD: 'Choose a period from one to thirty days.',
   GEO_SCOPE_TOO_LARGE:
     'This scope contains too much evidence. Choose a shorter period or a single engine/prompt.',
+  GEO_TEST_BUDGET_REQUIRED:
+    'Configure verified request cost limits and unexpired staging access before live testing.',
+  GEO_PROVIDER_QUOTA_EXCEEDED:
+    'Provider request quota reached. Review Usage before starting another run.',
+  GEO_PROVIDER_BUDGET_BLOCKED:
+    'Provider spending is paused: a quota, retained reservation, or unknown cost needs operator review.',
 };
 
 // Mounted beneath the authenticated V2 router; standalone mounting must provide the same userId.
@@ -214,7 +221,17 @@ geoRoutes.get('/runs/:id/attempts', async (c) => {
   return c.json({
     data: rows.results.map((row) => ({
       ...row,
-      raw: row.raw === null ? null : (JSON.parse(row.raw) as unknown),
+      raw:
+        row.raw === null
+          ? null
+          : redactProviderData(JSON.parse(row.raw), [
+              c.env.OPENAI_API_KEY,
+              c.env.SERPAPI_API_KEY,
+              c.env.PERPLEXITY_API_KEY,
+              c.env.DATAFORSEO_PASSWORD,
+              c.env.DATAFORSEO_LOGIN,
+              c.env.TYPESAFE_API_KEY,
+            ]),
     })),
   });
 });

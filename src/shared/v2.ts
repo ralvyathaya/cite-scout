@@ -20,6 +20,7 @@ export interface V2ProjectPayload {
   project: V2Project | null;
   enrolled: boolean;
   canScan: boolean;
+  internalTestAccess: boolean;
   trial: {
     state: string;
     startedAt: string | null;

@@ -291,6 +291,39 @@ describe('durable DataForSEO client boundary', () => {
   });
 });
 
+it.each(['POST', 'GET'] as const)(
+  'refuses DataForSEO %s redirects without forwarding credentials or retrying',
+  async (method) => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(null, { status: 302, headers: { Location: 'https://other.example/' } }),
+      );
+    const request =
+      method === 'POST'
+        ? submitDataForSeo(
+            'private-login',
+            'private-password',
+            context('google_aio'),
+            'item',
+            fetcher,
+          )
+        : pollDataForSeo(
+            'private-login',
+            'private-password',
+            context('google_aio'),
+            'task-1',
+            fetcher,
+          );
+    await expect(request).rejects.toMatchObject({
+      code: 'PROVIDER_REDIRECT_REFUSED',
+      uncertain: method === 'POST',
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]?.[1]?.redirect).toBe('manual');
+  },
+);
+
 it('Perplexity GEO reuses exact capture, retaining verified marker offsets and unused sources', async () => {
   const raw = {
     id: 'resp-1',
