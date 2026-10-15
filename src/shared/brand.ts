@@ -1,7 +1,7 @@
 export const brand = {
   name: 'CiteScout',
-  tagline: 'See what Perplexity tells buyers about your SaaS.',
+  tagline: 'From AI answers to your next marketing action.',
   description:
-    'Track your buyers’ questions. Save the answers, inspect brand mentions and sources, and see what changed over time.',
+    'A GEO workspace for founders and marketers. Organise buyer questions, inspect AI answers and sources, review suggested actions, and measure again.',
   priceMonthly: 19,
 } as const;

@@ -78,6 +78,7 @@ export function Login() {
           window.turnstile.render(widget.current, {
             sitekey: data.turnstileSiteKey,
             action: 'magic_link',
+            size: 'compact',
             callback: setTurnstileToken,
             'expired-callback': () => {
               setTurnstileToken('');
@@ -121,92 +122,133 @@ export function Login() {
   return (
     <main
       id="main"
-      className="flex min-h-svh flex-col items-center justify-center bg-muted/50 px-4 py-12"
+      className="flex min-h-svh flex-col items-center justify-center bg-background px-4 py-8 sm:px-6 sm:py-12"
     >
-      <Link to="/" className="mb-8 flex items-center gap-2" aria-label="CiteScout home">
-        <BrandLogo />
-      </Link>
-
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-xl font-bold tracking-tight">
-            <h1 className="text-xl font-bold tracking-tight">Sign in to CiteScout</h1>
-          </CardTitle>
-          <CardDescription>
-            Sign in to inspect saved answers to your buyers’ questions.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          {googleAvailable && (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={googleLoading || status === 'sending'}
-                onClick={() => {
-                  void handleGoogleSignIn();
-                }}
-                className="flex w-full items-center justify-center gap-2.5 font-medium shadow-none hover:bg-accent"
-              >
-                <GoogleColorIcon className="size-4 shrink-0" />
-                <span>{googleLoading ? 'Connecting to Google…' : 'Continue with Google'}</span>
-              </Button>
-
-              <div className="relative my-0.5 text-center text-xs text-muted-foreground after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">
-                <span className="relative z-10 bg-card px-2">or continue with work email</span>
-              </div>
-            </>
-          )}
-          <form
-            className="flex flex-col gap-4"
-            onSubmit={(event) => {
-              void submit(event);
-            }}
-          >
-            <div className="grid gap-2">
-              <Label htmlFor="email">Work email</Label>
-              <Input
-                id="email"
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(event) => {
-                  setEmail(event.target.value);
-                }}
-                placeholder="you@company.com"
-              />
+      <div className="w-full max-w-5xl">
+        <Link to="/" className="mb-8 inline-flex" aria-label="CiteScout home">
+          <BrandLogo />
+        </Link>
+        <div className="grid items-center gap-10 md:grid-cols-[1fr_1fr] lg:gap-20">
+          <section className="hidden min-w-0 space-y-6 md:block" aria-label="Your workspace">
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+                Your evidence workspace
+              </p>
+              <h2 className="max-w-sm text-3xl font-semibold leading-tight tracking-tight lg:text-4xl">
+                Come back to the evidence.
+              </h2>
+              <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
+                Keep your buyer questions, returned answers, and source evidence together.
+              </p>
             </div>
-
-            <div ref={widget} className="min-h-10">
-              {turnstileToken === 'local-development' && (
-                <p className="text-xs text-muted-foreground">
-                  Dev mode: the sign-in link is printed in the dev server terminal after you submit.
+            <div className="space-y-4 border-l-2 border-primary/20 pl-5">
+              <div>
+                <p className="text-sm font-medium">Questions in context</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Return to the prompts and checks you have already saved.
                 </p>
-              )}
+              </div>
+              <div>
+                <p className="text-sm font-medium">Answers you can inspect</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Read the original response and inspect its returned sources.
+                </p>
+              </div>
             </div>
-
-            <Button
-              type="submit"
-              disabled={status === 'sending' || googleLoading || !turnstileToken}
-            >
-              {status === 'sending' ? 'Sending…' : 'Email my secure link'}
-            </Button>
-
-            <p
-              role="status"
-              aria-live="polite"
-              className={`min-h-4 text-center text-xs ${
-                status === 'error' ? 'text-destructive' : 'text-muted-foreground'
-              }`}
-            >
-              {message}
+            <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+              GEO is in preview and depends on account access. Signing in does not start a
+              monitoring run or a subscription.
             </p>
-          </form>
-        </CardContent>
-      </Card>
+          </section>
 
-      <p className="mt-6 text-center text-xs text-muted-foreground">
+          <Card className="mx-auto w-full min-w-0 max-w-md shadow-sm">
+            <CardHeader>
+              <CardTitle>
+                <h1 className="text-2xl font-semibold tracking-tight">Sign in to CiteScout</h1>
+              </CardTitle>
+              <CardDescription className="leading-relaxed">
+                Sign in to inspect saved answers to your buyers’ questions. Use a secure email link
+                {googleAvailable ? ' or your Google account' : ''}; no password needed.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex min-w-0 flex-col gap-4">
+              {googleAvailable && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={googleLoading || status === 'sending'}
+                    onClick={() => {
+                      void handleGoogleSignIn();
+                    }}
+                    className="flex w-full items-center justify-center gap-2.5 font-medium shadow-none hover:bg-accent"
+                  >
+                    <GoogleColorIcon className="size-4 shrink-0" />
+                    <span>{googleLoading ? 'Connecting to Google…' : 'Continue with Google'}</span>
+                  </Button>
+
+                  <div className="relative my-0.5 text-center text-xs text-muted-foreground after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">
+                    <span className="relative z-10 bg-card px-2">or continue with work email</span>
+                  </div>
+                </>
+              )}
+              <form
+                className="flex min-w-0 flex-col gap-4"
+                onSubmit={(event) => {
+                  void submit(event);
+                }}
+              >
+                <div className="grid gap-2">
+                  <Label htmlFor="email">Work email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    required
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) => {
+                      setEmail(event.target.value);
+                    }}
+                    placeholder="you@company.com"
+                  />
+                </div>
+
+                <div ref={widget} className="min-h-10 max-w-full">
+                  {turnstileToken === 'local-development' && (
+                    <p className="text-xs text-muted-foreground">
+                      Dev mode: the sign-in link is printed in the dev server terminal after you
+                      submit.
+                    </p>
+                  )}
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={status === 'sending' || googleLoading || !turnstileToken}
+                >
+                  {status === 'sending' ? 'Sending…' : 'Email my secure link'}
+                </Button>
+
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className={`min-h-4 break-words text-sm leading-relaxed ${
+                    message
+                      ? status === 'error'
+                        ? 'rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-destructive'
+                        : 'rounded-lg border border-primary/20 bg-primary/5 p-3 text-foreground'
+                      : 'text-muted-foreground'
+                  }`}
+                >
+                  {message}
+                </p>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <p className="mt-8 max-w-md text-center text-xs leading-relaxed text-muted-foreground">
         Links are single-use and expire after 10 minutes. By continuing you agree to our{' '}
         <Link to="/terms" className="underline underline-offset-4 hover:text-foreground">
           Terms

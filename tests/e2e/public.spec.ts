@@ -5,37 +5,46 @@ test.describe('public visitor', () => {
     await page.goto('/');
 
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      'See what Perplexity tells buyers about your SaaS.',
+      'From AI answers to your next marketing action.',
     );
-    await expect(
-      page.getByText(/Results can differ from the Perplexity app/).first(),
-    ).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Run my baseline' }).first()).toBeVisible();
+    await expect(page.getByText('GEO workspace · Preview')).toBeVisible();
+    const preview = page.getByRole('main').getByRole('link', { name: 'Explore GEO preview' });
+    await expect(preview).toHaveAttribute('href', '/demo');
+    await preview.click();
+    await expect(page).toHaveURL(/\/demo$/);
+    await expect(page.getByText('Synthetic example', { exact: true }).first()).toBeVisible();
   });
 
   test('hero preview distinguishes baseline, follow-up and returned sources', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/demo');
 
     await expect(page.getByText('Baseline · example answer')).toBeVisible();
     await expect(page.getByText('Follow-up · example answer')).toBeVisible();
     await expect(page.getByText('Returned only:', { exact: true })).toBeVisible();
-    await expect(page.getByText('Illustrative example', { exact: false }).first()).toBeVisible();
+    await expect(page.getByText('Synthetic example', { exact: true }).first()).toBeVisible();
     expect(await page.getByText('Live observation preview').count()).toBe(0);
   });
 
   test('demo dashboard is labelled and shows no provider calls', async ({ page }) => {
     const providerCalls: string[] = [];
     page.on('request', (request) => {
-      if (request.url().includes('api.perplexity.ai')) providerCalls.push(request.url());
+      if (/api\.(perplexity|openai)\.|serpapi\.com|\/api\/v2\//.test(request.url()))
+        providerCalls.push(request.url());
     });
 
     await page.goto('/demo');
 
-    await expect(page.getByText('Illustrative example').first()).toBeVisible();
+    await expect(page.getByText('Synthetic example', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      'Follow one buyer question over time.',
+      'Follow the evidence. Decide what to do next.',
     );
     await expect(page.getByText('Brand match appeared: CedarFlow')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Review the diagnosis' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose a concrete task' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Measure again with context' })).toBeVisible();
+    await expect(page.getByText('Needs review', { exact: true })).toBeVisible();
+    await expect(page.getByText('Web / Owned', { exact: true })).toBeVisible();
+    await expect(page.getByText('Earned Media', { exact: true })).toBeVisible();
 
     expect(providerCalls).toEqual([]);
   });
@@ -47,6 +56,11 @@ test.describe('public visitor', () => {
       'Keep checking the questions buyers ask.',
     );
     await expect(page.getByText('$19').first()).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Perplexity monitoring', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GEO preview', exact: true })).toBeVisible();
+    await expect(page.getByText('GEO preview is separate from the $19 plan.')).toBeVisible();
     await expect(page.getByText(/No card required/).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Can I cancel anytime?' })).toBeVisible();
 
@@ -68,6 +82,22 @@ test.describe('public visitor', () => {
     await question.click();
     await expect(question).toHaveAttribute('aria-expanded', 'true');
     await expect(page.getByText(/from the self-serve billing portal/)).toBeVisible();
+    await question.press('Enter');
+    await expect(question).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByText(/from the self-serve billing portal/)).toBeHidden();
+  });
+
+  test('the existing Perplexity plan still leads visitors into sign-in for onboarding', async ({
+    page,
+  }) => {
+    await page.goto('/pricing');
+    const baseline = page
+      .getByRole('main')
+      .getByRole('link', { name: 'Run my baseline', exact: true });
+    await expect(baseline).toHaveAttribute('href', '/app/onboarding');
+    await baseline.click();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByLabel('Work email', { exact: true })).toBeVisible();
   });
 
   test('legal pages render real terms with contact and refund policy', async ({ page }) => {
@@ -98,6 +128,31 @@ test.describe('public visitor', () => {
   });
 });
 
+for (const width of [320, 768, 1280, 1440]) {
+  test(`public presentation fits ${String(width)}px without hiding page content`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: width >= 1440 ? 900 : 720 });
+    for (const path of [
+      '/',
+      '/demo',
+      '/pricing',
+      '/login',
+      '/privacy',
+      '/terms',
+      '/missing-page',
+    ]) {
+      await page.goto(path);
+      await expect(page.getByRole('main')).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+        `${path} at ${String(width)}px`,
+      ).toBe(true);
+    }
+  });
+}
+
 test.describe('document metadata', () => {
   test('favicon and social meta are served', async ({ page, request }) => {
     await page.goto('/');
@@ -106,7 +161,7 @@ test.describe('document metadata', () => {
     await expect(icon).toHaveAttribute('href', '/favicon.svg');
     await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
       'content',
-      /See what Perplexity tells buyers/,
+      /From AI answers to your next marketing action/,
     );
     await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
       'content',

@@ -436,15 +436,20 @@ export function V2Onboarding() {
     return <Navigate to={data.internalTestAccess ? '/app/overview' : '/app/questions'} replace />;
   if (!data.enrolled && !data.canScan && !data.internalTestAccess)
     return (
-      <section className="mx-auto max-w-xl space-y-5 py-12">
-        <h1 className="text-3xl font-semibold">Run your first buyer-question baseline</h1>
-        <Notice>
-          The pilot is currently founder-assisted. Bring three real questions you have already
-          checked in Perplexity.
-        </Notice>
-        <Button asChild>
-          <a href={`mailto:${data.supportEmail}`}>Contact the founder</a>
-        </Button>
+      <section className="mx-auto max-w-2xl space-y-5 py-6">
+        <WorkspaceHeading
+          title="Run your first buyer-question baseline"
+          description="Start with a focused set of questions about your market."
+        />
+        <div className={`${box} space-y-5`}>
+          <Notice>
+            The pilot is currently founder-assisted. Bring three real questions you have already
+            checked in Perplexity.
+          </Notice>
+          <Button asChild>
+            <a href={`mailto:${data.supportEmail}`}>Contact the founder</a>
+          </Button>
+        </div>
       </section>
     );
   async function submit(e: SubmitEvent) {
@@ -469,45 +474,82 @@ export function V2Onboarding() {
     });
   }
   return (
-    <section className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">
-          {data.internalTestAccess ? 'Owner staging validation' : 'Your first baseline'}
-        </p>
-        <h1 className="text-3xl font-semibold tracking-tight">What do your buyers ask?</h1>
-      </div>
+    <section className="mx-auto max-w-3xl space-y-5">
+      <WorkspaceHeading
+        title="What do your buyers ask?"
+        description={
+          data.internalTestAccess
+            ? 'Set up your staging project first. You will choose engines and start monitoring separately.'
+            : 'Define your company, competitors, and three buyer questions before running your first baseline.'
+        }
+      />
+      <ol aria-label="Project setup steps" className="grid grid-cols-2 gap-3 text-sm">
+        <li
+          aria-current={!review ? 'step' : undefined}
+          className={`rounded-lg border px-3 py-3 ${!review ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
+        >
+          <span className="block text-xs">Step 1</span>
+          <span className="mt-1 block font-medium">Project & questions</span>
+        </li>
+        <li
+          aria-current={review ? 'step' : undefined}
+          className={`rounded-lg border px-3 py-3 ${review ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
+        >
+          <span className="block text-xs">Step 2</span>
+          <span className="mt-1 block font-medium">
+            {data.internalTestAccess ? 'Review & save' : 'Review & run'}
+          </span>
+        </li>
+      </ol>
       <TrialStatus data={data} />
-      <form onSubmit={(e) => void submit(e)} className={`${box} space-y-5`}>
-        <IdentityFields value={identity} set={setIdentity} disabled={review} />
-        {questions.map((q, index) => (
-          <label key={index} className="block space-y-2 text-sm">
-            Buyer question {index + 1}
-            <Textarea
-              required
-              minLength={10}
-              maxLength={500}
-              disabled={review}
-              value={q}
-              placeholder="Which customer onboarding tools work for a small B2B SaaS team?"
-              onChange={(e) => {
-                setQuestions(questions.map((text, i) => (i === index ? e.target.value : text)));
-              }}
-            />
-            {identity.brandName.length > 1 &&
-              q.toLowerCase().includes(identity.brandName.toLowerCase()) && (
-                <span className="text-muted-foreground">
-                  Naming your brand may encourage a mention. Keep it if that reflects a real buyer
-                  question.
-                </span>
-              )}
-          </label>
-        ))}
-        <p className="text-sm text-muted-foreground">
-          Use questions a buyer would ask when comparing options.
-          {data.internalTestAccess
-            ? ' Saving creates your project without calling a provider. Choose engines and use Monitor Prompts afterward.'
-            : ' All three questions will be checked.'}
-        </p>
+      <form onSubmit={(e) => void submit(e)} className={`${box} space-y-6`}>
+        <section className="space-y-4" aria-labelledby="project-identity-heading">
+          <div className="space-y-1">
+            <h2 id="project-identity-heading" className="font-semibold">
+              Company & competitors
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              These names and domains provide context for your saved evidence.
+            </p>
+          </div>
+          <IdentityFields value={identity} set={setIdentity} disabled={review} />
+        </section>
+        <section className="space-y-4 border-t pt-5" aria-labelledby="buyer-questions-heading">
+          <div className="space-y-1">
+            <h2 id="buyer-questions-heading" className="font-semibold">
+              Three buyer questions
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Use questions a buyer would ask when comparing options.
+              {data.internalTestAccess
+                ? ' Saving creates your project without calling a provider.'
+                : ' All three questions will be checked.'}
+            </p>
+          </div>
+          {questions.map((q, index) => (
+            <label key={index} className="block space-y-2 rounded-lg bg-muted/40 p-3 text-sm">
+              Buyer question {index + 1}
+              <Textarea
+                required
+                minLength={10}
+                maxLength={500}
+                disabled={review}
+                value={q}
+                placeholder="Which customer onboarding tools work for a small B2B SaaS team?"
+                onChange={(e) => {
+                  setQuestions(questions.map((text, i) => (i === index ? e.target.value : text)));
+                }}
+              />
+              {identity.brandName.length > 1 &&
+                q.toLowerCase().includes(identity.brandName.toLowerCase()) && (
+                  <span className="text-muted-foreground">
+                    Naming your brand may encourage a mention. Keep it if that reflects a real buyer
+                    question.
+                  </span>
+                )}
+            </label>
+          ))}
+        </section>
         {review && (
           <Notice>
             {data.internalTestAccess
@@ -516,7 +558,7 @@ export function V2Onboarding() {
           </Notice>
         )}
         <Failure error={action.error} />
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3 border-t pt-5">
           {review && (
             <Button
               type="button"
