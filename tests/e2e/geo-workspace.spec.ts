@@ -56,6 +56,26 @@ test('local fixture workspace completes the evidence-action loop without any API
   await page.getByRole('button', { name: 'Monitor Prompts', exact: true }).click();
   await expect(page.getByText(/observations saved/).first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('geo-action-pin.png'), fullPage: true });
+  await page
+    .getByRole('textbox', { name: 'Reason for reopening', exact: true })
+    .fill('Synthetic follow-up: verify the updated comparison evidence.');
+  await page.getByRole('button', { name: 'Reopen action', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Complete action & record pin', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByText('Synthetic follow-up: verify the updated comparison evidence.', { exact: false })
+      .first(),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByText(
+        'Synthetic update: published a clearer buyer comparison with verified product facts.',
+        { exact: false },
+      )
+      .first(),
+  ).toBeVisible();
   expect(requests).toEqual([]);
 });
 test('GEO pages retain usable layout at mobile and tablet widths', async ({ page }) => {

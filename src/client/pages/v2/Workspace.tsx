@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type SubmitEvent } from 'react';
+import { useEffect, useState, type ReactNode, type SubmitEvent } from 'react';
 import {
   BarChart3,
   ListChecks,
@@ -27,6 +27,7 @@ import {
 } from 'react-router';
 import { Button } from '../../components/ui/button';
 import { BrandLogo } from '../../components/BrandLogo';
+import { WorkspaceHeading } from './WorkspaceHeading';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import {
@@ -58,7 +59,7 @@ const time = (date: string | null | undefined) =>
   date
     ? new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     : 'Not scheduled';
-const box = 'rounded-xl border bg-card p-5 shadow-sm';
+const box = 'min-w-0 break-words rounded-xl border bg-card p-5 shadow-sm';
 function Notice({ children }: { children: ReactNode }) {
   return (
     <p className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">{children}</p>
@@ -645,13 +646,10 @@ export function V2Questions() {
     ) ?? [];
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-sm text-muted-foreground">{data.project.brandName}</p>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            {geoSettings.data?.configured ? 'Prompt Sets' : 'Buyer questions'}
-          </h1>
-        </div>
+      <WorkspaceHeading
+        title={geoSettings.data?.configured ? 'Prompt Sets' : 'Buyer questions'}
+        description={`Manage buyer questions for ${data.project.brandName}, group them into sets and inspect their saved evidence.`}
+      >
         {geoSettings.data?.configured !== true &&
           !geoSettings.loading &&
           (data.canScan || data.trial?.state === 'eligible') && (
@@ -662,7 +660,7 @@ export function V2Questions() {
               {data.canScan ? 'Check today' : 'Run my baseline'}
             </Button>
           )}
-      </div>
+      </WorkspaceHeading>
       <TrialStatus data={data} />
       <GeoPromptSets />
       {geoSettings.data?.configured && (
@@ -674,6 +672,13 @@ export function V2Questions() {
       )}
       <Failure error={action.error ?? rows.error ?? geoSettings.error} />
       {runId && <RunProgress id={runId} />}
+      <div className="space-y-1 border-t pt-5">
+        <h2 className="text-lg font-semibold">Buyer question library</h2>
+        <p className="text-sm text-muted-foreground">
+          Manage the questions used in your prompt sets. Saved Perplexity answers and literal-match
+          summaries remain available below.
+        </p>
+      </div>
       {rows.data && (
         <div className="space-y-2">
           <p className="text-xl font-medium">
@@ -1349,12 +1354,18 @@ interface Billing {
 }
 export function V2Settings() {
   const fixture = fixtureMode();
+  const { hash } = useLocation();
   const { data, reload } = useOutletContext<WorkspaceContext>();
   const billing = useResource<Billing>('/api/billing/status');
   const action = useAction(reload);
   const [identity, setIdentity] = useState<IdentityDraft | null>(null);
   const [confirmation, setConfirmation] = useState('');
   const [forfeit, setForfeit] = useState(false);
+  const [monitoringReady, setMonitoringReady] = useState(false);
+  useEffect(() => {
+    if (hash === '#subscription' && monitoringReady)
+      document.getElementById('subscription')?.scrollIntoView();
+  }, [hash, monitoringReady]);
   if (!data.project) return <Navigate to="/app/onboarding" replace />;
   const value = identity ?? {
     brandName: data.project.brandName,
@@ -1372,13 +1383,34 @@ export function V2Settings() {
     });
   }
   return (
-    <section className="mx-auto max-w-3xl space-y-6">
-      <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
+    <section className="mx-auto max-w-5xl space-y-6">
+      <WorkspaceHeading
+        title="Settings"
+        description="Manage monitoring, the brand context used for diagnosis and your account."
+      />
+      <nav
+        aria-label="Settings sections"
+        className="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border bg-card px-4 py-3 text-sm text-primary"
+      >
+        <a className="underline underline-offset-4" href="#monitoring">
+          Monitoring
+        </a>
+        <a className="underline underline-offset-4" href="#brand-context">
+          Brand context
+        </a>
+        <a className="underline underline-offset-4" href="#subscription">
+          Subscription
+        </a>
+        <a className="underline underline-offset-4" href="#account">
+          Account
+        </a>
+      </nav>
       <TrialStatus data={data} />
-      <GeoSettingsPanel />
+      <GeoSettingsPanel onReady={setMonitoringReady} />
       <Failure error={action.error ?? billing.error} />
       <form
-        className={`${box} space-y-4`}
+        id="brand-context"
+        className={`${box} scroll-mt-20 space-y-4`}
         onSubmit={(e) => {
           e.preventDefault();
           void action.run(async () => {
@@ -1410,9 +1442,15 @@ export function V2Settings() {
           <Button disabled={action.busy}>Save configuration</Button>
         )}
       </form>
-      <section className={`${box} space-y-4`}>
+      <section id="subscription" className={`${box} scroll-mt-20 space-y-4`}>
         <h2 className="text-lg font-medium">Monitoring and billing</h2>
-        <p>$19/month · One project · Up to 10 active questions · Daily checks</p>
+        <p className="text-sm">
+          Legacy Perplexity plan · $19/month · One project · Up to 10 active questions · Daily
+          checks
+        </p>
+        <p className="text-xs text-muted-foreground">
+          GEO owner preview and collector budgets are separate from this subscription.
+        </p>
         <p className="text-sm text-muted-foreground">
           {data.usage.today}/{data.usage.dailyLimit} attempts today · {data.usage.month}/
           {data.usage.monthlyLimit} this calendar month. Daily allowance resets{' '}
@@ -1452,7 +1490,7 @@ export function V2Settings() {
           does not confirm payment.
         </p>
       </section>
-      <details className={`${box} space-y-4`}>
+      <details id="account" className={`${box} scroll-mt-20 space-y-4`}>
         <summary className="cursor-pointer font-medium">Delete account permanently</summary>
         <p className="mt-4 text-sm">
           This removes your project, evidence and product events. Cancel renewal in the billing

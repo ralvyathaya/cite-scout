@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { api, useResource } from './api';
+import { WorkspaceHeading } from './WorkspaceHeading';
 import type { WorkspaceContext } from './Workspace';
 import {
   geoSurfaces,
@@ -45,7 +46,7 @@ import type {
 } from '../../../shared/geo-actions';
 import type { GeoDailySample, GeoMetric, GeoPinMeasurement } from '../../../shared/geo-measurement';
 
-const box = 'rounded-xl border bg-card p-5 shadow-sm';
+const box = 'min-w-0 break-words rounded-xl border bg-card p-5 shadow-sm';
 const small = 'text-xs leading-relaxed text-muted-foreground';
 const engines = Object.keys(geoSurfaces) as GeoEngine[];
 const time = (value: string | null) =>
@@ -53,6 +54,15 @@ const time = (value: string | null) =>
     ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     : 'Not reported';
 const words = (value: string) => value.replaceAll('_', ' ');
+function CaptureBadge({ quality }: { quality: GeoObservation['capture']['quality'] }) {
+  return (
+    <Badge
+      variant={quality === 'complete' ? 'success' : quality === 'partial' ? 'warning' : 'secondary'}
+    >
+      {quality === 'no_feature' ? 'No AI feature' : quality === 'complete' ? 'Complete' : 'Partial'}
+    </Badge>
+  );
+}
 function relativeTime(value: string) {
   const minutes = Math.round((Date.parse(value) - Date.now()) / 60_000);
   if (Math.abs(minutes) < 1) return 'Just now';
@@ -592,13 +602,17 @@ function ObservationProof({
     URL.revokeObjectURL(url);
   }
   return (
-    <section className={`${box} min-w-0 space-y-4`} aria-label="Original observation evidence">
+    <section
+      id="original-evidence"
+      className={`${box} min-w-0 scroll-mt-20 space-y-4`}
+      aria-label="Original observation evidence"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 font-semibold">
           <FileSearch className="size-4 text-primary" aria-hidden="true" />
           Original answer evidence
         </h2>
-        <Badge variant="outline">{words(capture.quality)}</Badge>
+        <CaptureBadge quality={capture.quality} />
       </div>
       <div className="rounded-lg border bg-muted/20 p-3">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1326,7 +1340,10 @@ export function GeoObservations() {
   const nextCursor = observations.data?.nextCursor;
   return (
     <section className="space-y-5">
-      <h1 className="text-3xl font-semibold tracking-tight">Observations</h1>
+      <WorkspaceHeading
+        title="Observations"
+        description="Inspect the prompt, original answer and sources behind every saved observation."
+      />
       <EvidenceFilters filter={filter} />
       <ScopeLabel filter={filter} />
       <ErrorNotice error={observations.error} />
@@ -1346,13 +1363,17 @@ export function GeoObservations() {
               {observations.data.observations.map((observation) => (
                 <Link
                   key={observation.id}
-                  to={`/app/observations/${encodeURIComponent(observation.id)}`}
+                  to={`/app/observations/${encodeURIComponent(observation.id)}?${filter.params}`}
                   className={`${box} block space-y-2 hover:border-primary/40`}
                 >
-                  <p className="text-sm font-medium">{observation.context.promptText}</p>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="min-w-0 flex-1 break-words text-sm font-semibold">
+                      {observation.context.promptText}
+                    </p>
+                    <CaptureBadge quality={observation.capture.quality} />
+                  </div>
                   <p className={small}>
-                    {geoSurfaces[observation.engine].label} · {time(observation.capturedAt)} ·{' '}
-                    {words(observation.capture.quality)}
+                    {geoSurfaces[observation.engine].label} · {time(observation.capturedAt)}
                   </p>
                   <p className="line-clamp-2 whitespace-pre-wrap break-words text-sm text-muted-foreground">
                     {observation.capture.answerText ||
@@ -1398,6 +1419,7 @@ export function GeoObservations() {
 }
 function PromptMatrix({ observations }: { observations: GeoObservation[] }) {
   const { data } = useOutletContext<WorkspaceContext>();
+  const [params] = useSearchParams();
   return (
     <section className={`${box} space-y-3`}>
       <h2 className="font-semibold">Prompt × engine evidence matrix</h2>
@@ -1435,9 +1457,9 @@ function PromptMatrix({ observations }: { observations: GeoObservation[] }) {
                       {observation ? (
                         <Link
                           className="text-primary underline"
-                          to={`/app/observations/${encodeURIComponent(observation.id)}`}
+                          to={`/app/observations/${encodeURIComponent(observation.id)}?${params}`}
                         >
-                          {words(observation.capture.quality)}
+                          <CaptureBadge quality={observation.capture.quality} />
                           <span className="mt-1 block text-muted-foreground">
                             {time(observation.capturedAt)}
                           </span>
@@ -1464,7 +1486,7 @@ function AnalysisCard({ analysis }: { analysis: GeoAnalysis }) {
     <article className={`${box} space-y-3`}>
       <div className="flex flex-wrap justify-between gap-2">
         <h3 className="font-semibold">{words(analysis.state)} classification</h3>
-        <Badge variant="outline">Needs review</Badge>
+        <Badge variant="warning">Needs review</Badge>
       </div>
       <p className={small}>
         {analysis.model} · {time(analysis.createdAt)} · rubric {analysis.rubricVersion} · policy{' '}
@@ -1472,7 +1494,7 @@ function AnalysisCard({ analysis }: { analysis: GeoAnalysis }) {
       </p>
       {classification ? (
         <>
-          <div className="grid gap-2 text-sm sm:grid-cols-2">
+          <div className="grid gap-3 rounded-lg bg-muted/40 p-4 text-sm sm:grid-cols-2">
             <p>
               Answer quality: <strong>{words(classification.answerQuality)}</strong>
             </p>
@@ -1582,10 +1604,12 @@ function AnalysisCard({ analysis }: { analysis: GeoAnalysis }) {
   );
 }
 export function GeoObservationDetail() {
+  const [params] = useSearchParams();
   const { observationId = '' } = useParams();
   const path = `/geo/observations/${encodeURIComponent(observationId)}`;
   const observation = useResource<GeoObservation>(path);
   const analyses = useResource<GeoAnalysis[]>(`${path}/analyses`, analysisPending);
+  const actions = useResource<GeoAction[]>('/geo/actions');
   const checks = useResource<GeoPageCheck[]>(`${path}/page-checks`, true);
   const capabilities = useResource<GeoCapabilities>('/geo/capabilities');
   const mutation = useMutation();
@@ -1606,21 +1630,44 @@ export function GeoObservationDetail() {
   const targets = Array.from(new Set([...checkedSources, ...(home ? [home] : [])]));
   const chosenTarget = targets.includes(target) ? target : targets[0];
   const latest = analyses.data?.[0];
+  const relatedActions =
+    actions.data?.filter((action) =>
+      action.scopes.some((scope) => scope.observationId === observationId),
+    ) ?? [];
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-semibold tracking-tight">Original observation</h1>
-        <Link className="text-sm text-primary underline" to="/app/observations">
+      <WorkspaceHeading
+        title="Original observation"
+        description="Start with the original answer, then review the diagnosis and supporting checks."
+      >
+        <Link className="text-sm text-primary underline" to={`/app/observations?${params}`}>
           All observations
         </Link>
-      </div>
+      </WorkspaceHeading>
+      <nav
+        aria-label="Observation sections"
+        className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-primary"
+      >
+        <a className="underline underline-offset-4" href="#original-evidence">
+          Original answer
+        </a>
+        <a className="underline underline-offset-4" href="#decision-analysis">
+          Decision analysis
+        </a>
+        <a className="underline underline-offset-4" href="#owned-page-checks">
+          Owned page checks
+        </a>
+        <a className="underline underline-offset-4" href="#related-work">
+          Related work
+        </a>
+      </nav>
       <ErrorNotice error={observation.error} />
       {observation.loading ? (
         <p role="status">Loading immutable capture…</p>
       ) : (
         observation.data && <ObservationProof observation={observation.data} full />
       )}
-      <section className={`${box} space-y-3`}>
+      <section id="decision-analysis" className={`${box} scroll-mt-20 space-y-3`}>
         <h2 className="font-semibold">Decision analysis · captured evidence retained</h2>
         <ErrorNotice error={mutation.error ?? capabilities.error ?? analyses.error} />
         <Button
@@ -1658,7 +1705,52 @@ export function GeoObservationDetail() {
       {analyses.data?.map((analysis) => (
         <AnalysisCard key={analysis.id} analysis={analysis} />
       ))}
-      <section className={`${box} space-y-3`}>
+      <section
+        id="related-work"
+        aria-labelledby="related-work-title"
+        className="scroll-mt-20 space-y-3"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="related-work-title" className="font-semibold">
+            Related work
+          </h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={actions.loading}
+              onClick={() => void actions.reload()}
+            >
+              Refresh related work
+            </Button>
+            <Link className="text-sm text-primary underline" to="/app/playbook">
+              All work
+            </Link>
+          </div>
+        </div>
+        <p className={small}>
+          These tasks include this observation in their supporting scope. Review the brief and
+          evidence before acting.
+        </p>
+        <ErrorNotice error={actions.error} />
+        {actions.loading ? (
+          <p role="status">Loading related work…</p>
+        ) : relatedActions.length ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {relatedActions.map((action) => (
+              <ActionCard key={action.id} action={action} />
+            ))}
+          </div>
+        ) : (
+          !actions.error && (
+            <Empty>
+              No linked task in the currently loaded work. A missing diagnosis does not establish an
+              optimisation problem.
+            </Empty>
+          )
+        )}
+      </section>
+      <section id="owned-page-checks" className={`${box} scroll-mt-20 space-y-3`}>
         <h2 className="font-semibold">Owned page checks</h2>
         <p className={small}>
           Check an observed owned source or the frozen brand homepage. A page response does not
@@ -1724,12 +1816,16 @@ export function GeoDiagnoses() {
   const analyses = useResource<GeoAnalysis[]>('/geo/analyses', analysisPending);
   return (
     <section className="space-y-5">
-      <h1 className="text-3xl font-semibold tracking-tight">Diagnoses</h1>
-      <p className="max-w-3xl text-sm text-muted-foreground">
-        Review persisted retrieval, evidence and recommendation-fit findings together. Suspected and
-        unknown causes remain explicit; every finding requires human review and supporting original
-        evidence.
-      </p>
+      <WorkspaceHeading
+        title="Diagnoses"
+        description="Review retrieval, evidence and recommendation-fit findings against the original answer. Every finding needs human review; suspected and unknown causes stay explicit."
+      >
+        <Button asChild variant="outline" size="sm">
+          <Link to="/app/playbook">
+            Review action playbook <ArrowRight className="size-3" aria-hidden="true" />
+          </Link>
+        </Button>
+      </WorkspaceHeading>
       <ErrorNotice error={analyses.error} />
       {analyses.loading ? (
         <p role="status">Loading persisted analyses…</p>
@@ -1751,7 +1847,7 @@ function ActionCard({ action }: { action: GeoAction }) {
   return (
     <Link
       to={`/app/playbook/${encodeURIComponent(action.id)}`}
-      className="block space-y-2 rounded-lg border p-4 hover:border-primary/40"
+      className="block min-w-0 space-y-3 rounded-xl border bg-card p-5 shadow-sm transition-colors hover:border-primary/40"
     >
       <div className="flex flex-wrap gap-2">
         <Badge variant={action.category === 'owned' ? 'secondary' : 'outline'}>
@@ -1783,27 +1879,30 @@ export function GeoPlaybook() {
   const owned = visible.filter((action) => action.category === 'owned').length;
   return (
     <section className="space-y-5">
-      <h1 className="text-3xl font-semibold tracking-tight">Action Playbook</h1>
-      <p className="text-sm text-muted-foreground">
-        Review the brief, accept work, and implement it in your own tools. Completion records a
-        change and a pin; capture a fresh follow-up explicitly when ready.
-      </p>
-      <Choice
-        label="Action status"
-        value={status}
-        set={setStatus}
-        options={[
-          { value: 'active', label: 'Proposed & active work' },
-          { value: 'completed', label: 'Completed' },
-          { value: 'dismissed', label: 'Dismissed' },
-          { value: 'all', label: 'All actions' },
-        ]}
+      <WorkspaceHeading
+        title="Action Playbook"
+        description="Review a brief and implement it in your own tools. Record the change, then measure again when ready. A completed task is not proof of a visibility improvement."
       />
+      <div className="max-w-sm">
+        <Choice
+          label="Action status"
+          value={status}
+          set={setStatus}
+          options={[
+            { value: 'active', label: 'Proposed & active work' },
+            { value: 'completed', label: 'Completed' },
+            { value: 'dismissed', label: 'Dismissed' },
+            { value: 'all', label: 'All actions' },
+          ]}
+        />
+      </div>
       <ErrorNotice error={actions.error} />
-      <p className={small}>
-        {visible.length} tasks in this view · {owned} Web / Owned · {visible.length - owned} Earned
-        Media. Counts describe actual project work; no target split is assumed.
-      </p>
+      {actions.data && (
+        <p className={small}>
+          {visible.length} tasks in this view · {owned} Web / Owned · {visible.length - owned}{' '}
+          Earned Media. Counts describe actual project work; no target split is assumed.
+        </p>
+      )}
       {actions.loading ? (
         <p role="status">Loading proposed and accepted work…</p>
       ) : visible.length ? (
@@ -1852,12 +1951,14 @@ export function GeoActionPage() {
     : [];
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-semibold tracking-tight">Action brief</h1>
+      <WorkspaceHeading
+        title="Action brief"
+        description="Review the evidence, record your work and compare a follow-up in the same frozen scope."
+      >
         <Link className="text-sm text-primary underline" to="/app/playbook">
           All work
         </Link>
-      </div>
+      </WorkspaceHeading>
       <ErrorNotice error={detail.error ?? mutation.error} />
       {detail.loading ? (
         <p role="status">Loading action and evidence…</p>
@@ -1868,7 +1969,7 @@ export function GeoActionPage() {
               <div className="flex flex-wrap gap-2">
                 <Badge>{action.category === 'owned' ? 'Web / Owned' : 'Earned Media'}</Badge>
                 <Badge variant="outline">{words(action.status)}</Badge>
-                <Badge variant="outline">Needs review</Badge>
+                <Badge variant="warning">Needs review</Badge>
               </div>
               <h2 className="text-xl font-semibold">{action.title}</h2>
               <p className="text-sm">{action.reason}</p>
@@ -1908,7 +2009,11 @@ export function GeoActionPage() {
                   <Button
                     variant="outline"
                     disabled={mutation.busy}
-                    onClick={() => void mutation.run(() => patch({ status: 'dismissed' }))}
+                    onClick={() =>
+                      void mutation.run(() =>
+                        patch({ status: 'dismissed', notes: notes ?? action.notes }),
+                      )
+                    }
                   >
                     Dismiss action
                   </Button>
@@ -2183,7 +2288,10 @@ export function GeoSources() {
   const sources = useResource<GeoSourceOpportunity[]>(`/geo/sources?${filter.query}`);
   return (
     <section className="space-y-5">
-      <h1 className="text-3xl font-semibold tracking-tight">Sources</h1>
+      <WorkspaceHeading
+        title="Sources"
+        description="Find the sites appearing in saved answers and inspect whether they are owned or third-party sources."
+      />
       <EvidenceFilters filter={filter} />
       <ScopeLabel filter={filter} />
       <p className="max-w-3xl text-sm text-muted-foreground">
@@ -2258,7 +2366,10 @@ export function GeoCompetitors() {
     }) ?? [];
   return (
     <section className="space-y-5">
-      <h1 className="text-3xl font-semibold tracking-tight">Competitors</h1>
+      <WorkspaceHeading
+        title="Competitors"
+        description="Review how configured competitors appear alongside your brand in classified answers. These observations do not establish rankings, market share or revenue."
+      />
       <EvidenceFilters filter={filter} />
       <ScopeLabel filter={filter} />
       <ErrorNotice error={observations.error ?? analyses.error} />
@@ -2270,7 +2381,10 @@ export function GeoCompetitors() {
       {observations.loading || analyses.loading ? (
         <p role="status">Loading competitor evidence…</p>
       ) : !classified.length ? (
-        <Empty>No classified competitor evidence in this scope yet.</Empty>
+        <Empty>
+          No classified competitor evidence in this scope yet. Visibility is unknown until eligible
+          evidence is available.
+        </Empty>
       ) : (
         classified.map(({ observation, classification }) => (
           <article key={observation.id} className={`${box} space-y-3`}>
@@ -2357,11 +2471,14 @@ export function GeoBilling() {
   const allowance = useResource<GeoAllowance>('/geo/allowance');
   return (
     <section className="space-y-5">
-      <h1 className="text-3xl font-semibold tracking-tight">Billing & usage</h1>
-      <p className="text-sm text-muted-foreground">
-        Collector attempts and processing budgets are accounted for separately. Costs below describe
-        recorded provider usage, not a new subscription price.
-      </p>
+      <WorkspaceHeading
+        title="Billing & usage"
+        description="Review monitoring allowance and recorded provider costs. Collector and processing budgets are separate from your subscription."
+      >
+        <Button asChild variant="outline" size="sm">
+          <Link to="/app/settings#subscription">Manage subscription</Link>
+        </Button>
+      </WorkspaceHeading>
       <ErrorNotice error={usage.error ?? allowance.error} />
       {usage.loading ? (
         <p role="status">Loading recorded usage…</p>
@@ -2429,26 +2546,26 @@ export function GeoBilling() {
               </p>
             </div>
           </div>
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div>
+          <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border bg-muted/30 p-3">
               <dt className="inline">Reported charges: </dt>
               <dd className="inline tabular-nums">
                 ${usage.data.providerRequests.reportedCostUsd.toFixed(6)} USD
               </dd>
             </div>
-            <div>
+            <div className="rounded-lg border bg-muted/30 p-3">
               <dt className="inline">Estimated charges: </dt>
               <dd className="inline tabular-nums">
                 ${usage.data.providerRequests.estimatedCostUsd.toFixed(6)} USD
               </dd>
             </div>
-            <div>
+            <div className="rounded-lg border bg-muted/30 p-3">
               <dt className="inline">Reserved budget: </dt>
               <dd className="inline tabular-nums">
                 ${usage.data.providerRequests.reservedCostUsd.toFixed(6)} USD
               </dd>
             </div>
-            <div>
+            <div className="rounded-lg border bg-muted/30 p-3">
               <dt className="inline">Test spend cap: </dt>
               <dd className="inline tabular-nums">
                 ${usage.data.providerRequests.spendCapUsd.toFixed(2)} USD
@@ -2475,8 +2592,7 @@ export function GeoBilling() {
         <Empty>
           {allowance.data.enabled
             ? 'Manual checks are available within budget and cooldown.'
-            : (allowance.data.reason ??
-              'New checks are unavailable. Saved evidence remains readable.')}
+            : allowanceReason(allowance.data.reason)}
         </Empty>
       )}
       <section className={`${box} space-y-3`}>
@@ -2493,9 +2609,12 @@ export function GeoBilling() {
     </section>
   );
 }
-export function GeoSettingsPanel() {
+export function GeoSettingsPanel({ onReady }: { onReady: (ready: boolean) => void }) {
   const settings = useResource<GeoSettings>('/geo/settings');
   const capabilities = useResource<GeoCapabilities>('/geo/capabilities');
+  useEffect(() => {
+    onReady(!settings.loading && !capabilities.loading);
+  }, [settings.loading, capabilities.loading, onReady]);
   const mutation = useMutation();
   const [draft, setDraft] = useState<GeoSettingsInput | null>(null);
   const [saved, setSaved] = useState(false);
@@ -2503,8 +2622,11 @@ export function GeoSettingsPanel() {
   const selectedUnavailable =
     value?.engines.filter((engine) => !capabilities.data?.engines[engine].available) ?? [];
   return (
-    <section className={`${box} space-y-4`}>
+    <section id="monitoring" className={`${box} scroll-mt-20 space-y-4`}>
       <h2 className="text-lg font-medium">GEO monitoring configuration</h2>
+      <p className="text-sm text-muted-foreground">
+        Choose your engines, market and schedule. Availability and allowance are checked separately.
+      </p>
       <ErrorNotice error={settings.error ?? capabilities.error ?? mutation.error} />
       {settings.loading || capabilities.loading ? (
         <p role="status">Loading engine availability…</p>
@@ -2535,48 +2657,55 @@ export function GeoSettingsPanel() {
             <fieldset className="space-y-3">
               <legend className="mb-2 text-sm font-medium">Selected AI answer engines</legend>
               <p className={small}>{value.engines.length} of 4 engine slots selected.</p>
-              {engines.map((engine) => {
-                const capability = capabilities.data?.engines[engine];
-                return (
-                  <label key={engine} className="flex items-start gap-3 rounded-lg border p-3">
-                    <input
-                      type="checkbox"
-                      className="mt-1 size-4 shrink-0 accent-primary"
-                      aria-label={geoSurfaces[engine].label}
-                      checked={value.engines.includes(engine)}
-                      disabled={
-                        !value.engines.includes(engine) &&
-                        (!capability?.available || value.engines.length >= 4)
-                      }
-                      onChange={(event) => {
-                        setSaved(false);
-                        setDraft({
-                          ...value,
-                          engines: event.target.checked
-                            ? [...value.engines, engine]
-                            : value.engines.filter((item) => item !== engine),
-                        });
-                      }}
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium">{geoSurfaces[engine].label}</span>
-                      <span className={`block ${small}`}>
-                        {capability?.available
-                          ? `Configured · ${collectorLabel(capability.collector)}`
-                          : `Unavailable · ${capability?.reason ?? 'Provider is not configured.'}`}
-                      </span>
-                      {capability?.requestedModel && (
-                        <span className={`mt-1 block ${small}`}>
-                          Requested model: {capability.requestedModel}
+              <div className="grid gap-3 md:grid-cols-2">
+                {engines.map((engine) => {
+                  const capability = capabilities.data?.engines[engine];
+                  return (
+                    <label
+                      key={engine}
+                      className={`flex items-start gap-3 rounded-lg border p-4 ${value.engines.includes(engine) ? 'border-primary/30 bg-primary/5' : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-1 size-4 shrink-0 accent-primary"
+                        aria-label={geoSurfaces[engine].label}
+                        checked={value.engines.includes(engine)}
+                        disabled={
+                          !value.engines.includes(engine) &&
+                          (!capability?.available || value.engines.length >= 4)
+                        }
+                        onChange={(event) => {
+                          setSaved(false);
+                          setDraft({
+                            ...value,
+                            engines: event.target.checked
+                              ? [...value.engines, engine]
+                              : value.engines.filter((item) => item !== engine),
+                          });
+                        }}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium">
+                          {geoSurfaces[engine].label}
                         </span>
-                      )}
-                      {capability?.nextStep && (
-                        <span className={`mt-1 block ${small}`}>{capability.nextStep}</span>
-                      )}
-                    </span>
-                  </label>
-                );
-              })}
+                        <span className={`block ${small}`}>
+                          {capability?.available
+                            ? `Configured · ${collectorLabel(capability.collector)}`
+                            : `Unavailable · ${capability?.reason ?? 'Provider is not configured.'}`}
+                        </span>
+                        {capability?.requestedModel && (
+                          <span className={`mt-1 block ${small}`}>
+                            Requested model: {capability.requestedModel}
+                          </span>
+                        )}
+                        {capability?.nextStep && (
+                          <span className={`mt-1 block ${small}`}>{capability.nextStep}</span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             </fieldset>
             <p className={small}>
               Availability reflects server configuration and secrets, not a validated live capture.
@@ -2595,7 +2724,7 @@ export function GeoSettingsPanel() {
                 disabled; historical captures stay unchanged.
               </Empty>
             )}
-            <label className="flex items-start gap-3 text-sm">
+            <label className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 text-sm">
               <input
                 type="checkbox"
                 className="mt-1 size-4 shrink-0 accent-primary"
