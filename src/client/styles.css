@@ -43,6 +43,24 @@
   --sidebar-ring: #71717a;
 }
 
+/* Workspace palette, scoped separately from public pages. */
+.workspace-theme {
+  --background: #f6f8fb;
+  --foreground: #17243c;
+  --card-foreground: #17243c;
+  --primary: #245bdb;
+  --secondary: #eef2f8;
+  --secondary-foreground: #17243c;
+  --muted: #eef2f8;
+  --muted-foreground: #59697f;
+  --accent: #eaf0fe;
+  --accent-foreground: #1e4db7;
+  --border: #e0e6ef;
+  --input: #d4dce8;
+  --ring: #245bdb;
+  --chart-1: #245bdb;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

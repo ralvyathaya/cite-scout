@@ -51,6 +51,7 @@ test('local fixture workspace completes the evidence-action loop without any API
   await page.getByRole('link', { name: 'Overview', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('.recharts-reference-line-line')).toHaveCount(1);
+  await page.getByText('Action pins & comparisons', { exact: true }).click();
   await page.locator('a[href="/app/playbook/fixture-action-1"]').first().click();
   await page.getByRole('button', { name: 'Monitor Prompts', exact: true }).click();
   await expect(page.getByText(/observations saved/).first()).toBeVisible();

@@ -53,6 +53,16 @@ const time = (value: string | null) =>
     ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     : 'Not reported';
 const words = (value: string) => value.replaceAll('_', ' ');
+function relativeTime(value: string) {
+  const minutes = Math.round((Date.parse(value) - Date.now()) / 60_000);
+  if (Math.abs(minutes) < 1) return 'Just now';
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  if (Math.abs(minutes) < 60) return formatter.format(minutes, 'minute');
+  const hours = Math.round(minutes / 60);
+  return Math.abs(hours) < 24
+    ? formatter.format(hours, 'hour')
+    : formatter.format(Math.round(hours / 24), 'day');
+}
 const allowanceReasons: Record<string, string> = {
   GEO_SCANS_DISABLED: 'New GEO checks are paused. Saved answers remain readable.',
   PAID_ACCESS_REQUIRED:
@@ -149,7 +159,7 @@ function Choice({
         <SelectTrigger aria-label={label} className="w-full min-w-36">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent className="max-w-[calc(100vw-2rem)]">
+        <SelectContent className="workspace-theme max-w-[calc(100vw-2rem)]">
           {options.map((option) => (
             <SelectItem
               key={option.value}
@@ -188,7 +198,7 @@ function EvidenceFilters({ filter }: { filter: ReturnType<typeof useEvidenceFilt
   const { data } = useOutletContext<WorkspaceContext>();
   return (
     <div
-      className="grid gap-3 rounded-xl border bg-muted/15 p-4 sm:grid-cols-3"
+      className="grid gap-3 rounded-xl border bg-card p-3 sm:grid-cols-3"
       aria-label="Evidence filters"
     >
       <Choice
@@ -227,7 +237,7 @@ function EvidenceFilters({ filter }: { filter: ReturnType<typeof useEvidenceFilt
 function ScopeLabel({ filter }: { filter: ReturnType<typeof useEvidenceFilter> }) {
   const { data } = useOutletContext<WorkspaceContext>();
   return (
-    <p className={small}>
+    <p className={`min-w-0 break-words ${small}`}>
       {data.project?.brandName} · Last {filter.days} days ·{' '}
       {filter.engine ? geoSurfaces[filter.engine].label : 'All engines'} ·{' '}
       {filter.promptId ? 'Selected prompt' : 'All prompt versions'} · UTC daily samples
@@ -301,10 +311,14 @@ export function GeoMonitor({
   promptIds,
   selectedEngines,
   onComplete,
+  heading,
+  children,
 }: {
   promptIds?: string[];
   selectedEngines?: GeoEngine[];
   onComplete?: () => void;
+  heading?: ReactNode;
+  children?: ReactNode;
 }) {
   const { data } = useOutletContext<WorkspaceContext>();
   const settings = useResource<GeoSettings>('/geo/settings');
@@ -319,6 +333,9 @@ export function GeoMonitor({
   const unavailable = scopeEngines.find((engine) => !capabilities.data?.engines[engine].available);
   const unselected = scopeEngines.find((engine) => !settings.data?.engines.includes(engine));
   const active = data.project?.questions.filter((q) => q.enabled && !q.archivedAt) ?? [];
+  const inactivePrompt = Boolean(
+    promptIds?.some((id) => !active.some((prompt) => prompt.id === id)),
+  );
   const reason =
     settings.loading || allowance.loading || capabilities.loading
       ? 'Checking monitoring availability…'
@@ -336,17 +353,47 @@ export function GeoMonitor({
                 : unavailable
                   ? (capabilities.data?.engines[unavailable].reason ??
                     `${geoSurfaces[unavailable].label} is unavailable.`)
-                  : promptIds?.some((id) => !active.some((prompt) => prompt.id === id))
+                  : inactivePrompt
                     ? 'This scope includes an inactive or historical prompt. Choose active prompts for a fresh check.'
                     : !(promptIds?.length ?? active.length)
                       ? 'Add an active prompt before monitoring.'
                       : null));
+  const allowanceBlocked = settings.data?.configured && allowance.data?.enabled === false;
+  const promptBlocked =
+    settings.data?.configured &&
+    allowance.data?.enabled &&
+    scopeEngines.length > 0 &&
+    !unselected &&
+    !unavailable &&
+    (inactivePrompt || !(promptIds?.length ?? active.length));
   const runId = params.get('geoRun') ?? history.data?.runs[0]?.id;
   const selectedRun = history.data?.runs.find((run) => run.id === runId);
+  const runDetails = runId && (
+    <details
+      className="space-y-3 rounded-lg border bg-card p-3"
+      open={params.get('geoRun') ? true : undefined}
+    >
+      <summary className="cursor-pointer text-sm font-medium">
+        {selectedRun
+          ? `${selectedRun.trigger} check · ${String(selectedRun.successfulCount)}/${String(selectedRun.totalCount)} observations · ${selectedRun.status}`
+          : 'Monitoring run details'}
+      </summary>
+      <GeoRunProgress
+        key={runId}
+        id={runId}
+        onComplete={() => {
+          void allowance.reload();
+          void history.reload();
+          onComplete?.();
+        }}
+      />
+    </details>
+  );
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-start gap-4">
-        <div className="max-w-lg space-y-2">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        {heading}
+        <div className="shrink-0">
           <Button
             disabled={mutation.busy || Boolean(reason)}
             aria-describedby="geo-monitor-status"
@@ -371,19 +418,42 @@ export function GeoMonitor({
             />
             {mutation.busy ? 'Requesting check…' : 'Monitor Prompts'}
           </Button>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 rounded-lg border bg-card px-3 py-2.5">
+        <div className="min-w-0 flex-1 basis-72">
           <p id="geo-monitor-status" className={small}>
             {reason ??
-              `Fresh check · ${scopeEngines.map((engine) => geoSurfaces[engine].label).join(', ')} · five-minute prompt/engine cooldown`}
+              `Fresh check · ${String(scopeEngines.length)} selected engines · five-minute prompt/engine cooldown`}
           </p>
+          {reason && (
+            <Link
+              to={
+                allowanceBlocked
+                  ? '/app/billing'
+                  : promptBlocked
+                    ? '/app/questions'
+                    : '/app/settings'
+              }
+              className="text-xs font-medium text-primary underline underline-offset-4"
+            >
+              {allowanceBlocked
+                ? 'Review GEO allowance'
+                : promptBlocked
+                  ? 'Review prompt sets'
+                  : 'Review monitoring settings'}
+            </Link>
+          )}
           {unavailable && capabilities.data?.engines[unavailable].nextStep && (
             <p className={small}>{capabilities.data.engines[unavailable].nextStep}</p>
           )}
         </div>
-        <div className={`ml-auto ${small}`}>
+        <div className={small}>
           {allowance.data && (
             <>
-              {allowance.data.today} / {allowance.data.limits.projectDaily} attempts today
-              <br />
+              <span className="font-medium text-foreground">GEO allowance</span>
+              {' · '}
+              {allowance.data.today} / {allowance.data.limits.projectDaily} attempts today{' · '}
               {allowance.data.month} / {allowance.data.limits.projectMonthly} this month
             </>
           )}
@@ -391,101 +461,88 @@ export function GeoMonitor({
       </div>
       <ErrorNotice error={mutation.error} />
       <ErrorNotice error={history.error} />
-      <details
-        className="rounded-lg border bg-card px-4 py-3"
-        open={settings.data ? !settings.data.configured : undefined}
-      >
-        <summary className="cursor-pointer text-sm font-medium">
-          Monitoring setup · {scopeEngines.length} selected engines
-        </summary>
-        <ol className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
-          <li className="space-y-2">
-            <p className="font-medium">1. Choose answer engines</p>
-            <p className={small}>
-              Select up to four engines. Daily monitoring is{' '}
-              {settings.data?.dailyEnabled ? 'enabled' : 'disabled'}; availability reflects
-              configuration, with live access checked by your first capture.
-            </p>
-            <Link to="/app/settings" className="inline-block text-xs text-primary underline">
-              Configure engines
-            </Link>
-          </li>
-          <li className="space-y-2">
-            <p className="font-medium">2. Set buyer prompts</p>
-            <p className={small}>
-              {active.length} active prompts. Use the same neutral questions for the baseline and
-              follow-up.
-            </p>
-            <Link to="/app/questions" className="inline-block text-xs text-primary underline">
-              Review prompt sets
-            </Link>
-          </li>
-          <li className="space-y-2">
-            <p className="font-medium">3. Capture and review</p>
-            <p className={small}>
-              Monitor Prompts creates fresh observations. Review original answers and diagnoses
-              before accepting a playbook task.
-            </p>
-            <Link to="/app/observations" className="inline-block text-xs text-primary underline">
-              Inspect captured answers
-            </Link>
-          </li>
-        </ol>
-      </details>
-      <details className="space-y-3 rounded-lg border px-3 py-2">
-        <summary className="cursor-pointer text-sm font-medium">
-          Recent checks · daily schedule {settings.data?.dailyEnabled ? 'enabled' : 'disabled'}
-        </summary>
-        <p className={small}>
-          Latest ten runs and seven daily outcomes · UTC schedule. Opening a saved check does not
-          start a provider call.
-        </p>
-        {history.data?.dailyOutcomes.map((outcome) => (
-          <div key={outcome.date} className="rounded-lg border p-3 text-sm">
-            Daily {outcome.date} · {outcome.status}
-            <p className={small}>Last admission attempt {time(outcome.lastAttemptAt)}</p>
-            {outcome.reason && (
-              <p className="mt-1 text-amber-700">{allowanceReason(outcome.reason)}</p>
-            )}
-          </div>
-        ))}
-        {history.data?.runs.map((run) => (
-          <Button
-            key={run.id}
-            variant="outline"
-            className="h-auto w-full justify-start whitespace-normal text-left"
-            onClick={() => {
-              const next = new URLSearchParams(params);
-              next.set('geoRun', run.id);
-              setParams(next);
-            }}
-          >
-            {run.trigger} · {time(run.createdAt)} · {run.successfulCount}/{run.totalCount}{' '}
-            observations · {run.status}
-          </Button>
-        ))}
-        {history.data && !history.data.runs.length && !history.data.dailyOutcomes.length && (
-          <p className={small}>No monitoring outcomes recorded yet.</p>
-        )}
-      </details>
-      {runId && (
-        <details className="space-y-3" open={params.get('geoRun') ? true : undefined}>
-          <summary className="cursor-pointer rounded-lg border p-3 text-sm font-medium">
-            {selectedRun
-              ? `${selectedRun.trigger} check · ${String(selectedRun.successfulCount)}/${String(selectedRun.totalCount)} observations · ${selectedRun.status}`
-              : 'Monitoring run details'}
+      {runDetails}
+      {children}
+      <div className="grid items-start gap-3 md:grid-cols-2">
+        <details className="rounded-lg border bg-card px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            Monitoring setup · {scopeEngines.length} selected engines
           </summary>
-          <GeoRunProgress
-            key={runId}
-            id={runId}
-            onComplete={() => {
-              void allowance.reload();
-              void history.reload();
-              onComplete?.();
-            }}
-          />
+          <p className={`mt-3 ${small}`}>
+            {scopeEngines.map((engine) => geoSurfaces[engine].label).join(' · ') ||
+              'No engines selected'}
+          </p>
+          <ol className="mt-4 space-y-4 text-sm">
+            <li className="space-y-2">
+              <p className="font-medium">1. Choose answer engines</p>
+              <p className={small}>
+                Select up to four engines. Daily monitoring is{' '}
+                {settings.data?.dailyEnabled ? 'enabled' : 'disabled'}; availability reflects
+                configuration, with live access checked by your first capture.
+              </p>
+              <Link to="/app/settings" className="inline-block text-xs text-primary underline">
+                Configure engines
+              </Link>
+            </li>
+            <li className="space-y-2">
+              <p className="font-medium">2. Set buyer prompts</p>
+              <p className={small}>
+                {active.length} active prompts. Use the same neutral questions for the baseline and
+                follow-up.
+              </p>
+              <Link to="/app/questions" className="inline-block text-xs text-primary underline">
+                Review prompt sets
+              </Link>
+            </li>
+            <li className="space-y-2">
+              <p className="font-medium">3. Capture and review</p>
+              <p className={small}>
+                Monitor Prompts creates fresh observations. Review original answers and diagnoses
+                before accepting a playbook task.
+              </p>
+              <Link to="/app/observations" className="inline-block text-xs text-primary underline">
+                Inspect captured answers
+              </Link>
+            </li>
+          </ol>
         </details>
-      )}
+        <details className="space-y-3 rounded-lg border bg-card px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            Recent checks · daily schedule {settings.data?.dailyEnabled ? 'enabled' : 'disabled'}
+          </summary>
+          <p className={small}>
+            Latest ten runs and seven daily outcomes · UTC schedule. Opening a saved check does not
+            start a provider call.
+          </p>
+          {history.data?.dailyOutcomes.map((outcome) => (
+            <div key={outcome.date} className="rounded-lg border p-3 text-sm">
+              Daily {outcome.date} · {outcome.status}
+              <p className={small}>Last admission attempt {time(outcome.lastAttemptAt)}</p>
+              {outcome.reason && (
+                <p className="mt-1 text-amber-700">{allowanceReason(outcome.reason)}</p>
+              )}
+            </div>
+          ))}
+          {history.data?.runs.map((run) => (
+            <Button
+              key={run.id}
+              variant="outline"
+              className="h-auto w-full justify-start whitespace-normal text-left"
+              onClick={() => {
+                const next = new URLSearchParams(params);
+                next.set('geoRun', run.id);
+                setParams(next);
+              }}
+            >
+              {run.trigger} · {time(run.createdAt)} · {run.successfulCount}/{run.totalCount}{' '}
+              observations · {run.status}
+            </Button>
+          ))}
+          {history.data && !history.data.runs.length && !history.data.dailyOutcomes.length && (
+            <p className={small}>No monitoring outcomes recorded yet.</p>
+          )}
+        </details>
+      </div>
     </div>
   );
 }
@@ -821,9 +878,7 @@ function TrendChart({
           </div>
           <p className={small}>
             {selected.reduce((sum, sample) => sum + sample.value, 0)} of {selected.length} eligible
-            daily answers meet this metric. Different prompt versions, configuration or reported
-            models start separate cohorts; they are not joined as a comparable series. Pins are
-            annotated only when their affected frozen scope is identified on this loaded cohort.
+            daily answers meet this metric. Rates are provisional and require review.
           </p>
           <details>
             <summary className="cursor-pointer text-xs font-medium">
@@ -851,11 +906,16 @@ function TrendChart({
           classification remain readable below.
         </Empty>
       )}
-      <p className={`border-t pt-3 ${small}`}>
-        {trends.method} Measurement {trends.version}. Scope: {trends.captures} captures,{' '}
-        {trends.classifiedCaptures} usable complete classifications. Rates are provisional and
-        require review.
-      </p>
+      <details className="border-t pt-3">
+        <summary className="cursor-pointer text-xs font-medium">How this is measured</summary>
+        <p className={`mt-3 ${small}`}>
+          {trends.method} Measurement {trends.version}. Scope: {trends.captures} captures,{' '}
+          {trends.classifiedCaptures} usable complete classifications. Different prompt versions,
+          configuration or reported models start separate cohorts; they are not joined as a
+          comparable series. Pins are annotated only when their affected frozen scope is identified
+          on this loaded cohort.
+        </p>
+      </details>
       <ActionPins actions={actions} filter={filter} onPins={collectPins} />
     </section>
   );
@@ -876,42 +936,30 @@ function ActionPins({
         (!filter.promptId || scope.context.promptId === filter.promptId),
     ),
   );
-  const [opened, setOpened] = useState(true);
   return (
-    <div className="space-y-3 border-t pt-3">
-      <h3 className="flex items-center gap-2 text-sm font-medium">
-        <MapPin className="size-4" aria-hidden="true" />
-        Action pins
-      </h3>
+    <details className="space-y-3 border-t pt-3">
+      <summary className="cursor-pointer text-sm font-medium">
+        <MapPin className="mr-2 inline size-4" aria-hidden="true" />
+        Action pins & comparisons
+      </summary>
       <p className={small}>
         Completion time and reported implementation time are distinct. Changes after a pin show
         correlation, not causality or financial ROI.
       </p>
-      <Button
-        size="sm"
-        variant="outline"
-        aria-expanded={opened}
-        onClick={() => {
-          setOpened((value) => !value);
-        }}
-      >
-        {opened ? 'Hide pins' : 'Inspect action pins'}
-      </Button>
-      {opened &&
-        (relevant.length ? (
-          relevant.map((action) => (
-            <PinMeasurements
-              key={`${action.id}-${String(action.revision)}`}
-              action={action}
-              days={Number(filter.days)}
-              filter={filter}
-              onPins={onPins}
-            />
-          ))
-        ) : (
-          <Empty>No actions affect this selected prompt and engine scope.</Empty>
-        ))}
-    </div>
+      {relevant.length ? (
+        relevant.map((action) => (
+          <PinMeasurements
+            key={`${action.id}-${String(action.revision)}`}
+            action={action}
+            days={Number(filter.days)}
+            filter={filter}
+            onPins={onPins}
+          />
+        ))
+      ) : (
+        <Empty>No actions affect this selected prompt and engine scope.</Empty>
+      )}
+    </details>
   );
 }
 function PinMeasurements({
@@ -1063,33 +1111,19 @@ export function GeoOverview() {
   const classification = proof
     ? analyses.data?.find((analysis) => analysis.observationId === proof.id)
     : undefined;
+  const latestCapture = observations.data?.observations[0]?.capturedAt;
   if (!data.project) return <Navigate to="/app/onboarding" replace />;
   return (
-    <section className="space-y-6">
-      <div>
-        <p className={small}>
-          {data.project.brandName} · {data.project.canonicalDomain}
-        </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Visibility & action overview</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Review AI answers. Complete evidence-backed work. Measure comparable follow-up.
-        </p>
-      </div>
-      <EvidenceFilters filter={filter} />
-      <ScopeLabel filter={filter} />
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          void observations.reload();
-          void trends.reload();
-          void actions.reload();
-          void analyses.reload();
-        }}
-      >
-        Refresh saved evidence
-      </Button>
+    <section className="space-y-5">
       <GeoMonitor
+        heading={
+          <div className="min-w-0 flex-1 basis-96">
+            <h1 className="text-2xl font-semibold tracking-tight">Visibility & action overview</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Your AI visibility, the evidence behind it, and what to improve next.
+            </p>
+          </div>
+        }
         promptIds={filter.promptId ? [filter.promptId] : undefined}
         selectedEngines={filter.engine ? [filter.engine] : undefined}
         onComplete={() => {
@@ -1098,44 +1132,81 @@ export function GeoOverview() {
           void actions.reload();
           void analyses.reload();
         }}
-      />
-      {[observations.error, trends.error, actions.error, analyses.error].map((error, index) => (
-        <ErrorNotice key={index} error={error} />
-      ))}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          [
-            'Saved observations',
-            String(trends.data?.captures ?? '—'),
-            `Selected ${filter.days}-day scope · includes absent AI features; failed captures excluded`,
-          ],
-          [
-            'Classification coverage',
-            trends.data
-              ? `${String(trends.data.classifiedCaptures)} / ${String(trends.data.captures)}`
-              : '—',
-            'Usable complete classifications / captures',
-          ],
-          [
-            'Work to review',
-            String(jobs.length),
-            `${String(jobs.filter((a) => a.category === 'owned').length)} Web / Owned · ${String(jobs.filter((a) => a.category === 'earned').length)} Earned Media`,
-          ],
-          [
-            'Evidence freshness',
-            proof ? time(proof.capturedAt) : 'No saved answer',
-            'Latest capture in the selected scope',
-          ],
-        ].map(([label, value, note]) => (
-          <div key={label} className={box}>
-            <p className={small}>{label}</p>
-            <p className="mt-3 break-words text-2xl font-semibold tabular-nums tracking-tight">
-              {value}
-            </p>
-            <p className={`mt-2 ${small}`}>{note}</p>
+      >
+        <div className="space-y-3">
+          <EvidenceFilters filter={filter} />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <ScopeLabel filter={filter} />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-1 text-xs text-muted-foreground"
+              onClick={() => {
+                void observations.reload();
+                void trends.reload();
+                void actions.reload();
+                void analyses.reload();
+              }}
+            >
+              <RefreshCw className="size-3" aria-hidden="true" />
+              Refresh saved evidence
+            </Button>
           </div>
+        </div>
+        {[observations.error, trends.error, actions.error, analyses.error].map((error, index) => (
+          <ErrorNotice key={index} error={error} />
         ))}
-      </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Monitoring summary">
+          {[
+            [
+              'Saved observations',
+              String(trends.data?.captures ?? '—'),
+              `Selected ${filter.days}-day scope · includes absent AI features; failed captures excluded`,
+            ],
+            [
+              'Classification coverage',
+              trends.data
+                ? `${String(trends.data.classifiedCaptures)} / ${String(trends.data.captures)}`
+                : '—',
+              'Usable complete classifications / captures',
+            ],
+            [
+              'Work to review',
+              actions.data ? String(jobs.length) : '—',
+              actions.data
+                ? `${String(jobs.filter((a) => a.category === 'owned').length)} Web / Owned · ${String(jobs.filter((a) => a.category === 'earned').length)} Earned Media`
+                : 'Waiting for saved work',
+            ],
+            [
+              'Evidence freshness',
+              latestCapture
+                ? relativeTime(latestCapture)
+                : observations.data
+                  ? 'No saved answer'
+                  : '—',
+              'Latest capture in the selected scope',
+            ],
+          ].map(([label, value, note]) => (
+            <div key={label} className="min-w-0 rounded-xl border bg-card p-4 shadow-sm">
+              <p className={small}>{label}</p>
+              <p className="mt-2 break-words text-2xl font-semibold tabular-nums tracking-tight">
+                {label === 'Evidence freshness' && latestCapture ? (
+                  <time
+                    dateTime={latestCapture}
+                    title={time(latestCapture)}
+                    aria-label={time(latestCapture)}
+                  >
+                    {value}
+                  </time>
+                ) : (
+                  value
+                )}
+              </p>
+              <p className={`mt-2 ${small}`}>{note}</p>
+            </div>
+          ))}
+        </div>
+      </GeoMonitor>
       {trends.loading ? (
         <p role="status">Loading daily cohort trends…</p>
       ) : (

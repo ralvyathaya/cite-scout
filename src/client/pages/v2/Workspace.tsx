@@ -125,7 +125,7 @@ export function V2Shell() {
         onClick={() => {
           setMobileOpen(false);
         }}
-        className="m-3 flex items-center gap-3 rounded-lg border bg-background p-3"
+        className="mx-4 mb-1 mt-5 flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:border-primary/40"
       >
         <span
           className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold text-primary"
@@ -156,7 +156,7 @@ export function V2Shell() {
                 setMobileOpen(false);
               }}
               className={({ isActive }) =>
-                `mb-1 flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`
+                `mb-1 flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${isActive ? 'bg-primary/10 text-primary shadow-[inset_3px_0_0_var(--primary)]' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`
               }
             >
               <Icon className="size-4 shrink-0" aria-hidden="true" />
@@ -166,9 +166,19 @@ export function V2Shell() {
         ))}
       </nav>
       <div className="border-t p-3">
-        <p className="px-3 py-2 text-xs text-muted-foreground">
-          {resource.data?.canScan ? 'Paid monitoring access' : 'Saved evidence stays available'}
-        </p>
+        <div className="mb-2 rounded-lg bg-muted/60 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
+          {fixture.requested ? (
+            <p className="font-medium text-foreground">Synthetic workspace</p>
+          ) : resource.data?.internalTestAccess ? (
+            <p className="font-medium text-primary">Owner preview</p>
+          ) : null}
+          <p>
+            {resource.data?.canScan ? 'Perplexity subscription active' : 'Saved evidence access'}
+          </p>
+          {resource.data?.internalTestAccess && (
+            <p className="mt-1">GEO preview has a separate allowance.</p>
+          )}
+        </div>
         <Button
           variant="ghost"
           className="w-full justify-start"
@@ -200,14 +210,14 @@ export function V2Shell() {
     return <Navigate to="/login" replace />;
   return (
     <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
-      <div className="flex min-h-svh bg-background">
+      <div className="workspace-theme flex min-h-svh bg-background text-foreground">
         <aside
-          className="sticky top-0 hidden h-svh w-60 shrink-0 flex-col self-start border-r bg-muted/25 lg:flex"
+          className="sticky top-0 hidden h-svh w-60 shrink-0 flex-col self-start border-r bg-card lg:flex"
           aria-label="Workspace sidebar"
         >
           {sidebar}
         </aside>
-        <DialogContent className="inset-y-0 left-0 top-0 flex h-svh w-72 max-w-[calc(100%-3rem)] translate-x-0 translate-y-0 flex-col gap-0 rounded-none bg-background p-0 sm:max-w-72">
+        <DialogContent className="workspace-theme inset-y-0 left-0 top-0 flex h-svh w-72 max-w-[calc(100%-3rem)] translate-x-0 translate-y-0 flex-col gap-0 rounded-none bg-card p-0 text-foreground sm:max-w-72">
           <DialogTitle className="sr-only">Workspace navigation</DialogTitle>
           <DialogDescription className="sr-only">
             Navigate your CiteScout workspace.
@@ -215,7 +225,7 @@ export function V2Shell() {
           {sidebar}
         </DialogContent>
         <div className="min-w-0 flex-1">
-          <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background px-4 sm:px-8">
+          <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-card px-4 sm:px-7">
             <DialogTrigger asChild>
               <Button
                 variant="ghost"
@@ -244,12 +254,12 @@ export function V2Shell() {
           <main
             id="main"
             tabIndex={-1}
-            className="mx-auto max-w-[1440px] space-y-5 px-4 py-7 outline-none sm:px-8"
+            className="mx-auto max-w-[1440px] space-y-5 px-4 py-5 outline-none sm:px-7 sm:py-6"
           >
             {fixture.requested && (
               <div
                 role="status"
-                className="sticky top-16 z-20 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-background p-3 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-50 px-3 py-2 text-xs text-amber-950"
               >
                 <span className="font-medium">
                   Fixture workspace — synthetic data · no provider calls

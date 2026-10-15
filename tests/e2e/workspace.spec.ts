@@ -220,6 +220,10 @@ test('staging owner onboarding saves a project without launching a legacy baseli
   await expect(page.getByText(/Daily monitoring stays off/)).toBeVisible();
   await page.getByRole('button', { name: 'Create staging project', exact: true }).click();
   await expect(page).toHaveURL(/\/app\/overview$/);
+  await expect(
+    page.getByRole('link', { name: 'Review monitoring settings', exact: true }),
+  ).toBeVisible();
+  await page.locator('summary').filter({ hasText: 'Monitoring setup' }).click();
   await expect(page.getByRole('link', { name: 'Configure engines', exact: true })).toBeVisible();
   await expect(page.getByText(/Legacy Perplexity workspace/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Monitor Prompts', exact: true })).toBeDisabled();
