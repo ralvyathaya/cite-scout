@@ -72,10 +72,12 @@ export async function reserveGeoProviderRequest(env: CloudflareBindings, input: 
       input.collector,
       input.collector,
       input.collector === 'serpapi'
-        ? 18
+        ? config.internalTestLimits.serpapi
         : input.collector === 'workers_ai' || input.collector === 'typesafe'
-          ? 24
-          : 6,
+          ? config.internalTestLimits.classifier
+          : input.collector === 'openai_responses'
+            ? config.internalTestLimits.openai
+            : config.internalTestLimits.perplexity,
     )
     .run();
   if (!result.meta.changes) throw new Error('GEO_PROVIDER_BUDGET_BLOCKED');

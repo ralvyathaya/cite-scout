@@ -362,6 +362,48 @@ describe('four-engine staging observation loop', () => {
     ).toBe(24);
   });
 
+  it('uses the configured lifetime observation limit for concurrent admission and replay', async () => {
+    const { env, owner, run, at } = await accepted(['openai_web_search', 'perplexity']);
+    const configured = {
+      ...env,
+      GEO_INTERNAL_TEST_LIMITS: JSON.stringify({
+        observations: 3,
+        openai: 7,
+        perplexity: 7,
+        serpapi: 19,
+        classifier: 25,
+      }),
+    };
+    await env.DB.batch([
+      env.DB.prepare("UPDATE geo_run_items SET status='cancelled' WHERE run_id=?").bind(run.id),
+      env.DB.prepare("UPDATE scan_runs SET status='cancelled' WHERE id=?").bind(run.id),
+      env.DB.prepare(
+        "UPDATE provider_call_reservations SET status='failed',lease_until=NULL WHERE scan_run_id=?",
+      ).bind(run.id),
+    ]);
+    const next = new Date(at.getTime() + 301_000);
+    const requests = [
+      { requestId: crypto.randomUUID(), engines: ['openai_web_search'] as GeoEngine[] },
+      { requestId: crypto.randomUUID(), engines: ['perplexity'] as GeoEngine[] },
+    ];
+    const results = await Promise.allSettled(
+      requests.map((request) => startGeoRun(configured, owner.userId, request, next)),
+    );
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const index = results.findIndex((result) => result.status === 'fulfilled');
+    const acceptedRequest = requests[index];
+    if (!acceptedRequest) throw new Error('Expected an admitted request');
+    expect((await startGeoRun(configured, owner.userId, acceptedRequest, next)).items).toHaveLength(
+      1,
+    );
+    expect(
+      await env.DB.prepare('SELECT count(*) AS total FROM provider_call_reservations').first(
+        'total',
+      ),
+    ).toBe(3);
+    expect((await geoAllowance(configured, owner.userId, next)).reason).toBe('GEO_QUOTA_EXCEEDED');
+  });
+
   it('shares one classification ceiling across Clef and optional Jev', async () => {
     const { env, owner, run, at } = await accepted(['openai_web_search']);
     await env.DB.batch([
@@ -876,14 +918,24 @@ describe('four-engine staging observation loop', () => {
   });
 
   it.each([
-    ['openai_responses', 6],
-    ['perplexity_api', 6],
-    ['serpapi', 18],
-    ['workers_ai', 24],
-    ['typesafe', 24],
+    ['openai_responses', 7],
+    ['perplexity_api', 7],
+    ['serpapi', 19],
+    ['workers_ai', 25],
+    ['typesafe', 25],
   ] as const)('enforces the internal %s maximum of %i requests', async (collector, maximum) => {
     const { env, run, owner, at } = await accepted(['openai_web_search']);
-    const admissionEnv = { ...env, GEO_SERPAPI_MONTHLY_REQUEST_CAP: '250' };
+    const admissionEnv = {
+      ...env,
+      GEO_SERPAPI_MONTHLY_REQUEST_CAP: '250',
+      GEO_INTERNAL_TEST_LIMITS: JSON.stringify({
+        observations: 30,
+        openai: 7,
+        perplexity: 7,
+        serpapi: 19,
+        classifier: 25,
+      }),
+    };
     let reservationId: string | undefined, processingId: string | undefined;
     if (collector === 'workers_ai' || collector === 'typesafe') {
       await env.DB.batch([

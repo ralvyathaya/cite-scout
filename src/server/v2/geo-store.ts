@@ -344,7 +344,8 @@ export async function geoAllowance(
     count.today >= limits.projectDaily ||
     count.month >= limits.projectMonthly ||
     count.globalToday >= limits.globalDaily ||
-    (config.DEPLOYMENT_ENV === 'staging' && (counts?.testTotal ?? 0) >= 24)
+    (config.DEPLOYMENT_ENV === 'staging' &&
+      (counts?.testTotal ?? 0) >= config.internalTestLimits.observations)
   )
     reason = 'GEO_QUOTA_EXCEEDED';
   return { ...count, limits, enabled: reason === null, reason, cooldownSeconds: 300 };
@@ -574,6 +575,7 @@ export async function startGeoRun(
     allowance.limits.globalDaily,
     config.DEPLOYMENT_ENV === 'staging' ? 1 : 0,
     contexts.length,
+    config.internalTestLimits.observations,
     contextsJson,
     contextsJson,
     now - COOLDOWN,
@@ -592,7 +594,7 @@ export async function startGeoRun(
     AND (SELECT count(*) FROM provider_call_reservations WHERE project_id=? AND usage_date=?) + ? <= ?
     AND (SELECT count(*) FROM provider_call_reservations WHERE project_id=? AND usage_date LIKE ?) + ? <= ?
     AND (SELECT count(*) FROM provider_call_reservations WHERE usage_date=?) + ? <= ?
-    AND (?=0 OR (SELECT count(*) FROM provider_call_reservations) + ? <= 24)
+    AND (?=0 OR (SELECT count(*) FROM provider_call_reservations) + ? <= ?)
     AND NOT EXISTS(SELECT 1 FROM json_each(?) selected JOIN geo_run_items i
       ON i.project_id=p.id AND i.prompt_id=json_extract(selected.value,'$.promptId') AND i.engine=json_extract(selected.value,'$.engine')
       WHERE i.status IN ('pending','submitting','submitted','submission_uncertain'))
@@ -693,7 +695,7 @@ export async function startGeoRun(
         await sql(env, 'SELECT count(*) AS total FROM provider_call_reservations').first('total'),
       ) +
         contexts.length >
-        24)
+        config.internalTestLimits.observations)
   )
     throw new Error('GEO_QUOTA_EXCEEDED');
   if (!(await hasPaidAccess(env, userId, at))) throw new Error('PAID_ACCESS_REQUIRED');

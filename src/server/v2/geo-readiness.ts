@@ -23,7 +23,9 @@ export function geoCapabilities(env: CloudflareBindings) {
   const noBudget =
     config.GEO_GLOBAL_DAILY_CALL_CAP <= 0 ||
     config.GEO_PROJECT_DAILY_CALL_CAP <= 0 ||
-    config.GEO_PROJECT_MONTHLY_CALL_CAP <= 0;
+    config.GEO_PROJECT_MONTHLY_CALL_CAP <= 0 ||
+    (config.DEPLOYMENT_ENV === 'staging' &&
+      (config.internalTestLimits.observations <= 0 || config.GEO_INTERNAL_TEST_SPEND_CAP_USD <= 0));
   const engines = Object.fromEntries(
     (Object.keys(geoSurfaces) as GeoEngine[]).map((engine) => {
       const collector =
@@ -33,13 +35,21 @@ export function geoCapabilities(env: CloudflareBindings) {
       const credentialReady =
         geoCollectorConfigured(env, collector) &&
         (collector !== 'serpapi' || config.GEO_SERPAPI_MONTHLY_REQUEST_CAP > 0);
+      const requestLimit = {
+        openai_responses: config.internalTestLimits.openai,
+        perplexity_api: config.internalTestLimits.perplexity,
+        serpapi: config.internalTestLimits.serpapi,
+        dataforseo_standard: 0,
+      }[collector];
       const reason = paused
         ? 'Monitoring is paused by the operator.'
         : noBudget
           ? 'A positive monitoring budget is required.'
-          : !credentialReady
-            ? 'This collector is not configured. Stored answers remain available.'
-            : null;
+          : config.DEPLOYMENT_ENV === 'staging' && requestLimit <= 0
+            ? 'This collector has no owner-test request allowance.'
+            : !credentialReady
+              ? 'This collector is not configured. Stored answers remain available.'
+              : null;
       return [
         engine,
         {
@@ -162,6 +172,7 @@ export async function geoUsage(env: CloudflareBindings, userId: string, at = new
     classifierModel: config.GEO_CLASSIFIER_MODEL,
     providerRequests: {
       ...providerRequests,
+      cumulativeLimits: config.DEPLOYMENT_ENV === 'staging' ? config.internalTestLimits : null,
       spendCapUsd: config.GEO_INTERNAL_TEST_SPEND_CAP_USD,
       serpapiMonthlyCap: config.GEO_SERPAPI_MONTHLY_REQUEST_CAP,
     },

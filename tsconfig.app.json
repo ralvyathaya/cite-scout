@@ -21,5 +21,12 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/client", "src/domain", "src/shared", "tests/unit", "tests/e2e"]
+  "include": [
+    "src/client",
+    "src/domain",
+    "src/shared",
+    "tests/unit",
+    "tests/e2e",
+    "worker-configuration.d.ts"
+  ]
 }

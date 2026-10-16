@@ -82,6 +82,16 @@ Verify the public boundary after deployment: a browser without an Access session
 
 ## 4. Grant one account and set the bounded test budget
 
+**The original 24-attempt experiment below is exhausted. Do not reactivate it.** The founder-gates plan adds code for an explicit cumulative allowance; live activation still needs separate owner approval. The committed `GEO_INTERNAL_TEST_LIMITS` has five zero ceilings and every paid-flow flag/budget remains off.
+
+`GEO_INTERNAL_TEST_LIMITS` is a single JSON object with all five integer keys: `observations`, `openai`, `perplexity`, `serpapi`, `classifier`. An empty value preserves the original 24 / 6 / 6 / 18 / 24 scope and US$5 maximum; a complete explicit value can extend it only in isolated staging. The upper bounds are 69 / 18 / 15 / 50 / 85 and US$9.54 **cumulative**, never fresh credits. Runtime validation, readiness, atomic observation admission and provider reservations use these same configured ceilings. The static deployment guard reads the same bounds. No override is accepted in production.
+
+Before any approved extension, take a new read-only snapshot of **all** observation reservations and `geo_provider_requests`, including retained anonymous entries and earlier months. Record request counts by collector (Clef/Jev together), the sum of `max(reserved, reported, estimated)` per row, unresolved requests and pending jobs. The last planning snapshot was 24 attempts, OpenAI 6, Perplexity 6, SerpApi 17, classifier 20, conservative reservations US$4.54, unknown request costs zero. Those figures are historical inputs, not permission or a current balance.
+
+Only if those counters still match, the proposed extra scope is 45 attempts, 12 OpenAI, 9 Perplexity, up to 33 SerpApi and 65 classifications, with at most US$5 additional reservation authority. Proposed per-call ceilings are US$0.10 / US$0.10 / US$0.002; their new reservation total is US$2.23. Verify tariffs, free balances and the agreed manifest before enabling anything. Changed counters require recalculation; never delete rows or release old reservations to fit. Monthly and daily limits remain separate constraints. Unknown/uncertain costs or lost paid results still block subsequent requests.
+
+The following instructions describe the **historical initial experiment**, not an approval to run a new one.
+
 Find the owner account's ID in the staging D1 console after login. Do not use an ID from production. Set the account ID and a UTC ISO timestamp no more than 14 days in the future through interactive prompts:
 
 ```powershell
