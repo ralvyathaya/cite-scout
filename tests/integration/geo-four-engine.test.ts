@@ -580,6 +580,7 @@ describe('four-engine staging observation loop', () => {
     ).toMatchObject({
       model: 'gpt-6-luna',
       store: false,
+      max_output_tokens: 1600,
       max_tool_calls: 1,
       tool_choice: 'required',
     });
@@ -593,6 +594,7 @@ describe('four-engine staging observation loop', () => {
     expect(saved.results[0]?.answer_text).toBe('OrbitCal helps teams.');
     expect(JSON.parse(saved.results[0]?.context_json ?? '{}')).toMatchObject({
       collector: 'openai_responses',
+      collectorVersion: 'geo-collector-3',
     });
     expect(saved.results[0]?.capture_json).not.toContain('synthetic-openai-secret');
     expect(JSON.parse(saved.results[0]?.capture_json ?? '{}')).toMatchObject({

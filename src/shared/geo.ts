@@ -101,7 +101,7 @@ export interface GeoRequestContext {
   engine: GeoEngine;
   surface: (typeof geoSurfaces)[GeoEngine]['surface'];
   collector: GeoCollector;
-  collectorVersion: 'geo-collector-1' | 'geo-collector-2';
+  collectorVersion: 'geo-collector-1' | 'geo-collector-2' | 'geo-collector-3';
   requestedModel?: string;
   languageCode: string;
   locationCode: number;

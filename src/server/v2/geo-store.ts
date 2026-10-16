@@ -512,11 +512,12 @@ export async function startGeoRun(
           ? config.GEO_SERP_COLLECTOR
           : geoSurfaces[engine].collector,
       collectorVersion:
-        engine === 'openai_web_search' ||
-        ((engine === 'google_aio' || engine === 'bing_copilot') &&
-          config.GEO_SERP_COLLECTOR === 'serpapi')
-          ? 'geo-collector-2'
-          : 'geo-collector-1',
+        engine === 'openai_web_search'
+          ? 'geo-collector-3'
+          : (engine === 'google_aio' || engine === 'bing_copilot') &&
+              config.GEO_SERP_COLLECTOR === 'serpapi'
+            ? 'geo-collector-2'
+            : 'geo-collector-1',
       ...(engine === 'openai_web_search' ? { requestedModel: config.GEO_OPENAI_MODEL } : {}),
       languageCode: settings.languageCode,
       locationCode: settings.locationCode,
@@ -525,7 +526,7 @@ export async function startGeoRun(
       brand: { id: project.id, name: project.brand_name, domain: project.canonical_domain },
       competitors,
       instructionVersion: 'neutral-research-1',
-      maxOutputTokens: 700,
+      maxOutputTokens: engine === 'openai_web_search' ? 1600 : 700,
     })),
   );
   const snapshotHash = await geoHash(contexts);
