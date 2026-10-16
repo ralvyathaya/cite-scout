@@ -4,6 +4,7 @@
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "strict": true,
     "noEmit": true,
@@ -15,6 +16,7 @@
     "drizzle.config.ts",
     "playwright.config.ts",
     "scripts/**/*.ts",
-    "src/shared/geo-analysis.ts"
+    "src/shared/**/*.ts",
+    "src/domain/**/*.ts"
   ]
 }
