@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseConfigFileTextToJson } from 'typescript';
+import testLimits from '../src/shared/geo-test-limits.json' with { type: 'json' };
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const hostname = 'staging.cite-scout.com';
@@ -80,8 +81,30 @@ export function validateStaging(staging, production, allowUnprovisioned = false)
     }
   }
   const budget = Number(staging.vars.GEO_INTERNAL_TEST_SPEND_CAP_USD ?? '0');
-  if (!Number.isFinite(budget) || budget < 0 || budget > 5) {
-    throw new Error('STAGING_TEST_BUDGET_MAX_5_USD');
+  const override = (staging.vars.GEO_INTERNAL_TEST_LIMITS ?? '').trim();
+  if (override) {
+    try {
+      const limits = JSON.parse(override);
+      if (
+        !limits ||
+        Array.isArray(limits) ||
+        Object.keys(limits).length !== Object.keys(testLimits.maximum).length ||
+        Object.entries(testLimits.maximum).some(
+          ([key, maximum]) =>
+            !Number.isInteger(limits[key]) || limits[key] < 0 || limits[key] > maximum,
+        )
+      )
+        throw new Error();
+    } catch {
+      throw new Error('STAGING_TEST_LIMITS_INVALID');
+    }
+  }
+  if (
+    !Number.isFinite(budget) ||
+    budget < 0 ||
+    budget > (override ? testLimits.maximumSpendUsd : testLimits.legacySpendUsd)
+  ) {
+    throw new Error('STAGING_TEST_BUDGET_INVALID');
   }
   if (
     !allowUnprovisioned &&

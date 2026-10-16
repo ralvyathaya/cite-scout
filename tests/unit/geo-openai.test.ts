@@ -205,6 +205,84 @@ describe('OpenAI Web Search API capture', () => {
     expect(capture.sources).toEqual([]);
   });
 
+  it.each(['in_progress', 'searching', 'incomplete', 'failed'])(
+    'keeps a completed response with an unfinished search (%s) partial',
+    async (status) => {
+      const raw = envelope();
+      raw.output[0] = { type: 'web_search_call', status, action: { type: 'search' } };
+      const capture = await captureOpenAiGeo(
+        'key',
+        context(),
+        vi.fn<typeof fetch>().mockResolvedValue(reply(raw)),
+      );
+      expect(capture).toMatchObject({
+        quality: 'partial',
+        providerStatus: 'completed',
+        answerText: 'Orbit [1].',
+      });
+      expect(capture.raw).toEqual(raw);
+    },
+  );
+
+  it('keeps an incomplete message partial even when its response and search completed', async () => {
+    const raw = envelope([{ ...message(), status: 'incomplete' }]);
+    const capture = await captureOpenAiGeo(
+      'key',
+      context(),
+      vi.fn<typeof fetch>().mockResolvedValue(reply(raw)),
+    );
+    expect(capture.quality).toBe('partial');
+    expect(capture.raw).toEqual(raw);
+  });
+
+  // Synthetic text/IDs reconstruct the three item-state shapes in the six saved owner captures.
+  it.each([
+    { status: 'completed', messageStatus: 'completed', unfinishedAction: 'search' },
+    { status: 'incomplete', messageStatus: 'incomplete', unfinishedAction: 'search' },
+    { status: 'completed', messageStatus: 'completed', unfinishedAction: 'open_page' },
+  ])('preserves a completed search alongside an unfinished second item: %j', async (shape) => {
+    const raw = {
+      ...envelope(
+        [
+          {
+            type: 'web_search_call',
+            status: 'searching',
+            action: { type: shape.unfinishedAction },
+          },
+          { ...message(), status: shape.messageStatus },
+        ],
+        shape.status,
+      ),
+      incomplete_details: shape.status === 'incomplete' ? { reason: 'max_output_tokens' } : null,
+    };
+    const capture = await captureOpenAiGeo(
+      'key',
+      context(),
+      vi.fn<typeof fetch>().mockResolvedValue(reply(raw)),
+    );
+    expect(capture.quality).toBe('partial');
+    expect(capture.raw).toEqual(raw);
+    expect(capture.sources.some((source) => source.referenceLevel === 'inline_verified')).toBe(
+      true,
+    );
+  });
+
+  it('recognizes the documented find_in_page search action', async () => {
+    const raw = envelope();
+    raw.output[0] = {
+      type: 'web_search_call',
+      status: 'completed',
+      action: { type: 'find_in_page', url: 'https://used.example/', pattern: 'Orbit' },
+    };
+    const capture = await captureOpenAiGeo(
+      'key',
+      context(),
+      vi.fn<typeof fetch>().mockResolvedValue(reply(raw)),
+    );
+    expect(capture.quality).toBe('complete');
+    expect(capture.raw).toEqual(raw);
+  });
+
   it('does not infer citations when annotations are missing', async () => {
     const raw = envelope([
       { ...message(), content: [{ type: 'output_text', text: 'Orbit [1].' }] },
@@ -219,17 +297,25 @@ describe('OpenAI Web Search API capture', () => {
     expect(capture.sources.every((source) => source.referenceLevel === 'retrieved')).toBe(true);
   });
 
-  it('does not verify a citation span that splits a Unicode surrogate pair', async () => {
-    const raw = envelope([message('😀 Orbit [1].', [citation('https://used.example/', 1, 5)])]);
-    const capture = await captureOpenAiGeo(
-      'key',
-      context(),
-      vi.fn<typeof fetch>().mockResolvedValue(reply(raw)),
-    );
-    expect(capture.quality).toBe('partial');
-    expect(capture.answerText).toBe('😀 Orbit [1].');
-    expect(capture.inlineReferencesAvailable).toBe(false);
-  });
+  it.each([
+    [1, 5],
+    [0, 1],
+  ])(
+    'does not verify a citation span that splits a Unicode surrogate pair (%i–%i)',
+    async (start, end) => {
+      const raw = envelope([
+        message('😀 Orbit [1].', [citation('https://used.example/', start, end)]),
+      ]);
+      const capture = await captureOpenAiGeo(
+        'key',
+        context(),
+        vi.fn<typeof fetch>().mockResolvedValue(reply(raw)),
+      );
+      expect(capture.quality).toBe('partial');
+      expect(capture.answerText).toBe('😀 Orbit [1].');
+      expect(capture.inlineReferencesAvailable).toBe(false);
+    },
+  );
 
   it('keeps invalid retrieved source records and invalid token usage partial', async () => {
     const raw = envelope();

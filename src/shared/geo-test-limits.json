@@ -1,0 +1,12 @@
+{
+  "legacy": { "observations": 24, "openai": 6, "perplexity": 6, "serpapi": 18, "classifier": 24 },
+  "maximum": {
+    "observations": 69,
+    "openai": 18,
+    "perplexity": 15,
+    "serpapi": 50,
+    "classifier": 85
+  },
+  "legacySpendUsd": 5,
+  "maximumSpendUsd": 9.54
+}

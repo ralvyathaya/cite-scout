@@ -365,8 +365,8 @@ test.describe('authenticated workspace', () => {
 
   test('health endpoint stays clean and public', async ({ request }) => {
     const response = await request.get('/api/health');
-    expect(response.status()).toBe(200);
     const text = await response.text();
+    expect(response.status(), text).toBe(200);
     for (const leaked of ['DB', 'database_id', 'PERPLEXITY', 'BETTER_AUTH', 'OPERATOR']) {
       expect(text).not.toContain(leaked);
     }

@@ -1,5 +1,9 @@
 import { actionCandidates, sourceOpportunities } from '../../../domain/geo-playbooks';
-import { buildGeoEvaluation, projectGeoClassification } from '../../../domain/geo-classification';
+import {
+  buildGeoEvaluation,
+  projectGeoClassification,
+  belongsToDomain,
+} from '../../../domain/geo-classification';
 import { diagnoseGeo } from '../../../domain/geo-diagnosis';
 import {
   compareCohortSamples,
@@ -11,6 +15,7 @@ import {
   geoSettingsSchema,
   geoPromptSetSchema,
   geoSurfaces,
+  geoCollectorPolicy,
   type GeoEngine,
   type GeoObservation,
   type GeoRun,
@@ -20,6 +25,7 @@ import {
 import { geoVersions, type GeoAnalysis, type NativeDecision } from '../../../shared/geo-analysis';
 import {
   geoActionPatchSchema,
+  geoFollowUpSchema,
   type GeoAction,
   type GeoActionEvent,
   type GeoActionDetail,
@@ -48,6 +54,7 @@ export class GeoFixtureWorkspace {
   private observations: GeoObservation[] = [];
   private analyses: GeoAnalysis[] = [];
   private actions: GeoAction[] = [];
+  private followUpEvidence = new Map<string, GeoActionDetail['evidence']>();
   private events: GeoActionEvent[] = [];
   private runs: GeoRun[] = [];
   private samples = new Map<string, GeoDailySample>();
@@ -157,10 +164,7 @@ export class GeoFixtureWorkspace {
             engine,
             surface: surface.surface,
             collector: fixtureCollector(engine),
-            collectorVersion:
-              engine === 'openai_web_search' || fixtureCollector(engine) === 'serpapi'
-                ? 'geo-collector-2'
-                : 'geo-collector-1',
+            ...geoCollectorPolicy(engine, fixtureCollector(engine)),
             ...(engine === 'openai_web_search' ? { requestedModel: 'fixture-model' } : {}),
             languageCode: this.settings.languageCode,
             locationCode: this.settings.locationCode,
@@ -173,7 +177,6 @@ export class GeoFixtureWorkspace {
               domain: rival.canonicalDomain,
             })),
             instructionVersion: 'neutral-research-1',
-            maxOutputTokens: 700,
           },
           capture: {
             schemaVersion: 'geo-capture-1',
@@ -357,7 +360,7 @@ export class GeoFixtureWorkspace {
     );
     return {
       action,
-      evidence: candidate?.evidence ?? [],
+      evidence: this.followUpEvidence.get(action.id) ?? candidate?.evidence ?? [],
       events: this.events
         .filter((event) => event.actionId === action.id)
         .slice()
@@ -694,6 +697,76 @@ export class GeoFixtureWorkspace {
       if (!action) throw new Error('Fixture action unavailable');
       if (route.endsWith('/measurements')) return this.measurements(action);
       if (method === 'GET') return this.detail(action);
+      if (route.endsWith('/follow-ups')) {
+        const input = geoFollowUpSchema.parse(body);
+        const hash = JSON.stringify({ path, body }),
+          replay = this.mutations.get(input.requestId);
+        if (replay) {
+          if (replay.hash !== hash) throw new Error('IDEMPOTENCY_CONFLICT');
+          return replay.value;
+        }
+        if (input.revision !== action.revision) throw new Error('GEO_ACTION_CHANGED');
+        if (action.category !== 'owned' || !belongsToDomain(input.targetUrl, action.targetDomain))
+          throw new Error('GEO_FOLLOW_UP_INVALID_TARGET');
+        const sourceProofs = this.detail(action).evidence;
+        const selected = input.proofs.map((proof) => {
+          const match = sourceProofs.find(
+            (row) =>
+              row.observationId === proof.observationId && row.analysisId === proof.analysisId,
+          );
+          const observation = this.observations.find((row) => row.id === proof.observationId);
+          const analysis = this.analyses.find((row) => row.id === proof.analysisId);
+          if (
+            !match ||
+            observation?.capture.quality !== 'complete' ||
+            analysis?.classification?.answerQuality !== 'usable'
+          )
+            throw new Error('GEO_FOLLOW_UP_INVALID_PROOF');
+          return structuredClone(match);
+        });
+        if (
+          new Set(
+            selected.map(
+              (proof) => `${proof.scope.context.promptId}:${proof.scope.context.engine}`,
+            ),
+          ).size !== selected.length
+        )
+          throw new Error('GEO_FOLLOW_UP_INVALID_PROOF');
+        const next: GeoAction = {
+          ...structuredClone(action),
+          id: `fixture-follow-up-${input.requestId}`,
+          dedupeKey: `follow-up:${action.id}:${input.requestId}`,
+          status: 'accepted',
+          revision: 1,
+          checkedIds: [],
+          notes: '',
+          targetUrl: input.targetUrl,
+          createdAt: this.at.toISOString(),
+          updatedAt: this.at.toISOString(),
+          scopes: selected.map((proof) => proof.scope),
+          evidenceCount: selected.length,
+        };
+        this.actions.push(next);
+        this.followUpEvidence.set(next.id, selected);
+        this.events.push({
+          id: input.requestId,
+          actionId: next.id,
+          kind: 'accepted',
+          recordedAt: this.at.toISOString(),
+          details: {
+            ...input,
+            sourceActionId: action.id,
+            excludedProofs: sourceProofs
+              .filter((proof) => !input.proofs.some((row) => row.analysisId === proof.analysisId))
+              .map(({ observationId, analysisId }) => ({ observationId, analysisId })),
+          },
+          scopes: structuredClone(next.scopes),
+          evidenceIds: selected.flatMap((proof) => proof.evidenceIds),
+        });
+        const result = structuredClone(this.detail(next));
+        this.mutations.set(input.requestId, { hash, value: result });
+        return result;
+      }
       const completion = route.endsWith('/complete'),
         reopened = route.endsWith('/reopen');
       const input = completion

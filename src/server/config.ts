@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { readGeoTestLimits } from '../shared/geo-test-limits';
 
 const configSchema = z.object({
   APP_URL: z.url(),
@@ -17,7 +18,8 @@ const configSchema = z.object({
     .default(''),
   GEO_INTERNAL_TEST_EXPIRES_AT: z.string().default(''),
   GEO_SERPAPI_MONTHLY_REQUEST_CAP: z.coerce.number().int().nonnegative().default(0),
-  GEO_INTERNAL_TEST_SPEND_CAP_USD: z.coerce.number().nonnegative().max(5).default(0),
+  GEO_INTERNAL_TEST_LIMITS: z.string().default(''),
+  GEO_INTERNAL_TEST_SPEND_CAP_USD: z.coerce.number().nonnegative().default(0),
   GEO_INTERNAL_TEST_PERPLEXITY_MAX_COST_USD: z.coerce.number().nonnegative().default(0),
   GEO_INTERNAL_TEST_OPENAI_MAX_COST_USD: z.coerce.number().nonnegative().default(0),
   GEO_INTERNAL_TEST_PROCESSING_MAX_COST_USD: z.coerce.number().nonnegative().default(0),
@@ -45,6 +47,7 @@ const configSchema = z.object({
 
 export function getConfig(env: CloudflareBindings) {
   const config = configSchema.parse(env);
+  const internalTestLimits = readGeoTestLimits(config);
   if (config.GEO_INTERNAL_TEST_USER_ID || config.GEO_INTERNAL_TEST_EXPIRES_AT) {
     const expires = Date.parse(config.GEO_INTERNAL_TEST_EXPIRES_AT);
     if (
@@ -66,7 +69,7 @@ export function getConfig(env: CloudflareBindings) {
     (!config.OPERATOR_SECRET || config.OPERATOR_SECRET.length < 32)
   )
     throw new Error('OPERATOR_SECRET_REQUIRED');
-  return config;
+  return { ...config, internalTestLimits };
 }
 
 export function internalTestUserId(env: CloudflareBindings, at = new Date()): string | null {

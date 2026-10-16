@@ -23,3 +23,26 @@ The native DataForSEO adapters submit Standard tasks with the frozen neutral pro
 Ambiguous paid submission is `submission_uncertain`; the operator may recover a saved provider task with matching ID/tag or close it without retry. It never triggers automatic re-POST. Provider-auth/balance/rate-limit and async recovery have only local/synthetic evidence here; live account state, charges and quality are unverified. DataForSEO is optional for local/MVP use, and TypeSafe is needed only for selected Jev. See [operations](geo-operations.md) for exact routes, flags and live gates.
 
 Owned page verification is limited to known owned targets, public DNS records, HTTPS, validated redirects, ten seconds and 128 KB. It observes HTTP/meta/header/canonical signals and never proves indexing. Native Workers `fetch` cannot pin the resolved IP; public-address validation is repeated before each fetch/redirect and Workers' public outbound network is relied on at connection time. Keep this boundary on Workers, and do not port it unchanged to a Node server with private-network access. Page checks remain off by default.
+
+## Bing parser audit — 2026-10-16
+
+The [official Bing Copilot Answer contract](https://serpapi.com/bing-copilot-answer) documents `overview`, `question_and_answer` and `tabbed_content` under `copilot_answer`, returned by `engine=bing`. Tabs contain a title, content and link. Question-and-answer cards expose source `sitelinks`; their card `link` can point to Bing Images. The parser now preserves tab text and links, Q&A title and sitelinks. Card links remain retrieved references. Organic snippets, shopping, images and other navigation cards never become answer text. Missing `copilot_answer` stays `no_feature`; empty, invalid or unsupported answer content stays `partial`.
+
+Read-only inspection of the five saved Bing captures found no `copilot_answer` property in any of them. Each contained 9–10 organic results. This parser addition does not explain or upgrade those historical `no_feature` records. Fixtures prove the three supported shapes and malformed-input handling; they do not satisfy G2.
+
+**Change decision:** Go for offline implementation, conditional for live activation. This retrieval/parser change improves coverage of a previously ignored shape and avoids treating a card destination as a citation. The main risk is accepting incomplete or unrelated tab content. Empty/malformed-tab and organic-only regressions catch that failure; unsupported content remains partial. New Bing/SerpApi contexts use `geo-collector-3`, isolating persisted answers from earlier cohorts. Google, Perplexity, the model, prompt and provider endpoint are unchanged. The owner must review a real buyer answer before pilot; rollback requires reverting the parser deployment, without rewriting saved evidence.
+
+### Frozen Bing canary bank
+
+These exact strings define the prospective bank, not permission to run it. All use Bing/SerpApi, `US/en`, desktop and `no_cache=true`; no separate `engine=bing_copilot` fallback or automatic retry. Record actual prompt IDs, run IDs, request IDs and observed shapes in the execution manifest before a separately approved U6 run. The three buyer prompts test G2; controls only test transport/parser and are excluded from business comparisons, diagnosis held-out labels and action scopes. A documented shape is a possibility, not an expected positive result.
+
+| Canary ID      | Label             | Exact prompt                                                                                         | Review                                               |
+| -------------- | ----------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| bing-buyer-1   | Buyer             | Which tools help a startup marketing team monitor brand mentions and citations in AI search answers? | Relevant product answer and traceable sources        |
+| bing-buyer-2   | Buyer             | What should a founder compare when choosing a generative engine optimization monitoring tool?        | Relevant buyer criteria and traceable sources        |
+| bing-buyer-3   | Buyer             | Which AI visibility tools help turn missed brand citations into concrete website improvement tasks?  | Relevant action workflow and traceable sources       |
+| bing-control-1 | Transport control | coffee                                                                                               | Possible tabbed content; never buyer proof           |
+| bing-control-2 | Transport control | how did WW2 start?                                                                                   | Possible question-and-answer card; never buyer proof |
+| bing-control-3 | Transport control | Edward Tufte                                                                                         | Possible overview; never buyer proof                 |
+
+**Outcome:** Offline parser checks pass; no provider request was made. Positive buyer evidence, its references and G2 remain pending U6. Missing features or errors must remain in the receipt rather than prompting an unbudgeted query substitution.

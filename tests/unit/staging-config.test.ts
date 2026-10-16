@@ -108,10 +108,30 @@ describe('staging deployment guard', () => {
     expect(check(config, []).stderr).toContain('STAGING_ACCESS_VERIFICATION_REQUIRED');
   });
 
-  it('limits the cumulative internal test budget to five dollars', () => {
+  it('requires a complete bounded allowance before exceeding the original spending ceiling', () => {
     const config = staging();
+    delete config.vars.GEO_INTERNAL_TEST_LIMITS;
     config.vars.GEO_INTERNAL_TEST_SPEND_CAP_USD = '5.01';
-    expect(check(config).stderr).toContain('STAGING_TEST_BUDGET_MAX_5_USD');
+    expect(check(config).stderr).toContain('STAGING_TEST_BUDGET_INVALID');
+    config.vars.GEO_INTERNAL_TEST_LIMITS = JSON.stringify({
+      observations: 69,
+      openai: 18,
+      perplexity: 15,
+      serpapi: 50,
+      classifier: 85,
+    });
+    config.vars.GEO_INTERNAL_TEST_SPEND_CAP_USD = '9.54';
+    expect(check(config).status).toBe(0);
+    config.vars.GEO_INTERNAL_TEST_LIMITS = '{}';
+    expect(check(config).stderr).toContain('STAGING_TEST_LIMITS_INVALID');
+    config.vars.GEO_INTERNAL_TEST_LIMITS = JSON.stringify({
+      observations: 70,
+      openai: 18,
+      perplexity: 15,
+      serpapi: 50,
+      classifier: 85,
+    });
+    expect(check(config).stderr).toContain('STAGING_TEST_LIMITS_INVALID');
   });
 
   it('rejects plaintext credentials and removal of required authentication secrets', () => {

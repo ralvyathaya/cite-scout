@@ -17,6 +17,7 @@ import {
   claimGeoItem,
   geoAllowance,
   readGeoRun,
+  readCurrentGeoContexts,
   saveGeoSettings,
   startGeoRun,
 } from '../../src/server/v2/geo-store';
@@ -173,6 +174,37 @@ afterEach(async () => {
 });
 
 describe('four-engine staging observation loop', () => {
+  it('uses the same prospective context for follow-up validation and fresh runs without changing history', async () => {
+    const { env, owner, run } = await accepted([
+      'perplexity',
+      'openai_web_search',
+      'google_aio',
+      'bing_copilot',
+    ]);
+    const expected = {
+      perplexity: ['geo-collector-1', 700],
+      openai_web_search: ['geo-collector-3', 1600],
+      google_aio: ['geo-collector-2', 700],
+      bing_copilot: ['geo-collector-3', 700],
+    };
+    const current = await readCurrentGeoContexts(env, owner.userId, run.items);
+    for (const [index, item] of run.items.entries()) {
+      expect([item.context.collectorVersion, item.context.maxOutputTokens]).toEqual(
+        expected[item.engine as keyof typeof expected],
+      );
+      expect(current[index]).toEqual(item.context);
+    }
+    const openai = run.items.find((item) => item.engine === 'openai_web_search');
+    if (!openai) throw new Error('Expected OpenAI context');
+    const changed = { ...env, GEO_OPENAI_MODEL: 'different-requested-model' };
+    expect((await readCurrentGeoContexts(changed, owner.userId, [openai]))[0]?.requestedModel).toBe(
+      'different-requested-model',
+    );
+    expect((await readGeoRun(changed, owner.userId, run.id)).items).toEqual(run.items);
+    expect(
+      await env.DB.prepare('SELECT count(*) AS total FROM geo_provider_requests').first('total'),
+    ).toBe(0);
+  });
   it('lets only the active staging owner create a project without enrollment or legacy scans', async () => {
     const at = new Date(),
       owner = await seed(0, false, at);
@@ -362,6 +394,48 @@ describe('four-engine staging observation loop', () => {
     ).toBe(24);
   });
 
+  it('uses the configured lifetime observation limit for concurrent admission and replay', async () => {
+    const { env, owner, run, at } = await accepted(['openai_web_search', 'perplexity']);
+    const configured = {
+      ...env,
+      GEO_INTERNAL_TEST_LIMITS: JSON.stringify({
+        observations: 3,
+        openai: 7,
+        perplexity: 7,
+        serpapi: 19,
+        classifier: 25,
+      }),
+    };
+    await env.DB.batch([
+      env.DB.prepare("UPDATE geo_run_items SET status='cancelled' WHERE run_id=?").bind(run.id),
+      env.DB.prepare("UPDATE scan_runs SET status='cancelled' WHERE id=?").bind(run.id),
+      env.DB.prepare(
+        "UPDATE provider_call_reservations SET status='failed',lease_until=NULL WHERE scan_run_id=?",
+      ).bind(run.id),
+    ]);
+    const next = new Date(at.getTime() + 301_000);
+    const requests = [
+      { requestId: crypto.randomUUID(), engines: ['openai_web_search'] as GeoEngine[] },
+      { requestId: crypto.randomUUID(), engines: ['perplexity'] as GeoEngine[] },
+    ];
+    const results = await Promise.allSettled(
+      requests.map((request) => startGeoRun(configured, owner.userId, request, next)),
+    );
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const index = results.findIndex((result) => result.status === 'fulfilled');
+    const acceptedRequest = requests[index];
+    if (!acceptedRequest) throw new Error('Expected an admitted request');
+    expect((await startGeoRun(configured, owner.userId, acceptedRequest, next)).items).toHaveLength(
+      1,
+    );
+    expect(
+      await env.DB.prepare('SELECT count(*) AS total FROM provider_call_reservations').first(
+        'total',
+      ),
+    ).toBe(3);
+    expect((await geoAllowance(configured, owner.userId, next)).reason).toBe('GEO_QUOTA_EXCEEDED');
+  });
+
   it('shares one classification ceiling across Clef and optional Jev', async () => {
     const { env, owner, run, at } = await accepted(['openai_web_search']);
     await env.DB.batch([
@@ -538,6 +612,7 @@ describe('four-engine staging observation loop', () => {
     ).toMatchObject({
       model: 'gpt-6-luna',
       store: false,
+      max_output_tokens: 1600,
       max_tool_calls: 1,
       tool_choice: 'required',
     });
@@ -551,6 +626,7 @@ describe('four-engine staging observation loop', () => {
     expect(saved.results[0]?.answer_text).toBe('OrbitCal helps teams.');
     expect(JSON.parse(saved.results[0]?.context_json ?? '{}')).toMatchObject({
       collector: 'openai_responses',
+      collectorVersion: 'geo-collector-3',
     });
     expect(saved.results[0]?.capture_json).not.toContain('synthetic-openai-secret');
     expect(JSON.parse(saved.results[0]?.capture_json ?? '{}')).toMatchObject({
@@ -876,14 +952,24 @@ describe('four-engine staging observation loop', () => {
   });
 
   it.each([
-    ['openai_responses', 6],
-    ['perplexity_api', 6],
-    ['serpapi', 18],
-    ['workers_ai', 24],
-    ['typesafe', 24],
+    ['openai_responses', 7],
+    ['perplexity_api', 7],
+    ['serpapi', 19],
+    ['workers_ai', 25],
+    ['typesafe', 25],
   ] as const)('enforces the internal %s maximum of %i requests', async (collector, maximum) => {
     const { env, run, owner, at } = await accepted(['openai_web_search']);
-    const admissionEnv = { ...env, GEO_SERPAPI_MONTHLY_REQUEST_CAP: '250' };
+    const admissionEnv = {
+      ...env,
+      GEO_SERPAPI_MONTHLY_REQUEST_CAP: '250',
+      GEO_INTERNAL_TEST_LIMITS: JSON.stringify({
+        observations: 30,
+        openai: 7,
+        perplexity: 7,
+        serpapi: 19,
+        classifier: 25,
+      }),
+    };
     let reservationId: string | undefined, processingId: string | undefined;
     if (collector === 'workers_ai' || collector === 'typesafe') {
       await env.DB.batch([

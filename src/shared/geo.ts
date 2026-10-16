@@ -53,6 +53,21 @@ export const geoSurfaces = {
   },
 } as const;
 
+export function geoCollectorPolicy(
+  engine: GeoEngine,
+  collector: GeoCollector,
+): Pick<GeoRequestContext, 'collectorVersion' | 'maxOutputTokens'> {
+  return {
+    collectorVersion:
+      engine === 'openai_web_search' || (engine === 'bing_copilot' && collector === 'serpapi')
+        ? 'geo-collector-3'
+        : (engine === 'google_aio' || engine === 'bing_copilot') && collector === 'serpapi'
+          ? 'geo-collector-2'
+          : 'geo-collector-1',
+    maxOutputTokens: engine === 'openai_web_search' ? 1600 : 700,
+  };
+}
+
 const unique = (items: unknown[]) => new Set(items).size === items.length;
 export const geoRunRequestSchema = z
   .object({
@@ -101,7 +116,7 @@ export interface GeoRequestContext {
   engine: GeoEngine;
   surface: (typeof geoSurfaces)[GeoEngine]['surface'];
   collector: GeoCollector;
-  collectorVersion: 'geo-collector-1' | 'geo-collector-2';
+  collectorVersion: 'geo-collector-1' | 'geo-collector-2' | 'geo-collector-3';
   requestedModel?: string;
   languageCode: string;
   locationCode: number;

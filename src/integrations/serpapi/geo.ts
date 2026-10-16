@@ -233,9 +233,33 @@ function normalize(
       const answer = record(feature.question_and_answer);
       if (!answer) partial();
       else {
-        part(answer.answer);
-        if (answer.link != null) source(answer, 'answer');
+        if (answer.title != null) part(answer.title);
+        if (typeof answer.answer !== 'string' || !answer.answer.trim()) partial();
+        else part(answer.answer);
+        sources(answer.sitelinks, 'answer');
+        if (answer.link != null) source(answer, 'retrieved');
       }
+    }
+    if ('tabbed_content' in feature) {
+      const tabs = feature.tabbed_content;
+      if (!Array.isArray(tabs) || tabs.length === 0) partial();
+      else
+        tabs.forEach((candidate: unknown, index) => {
+          const tab = record(candidate);
+          if (
+            !tab ||
+            typeof tab.title !== 'string' ||
+            !tab.title.trim() ||
+            typeof tab.content !== 'string' ||
+            !tab.content.trim()
+          ) {
+            partial();
+            return;
+          }
+          part(tab.title, index);
+          part(tab.content, index);
+          source(tab, 'answer');
+        });
     }
   }
   capture.answerText = capture.textParts.map((value) => value.text).join('\n');

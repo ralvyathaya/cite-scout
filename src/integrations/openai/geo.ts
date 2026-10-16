@@ -102,7 +102,7 @@ function normalizeOpenAi(raw: unknown): GeoCapture {
       if (
         item.status === 'completed' &&
         typeof action?.type === 'string' &&
-        ['search', 'open_page', 'find'].includes(action.type)
+        ['search', 'open_page', 'find_in_page'].includes(action.type)
       )
         completedSearches += 1;
       else partial();

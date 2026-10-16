@@ -1,32 +1,67 @@
 # GEO classification evaluation
 
-Status on 2026-10-11: local contract/lifecycle verification and real model evaluation are separate gates. No dataset has yet been reviewed and labeled by a human. No held-out accuracy, real p50/p95 latency or invoice-reconciled workload cost is claimed. Production GEO flags remain disabled and budgets zero.
+Status on 2026-10-16: offline evaluation tooling is ready; **G3 is pending human labels**. Twenty stored owner-staging observations and classifier outputs were exported read-only. No capture, inference, deployment or paid request was made. Synthetic tests and JSON validation do not establish real model accuracy.
 
-The primary classifier is Workers AI `@cf/cloudflare/clef-flash`. `clef` is an explicit configuration alternative for later accuracy comparisons; `jev-1.13.0` remains an optional adapter. Model selection does not silently fall back or spend a second inference. All diagnoses currently require user review.
+| Evidence                                           | Current result                      |
+| -------------------------------------------------- | ----------------------------------- |
+| Real observations accounted once                   | 20                                  |
+| Observed capture quality                           | 9 complete, 6 partial, 5 no-feature |
+| Frozen prompt/near-duplicate groups                | 3                                   |
+| Calibration                                        | 14 observations in 2 groups         |
+| Held-out                                           | 6 observations in 1 group           |
+| Human-reviewed observations                        | 0 — pending                         |
+| Held-out precision/recall and safety counts        | not measurable                      |
+| Real classifier latency or invoice-reconciled cost | not measured here                   |
 
-The host reported a preceding local checkpoint with TypeScript, ESLint, unit/Worker integration checks, the direct V2 harness, build and browser verification, followed by focused collector/processing accounting checks. The final count/revision and authoritative command receipt belong to the host; this documentation task did not rerun those checks. Existing coverage discovered includes `geo-classification`, `geo-page-check`, `geo-measurement`, `geo-fixture`, `geo-runs`, `geo-readiness`, `geo-api`, `geo-analysis`, `geo-actions`, `geo-collectors`, migration tests and the separate `check-v2` harness. Portions of readiness/API, fixture, migration, browser workspace and direct harness tests were inspected. Synthetic provider outputs establish application behavior, not model quality.
+The private packet contains 1,249 unreviewed field slots, including source/evidence labels. Counts follow frozen groups; empty Bing and partial OpenAI records remain included. Classification does not turn these into successful AI-answer captures.
 
-Documentation evidence strategy: no behavior changed, so no tests were added/changed. Replacement verification was read-only inspection of package commands, both Wrangler files, config/capabilities, GEO and operator routes, collector/analysis/measurement/deletion code, native provider clients, shared contracts, fixture transport and migrations. No code/config/test changes, installs, builds, migrations, provider calls, deployment or commits were performed by this documentation worker. The host must verify the final shared tree.
+The classifier remains Workers AI `@cf/cloudflare/clef-flash`, rubric `geo-rubric-1`, policy `geo-policy-1`. This work changes no model, rubric or diagnosis policy. Every diagnosis still requires review. Native probabilities are model outputs, not measured accuracy.
 
-Final code inspection includes the midnight call-start budget recheck and sticky collector/processing `usage_date` rebase, immutable processing acceptance `created_at`, migration `0007` backfill/index, fresh scheduled stage clocks, configured GEO exclusion from legacy paid daily work while paused, and DataForSEO `40102` preservation as partial evidence. This describes code/local contract evidence; it does not claim a live cross-midnight provider transaction or remote migration was observed.
+## Private local workflow
 
-Before enabling automatic diagnosis promotion, freeze separate tuning and held-out answers captured from actual enabled surfaces. A human must label answer quality, entity presence/stance, criterion fit, supplied-content evidence support and evidence segment support. Include English/Indonesian, ambiguous brand names, competitor recommendations, refusals, partial/no-feature cases and instructions embedded inside answers. Record sample counts, per-dimension/per-engine precision and recall, evidence validity, abstention/review coverage, p50/p95 wall time and token usage/cost. Keep missing metrics null rather than fabricating zeros.
+`scripts/evaluate-geo.ts` accepts local files only. It has no provider client, key input, hosted evaluation framework or inference transport. Input, packets, labels, locks and reports stay under ignored `research/private/`. The CLI rejects output outside that directory and refuses to overwrite an existing packet or label lock.
 
-Current live blockers: no authorized bounded live classifier evaluation workload or safe numerical production GEO budget; no live Clef inference receipt for the user's account; no real capture/recovery/billing receipt for newly enabled surfaces; no held-out labels. DataForSEO and TypeSafe credentials/account access are unavailable for this rollout evidence; both are optional rather than prerequisites for the local flow. Enable only verified chosen collectors, keeping missing ones unavailable. `<50ms`, causal lift and financial ROI remain unproven.
+The existing sanitized export is normalized to `research/private/owner-evaluation-input.json`, with preparation complete at `research/private/owner-evaluation-review/`. Do not prepare again into that directory or edit the frozen packet. The internal run-item ID was not exported and is explicitly `not_exported`; evaluation does not use it to invent provenance. Checks and verified facts remain limited to the original classifier input.
 
-| Live metric                                           | Result                                       |
-| ----------------------------------------------------- | -------------------------------------------- |
-| Human-reviewed held-out answer count                  | null — dataset not collected/labeled         |
-| Precision/recall by dimension and engine              | null — no held-out evaluation                |
-| Evidence-span validity and abstention/review coverage | null — no live evaluation                    |
-| Classifier p50/p95 wall time                          | null — no live workload                      |
-| Provider/classifier measured workload USD cost        | null — no invoice-reconciled workload        |
-| Max-scope four-engine production reliability          | null — not validated on the intended D1 plan |
+For a new explicitly scoped local corpus:
 
-The host observed forty-item acceptance (ten prompts × four engines) at 105 prepared statements before correction. The final atomic five-statement JSON set-insert write batch preserves whole-run gates, and the strengthened existing local test now proves forty items/reservations within fifty prepared statements; the focused integration check passed. No exact final statement count is claimed. Cloudflare's published D1 query limit is fifty per Worker invocation on Free and one thousand on Paid. Full authenticated/cron maximum scope remains unverified live; local emulation/no-cost fixtures do not prove Free production support. Recovery is to verify the intended production plan and measure the full maximum-scope invocation; daily fan-out stays off until this gate and spend gates are proven. [D1 limits](https://developers.cloudflare.com/d1/platform/limits/).
+```sh
+npx tsx scripts/evaluate-geo.ts prepare research/private/input.json research/private/review
+```
 
-Rate estimates used in the ledger are $0.038/M input tokens for Clef Flash and $0.24/M for Clef, checked on 2026-10-11 against [Cloudflare's model docs](https://developers.cloudflare.com/workers-ai/models/clef-flash/) and [Clef docs](https://developers.cloudflare.com/workers-ai/models/clef/). Estimates do not represent invoices or assume calls fall within a free allowance. Review rates before activation.
+Input is `{dataset, expectedObservationIds, records}`. Dataset is `real` or `synthetic`; every record has the existing full `observation`, `promptFamily`, supplied `checks`, verified `criteria`, stored `classification` and `diagnoses`. The declared ID list must match exactly once. Obvious fixture markers are rejected from real datasets. Keep real and synthetic corpora separate; never copy synthetic expectations into real labels.
 
-Scope decision: Serper organic SERP and Tavily search/extract were considered and audited for source discovery, but not wired into monitoring because a verified target AI-response contract was not established. No implemented adapter is claimed. The applied ce-work rule is: “The plan's units and scope, or the request itself when there is no plan, define what gets built.” This leaves target collectors real, auxiliary discovery separate, and missing engines unavailable.
+Preparation freezes SHA-256 hashes of the corpus, original inputs, rubric/policy versions, groups and partitions. Shared prompt IDs/families, near-duplicate prompts and sufficiently long near-duplicate answers are joined transitively across dates. Inspect grouping before labeling; incorrect grouping needs a new packet. The deterministic split assigns roughly one-third of groups to held-out review.
 
-Exact release recovery and operator examples are in [GEO operations](../docs/geo-operations.md). Before activation, retain actual per-surface captures with provenance, task/tag pending/error recovery, human labels and held-out results, token/latency/cost measurements, approved budgets, remote retention/tenant/deletion checks and a tested pause. No fabricated zero or synthetic success closes a live gate.
+The reviewer opens **only `packet.json` and `human-labels.json`** while labeling. The packet contains the original answer, context, sources, supplied checks/facts, exact UTF-16 candidate quotes and allowed labels. It withholds classifier decisions, probabilities, diagnoses and task predictions. Do not inspect the source export or model results while creating blind labels.
+
+Fill every label in `human-labels.json`, plus `reviewedBy` and ISO `reviewedAt`. Review capture/answer quality, entity presence/stance, criterion fit, competitors, evidence, sources, diagnosis status and task usefulness. Missing checked content stays unavailable; missing verified product facts stay unclear. Brand absence permits suspected retrieval, not proof of indexing failure. Use unknown when supplied evidence cannot resolve a question.
+
+Freeze labels before opening the model report:
+
+```sh
+npx tsx scripts/evaluate-geo.ts freeze research/private/owner-evaluation-input.json research/private/owner-evaluation-review
+npx tsx scripts/evaluate-geo.ts score research/private/owner-evaluation-input.json research/private/owner-evaluation-review
+```
+
+Freeze rejects incomplete/invalid labels and creates a non-overwritten lock. Score rejects changed inputs, labels, split or packet. It reuses the existing evaluation builder, classification projection, diagnosis policy and task generator locally, comparing stored decisions to frozen human labels. Stored/current policy disagreements are separate; history is not rewritten. There is no provider request.
+
+## Metrics and limitations
+
+Private `report.json` contains raw per-field/per-class TP/FP/FN, eligible denominators, coverage, correct/incorrect abstentions and disagreements, separated by calibration, held-out and engine. Unknown/unclear/ambiguous/unavailable/not-applicable outputs are listed explicitly as abstentions. On determinate gold, a model abstention is a false negative and coverage loss, never an excluded row. Zero eligible denominators produce **not measurable**.
+
+Safety counts distinguish false-complete captures, invalid original quotes, invalid provider-source IDs, unsupported supported diagnoses, evidence support without checked content, fit without verified facts and stored-policy disagreements. The script always returns `pilotGatePassed:false`; the owner still assesses the four gates separately.
+
+Six held-out records cover only one prompt family. Even after review, this is a small diagnostic sample, not general accuracy, consumer-chat parity, causal uplift or financial ROI. Missing language/brand/buyer-intent coverage needs truthful notes; synthetic examples cannot fill real denominators.
+
+## Offline verification receipt
+
+Tests were written first and observed failing because the evaluation module did not exist. The implementation then passed nine focused synthetic tests: twenty unique IDs, grouped partitions, hidden model outputs, frozen input/labels/split rejection, abstention misses, unknown denominators, quote/source/diagnosis failures, fixture isolation, partial/no-feature suppression, homonyms, competitor-only text and embedded instructions. A fetch spy verifies the scorer makes no network requests. These application guardrails are separate from real human review.
+
+A tenth test exercises the CLI in a temporary synthetic workspace through subprocesses: it rejects public output paths, refuses to overwrite an existing packet or frozen label lock, preserves their bytes, and completes synthetic prepare/freeze/score. No real private corpus is used by this test.
+
+Authoritative full-tree typecheck, lint, unit/Worker integration, migration checks, build and browser receipts belong to the parent implementation. Focused test success does not claim those checks ran.
+
+No human labels, label lock or real scored report were generated. The owner must review the blind private packet, run freeze/score and inspect held-out disagreements and safety failures before G3 can pass. New live inference remains outside this offline scope.
+
+Operational limits and paid-call pause/recovery remain in [GEO operations](../docs/geo-operations.md) and [owner staging](../docs/four-engine-staging.md). Automatic promotion, paid replays, hosted evaluation infrastructure and a second classifier were not added; stored-answer review needs none of them.

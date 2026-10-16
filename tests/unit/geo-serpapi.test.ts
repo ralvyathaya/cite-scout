@@ -239,8 +239,10 @@ describe('bounded SerpApi captures', () => {
               facts: [{ label: { text: 'Use:' }, content: { text: 'Team work' } }],
             },
             question_and_answer: {
+              title: 'Which tool fits a small team?',
               answer: 'A useful comparison.',
-              link: 'https://comparison.example/',
+              link: 'https://www.bing.com/images/search?q=comparison',
+              sitelinks: [{ title: 'Comparison', link: 'https://comparison.example/' }],
             },
           },
         }),
@@ -248,18 +250,121 @@ describe('bounded SerpApi captures', () => {
     );
     const capture = await captureSerpApiGeo('key', context('bing_copilot'), allow, fetcher);
     const url = requestUrl(fetcher.mock.calls[0]?.[0]);
-    expect(url.searchParams.get('mkt')).toBe('en-US');
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      engine: 'bing',
+      mkt: 'en-US',
+      device: 'desktop',
+      no_cache: 'true',
+    });
     expect(url.searchParams.get('cc')).toBeNull();
     expect(capture.answerText).toContain('Orbit works.');
     expect(capture.answerText).toContain('Team work');
     expect(capture.answerText).toContain('A useful comparison.');
+    expect(capture.answerText).toContain('Which tool fits a small team?');
     expect(capture.answerText).not.toContain('fabricated');
     expect(capture.sources).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ url: 'https://organic.example/', referenceLevel: 'retrieved' }),
         expect.objectContaining({ url: 'https://proof.example/', referenceLevel: 'answer' }),
+        expect.objectContaining({ url: 'https://comparison.example/', referenceLevel: 'answer' }),
+        expect.objectContaining({
+          url: 'https://www.bing.com/images/search?q=comparison',
+          referenceLevel: 'retrieved',
+        }),
       ]),
     );
+  });
+
+  it('preserves documented Bing tabs and their answer sources without importing organic text', async () => {
+    const tabs = [
+      {
+        title: 'Small teams',
+        content: 'Orbit supports prompt monitoring.',
+        link: 'https://proof.example/',
+      },
+      {
+        title: 'Agencies',
+        content: 'Compare reporting needs first.',
+        link: 'https://agency.example/',
+      },
+    ];
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      reply(
+        envelope({
+          organic_results: [{ link: 'https://organic.example/', snippet: 'Not the AI answer.' }],
+          copilot_answer: { tabbed_content: tabs },
+        }),
+      ),
+    );
+    const capture = await captureSerpApiGeo('key', context('bing_copilot'), allow, fetcher);
+    expect(capture.quality).toBe('complete');
+    expect(capture.answerText).toBe(
+      'Small teams\nOrbit supports prompt monitoring.\nAgencies\nCompare reporting needs first.',
+    );
+    expect(capture.sources).toEqual([
+      expect.objectContaining({ url: 'https://organic.example/', referenceLevel: 'retrieved' }),
+      expect.objectContaining({ url: 'https://proof.example/', referenceLevel: 'answer' }),
+      expect.objectContaining({ url: 'https://agency.example/', referenceLevel: 'answer' }),
+    ]);
+    expect(capture.raw).toMatchObject({ search: { copilot_answer: { tabbed_content: tabs } } });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['', ' ', undefined])(
+    'does not count a Q&A title as a complete answer: %j',
+    async (answer) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          reply(
+            envelope({ copilot_answer: { question_and_answer: { title: 'A summary.', answer } } }),
+          ),
+        );
+      const capture = await captureSerpApiGeo('key', context('bing_copilot'), allow, fetcher);
+      expect(capture.quality).toBe('partial');
+    },
+  );
+
+  it.each(
+    [
+      null,
+      {},
+      [],
+      [null],
+      [{ title: 'Missing content', link: 'https://proof.example/' }],
+      [{ title: 'Empty content', content: ' ', link: 'https://proof.example/' }],
+      [{ title: 'Invalid source', content: 'Answer text.', link: 'javascript:alert(1)' }],
+    ].map((tabs) => ({ tabs })),
+  )(
+    'keeps malformed or empty Bing tabs partial even alongside a valid overview: $tabs',
+    async ({ tabs }) => {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+        reply(
+          envelope({
+            copilot_answer: { overview: { snippet: 'Valid overview.' }, tabbed_content: tabs },
+          }),
+        ),
+      );
+      const capture = await captureSerpApiGeo('key', context('bing_copilot'), allow, fetcher);
+      expect(capture.quality).toBe('partial');
+      expect(capture.answerText).toContain('Valid overview.');
+      expect(capture.sources.every((source) => source.url.startsWith('https://'))).toBe(true);
+    },
+  );
+
+  it('retains only retrieved references when Bing has no Copilot feature', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      reply(
+        envelope({
+          organic_results: [{ link: 'https://orbit.example/', snippet: 'Orbit is best.' }],
+        }),
+      ),
+    );
+    const capture = await captureSerpApiGeo('key', context('bing_copilot'), allow, fetcher);
+    expect(capture.quality).toBe('no_feature');
+    expect(capture.answerText).toBe('');
+    expect(capture.sources).toEqual([expect.objectContaining({ referenceLevel: 'retrieved' })]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it('never counts a Bing organic-only copilot card as a complete AI answer', async () => {
