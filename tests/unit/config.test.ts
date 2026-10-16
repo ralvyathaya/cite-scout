@@ -1,23 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
 import { safeRedirect } from '../../src/domain/redirects';
-import { getConfig } from '../../src/server/config';
-import { readFileSync } from 'node:fs';
-import { parseConfigFileTextToJson } from 'typescript';
+import { readGeoTestLimits } from '../../src/shared/geo-test-limits';
 
 const limits = { observations: 69, openai: 18, perplexity: 15, serpapi: 50, classifier: 85 };
 function configured(overrides: Record<string, string> = {}) {
-  return getConfig({
-    ...z
-      .object({ vars: z.record(z.string(), z.string()) })
-      .parse(
-        parseConfigFileTextToJson('wrangler.jsonc', readFileSync('wrangler.jsonc', 'utf8')).config,
-      ).vars,
-    APP_ENV: 'test',
-    DEPLOYMENT_ENV: 'staging',
-    APP_URL: 'https://staging.cite-scout.com',
-    ...overrides,
-  } as CloudflareBindings);
+  return {
+    internalTestLimits: readGeoTestLimits({
+      GEO_INTERNAL_TEST_LIMITS: '',
+      DEPLOYMENT_ENV: 'staging',
+      APP_URL: 'https://staging.cite-scout.com',
+      ...overrides,
+      GEO_INTERNAL_TEST_SPEND_CAP_USD: Number(overrides.GEO_INTERNAL_TEST_SPEND_CAP_USD ?? 0),
+    }),
+  };
 }
 
 describe('cumulative owner-test ceilings', () => {

@@ -1,13 +1,5 @@
 import { z } from 'zod';
-import testLimits from '../shared/geo-test-limits.json';
-
-const internalTestLimitsSchema = z.strictObject({
-  observations: z.number().int().nonnegative().max(testLimits.maximum.observations),
-  openai: z.number().int().nonnegative().max(testLimits.maximum.openai),
-  perplexity: z.number().int().nonnegative().max(testLimits.maximum.perplexity),
-  serpapi: z.number().int().nonnegative().max(testLimits.maximum.serpapi),
-  classifier: z.number().int().nonnegative().max(testLimits.maximum.classifier),
-});
+import { readGeoTestLimits } from '../shared/geo-test-limits';
 
 const configSchema = z.object({
   APP_URL: z.url(),
@@ -27,11 +19,7 @@ const configSchema = z.object({
   GEO_INTERNAL_TEST_EXPIRES_AT: z.string().default(''),
   GEO_SERPAPI_MONTHLY_REQUEST_CAP: z.coerce.number().int().nonnegative().default(0),
   GEO_INTERNAL_TEST_LIMITS: z.string().default(''),
-  GEO_INTERNAL_TEST_SPEND_CAP_USD: z.coerce
-    .number()
-    .nonnegative()
-    .max(testLimits.maximumSpendUsd)
-    .default(0),
+  GEO_INTERNAL_TEST_SPEND_CAP_USD: z.coerce.number().nonnegative().default(0),
   GEO_INTERNAL_TEST_PERPLEXITY_MAX_COST_USD: z.coerce.number().nonnegative().default(0),
   GEO_INTERNAL_TEST_OPENAI_MAX_COST_USD: z.coerce.number().nonnegative().default(0),
   GEO_INTERNAL_TEST_PROCESSING_MAX_COST_USD: z.coerce.number().nonnegative().default(0),
@@ -59,13 +47,8 @@ const configSchema = z.object({
 
 export function getConfig(env: CloudflareBindings) {
   const config = configSchema.parse(env);
-  const override = config.GEO_INTERNAL_TEST_LIMITS.trim();
-  const internalTestLimits = override
-    ? internalTestLimitsSchema.parse(JSON.parse(override))
-    : testLimits.legacy;
-  if (!override && config.GEO_INTERNAL_TEST_SPEND_CAP_USD > testLimits.legacySpendUsd)
-    throw new Error('INTERNAL_TEST_LIMITS_REQUIRED');
-  if (override || config.GEO_INTERNAL_TEST_USER_ID || config.GEO_INTERNAL_TEST_EXPIRES_AT) {
+  const internalTestLimits = readGeoTestLimits(config);
+  if (config.GEO_INTERNAL_TEST_USER_ID || config.GEO_INTERNAL_TEST_EXPIRES_AT) {
     const expires = Date.parse(config.GEO_INTERNAL_TEST_EXPIRES_AT);
     if (
       config.DEPLOYMENT_ENV !== 'staging' ||
@@ -73,10 +56,9 @@ export function getConfig(env: CloudflareBindings) {
     )
       throw new Error('INTERNAL_TEST_STAGING_ONLY');
     if (
-      (config.GEO_INTERNAL_TEST_USER_ID || config.GEO_INTERNAL_TEST_EXPIRES_AT) &&
-      (!config.GEO_INTERNAL_TEST_USER_ID ||
-        !Number.isFinite(expires) ||
-        expires > Date.now() + 14 * 86_400_000)
+      !config.GEO_INTERNAL_TEST_USER_ID ||
+      !Number.isFinite(expires) ||
+      expires > Date.now() + 14 * 86_400_000
     )
       throw new Error('INVALID_INTERNAL_TEST_ACCESS');
   }
