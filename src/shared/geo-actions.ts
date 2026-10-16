@@ -87,6 +87,26 @@ export const geoActionPatchSchema = z
       value.status !== undefined || value.checkedIds !== undefined || value.notes !== undefined,
   );
 export type GeoActionPatch = z.infer<typeof geoActionPatchSchema>;
+export const geoFollowUpSchema = z
+  .object({
+    requestId: z.uuid(),
+    revision: z.number().int().positive(),
+    proofs: z
+      .array(
+        z
+          .object({
+            observationId: z.string().min(1).max(100),
+            analysisId: z.string().min(1).max(100),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(20),
+    targetUrl: z.url().max(2000),
+    changeDescription: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+export type GeoFollowUpInput = z.infer<typeof geoFollowUpSchema>;
 export interface GeoActionEvidence {
   observationId: string;
   analysisId: string;

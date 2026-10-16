@@ -85,8 +85,13 @@ export function geoCapabilities(env: CloudflareBindings) {
     config.EXTERNAL_INTEGRATIONS_ENABLED === 'true' &&
     config.GEO_PROCESSING_PROJECT_DAILY_CAP > 0 &&
     config.GEO_PROCESSING_GLOBAL_DAILY_CAP > 0;
+  const classifierAllowance =
+    config.DEPLOYMENT_ENV !== 'staging' || config.internalTestLimits.classifier > 0;
   const classifierAvailable =
-    processingEnabled && config.GEO_ANALYSIS_ENABLED === 'true' && classifierReady;
+    processingEnabled &&
+    config.GEO_ANALYSIS_ENABLED === 'true' &&
+    classifierReady &&
+    classifierAllowance;
   const pageAvailable = processingEnabled && config.GEO_PAGE_CHECKS_ENABLED === 'true';
   return {
     engines,
@@ -96,7 +101,9 @@ export function geoCapabilities(env: CloudflareBindings) {
       needsReview: true as const,
       reason: classifierAvailable
         ? null
-        : 'Classification is unavailable or paused. Original answers remain readable.',
+        : !classifierAllowance
+          ? 'Classification has no owner-test request allowance. Original answers remain readable.'
+          : 'Classification is unavailable or paused. Original answers remain readable.',
     },
     pageChecks: {
       available: pageAvailable,

@@ -17,6 +17,7 @@ import {
   claimGeoItem,
   geoAllowance,
   readGeoRun,
+  readCurrentGeoContexts,
   saveGeoSettings,
   startGeoRun,
 } from '../../src/server/v2/geo-store';
@@ -173,6 +174,37 @@ afterEach(async () => {
 });
 
 describe('four-engine staging observation loop', () => {
+  it('uses the same prospective context for follow-up validation and fresh runs without changing history', async () => {
+    const { env, owner, run } = await accepted([
+      'perplexity',
+      'openai_web_search',
+      'google_aio',
+      'bing_copilot',
+    ]);
+    const expected = {
+      perplexity: ['geo-collector-1', 700],
+      openai_web_search: ['geo-collector-3', 1600],
+      google_aio: ['geo-collector-2', 700],
+      bing_copilot: ['geo-collector-3', 700],
+    };
+    const current = await readCurrentGeoContexts(env, owner.userId, run.items);
+    for (const [index, item] of run.items.entries()) {
+      expect([item.context.collectorVersion, item.context.maxOutputTokens]).toEqual(
+        expected[item.engine as keyof typeof expected],
+      );
+      expect(current[index]).toEqual(item.context);
+    }
+    const openai = run.items.find((item) => item.engine === 'openai_web_search');
+    if (!openai) throw new Error('Expected OpenAI context');
+    const changed = { ...env, GEO_OPENAI_MODEL: 'different-requested-model' };
+    expect((await readCurrentGeoContexts(changed, owner.userId, [openai]))[0]?.requestedModel).toBe(
+      'different-requested-model',
+    );
+    expect((await readGeoRun(changed, owner.userId, run.id)).items).toEqual(run.items);
+    expect(
+      await env.DB.prepare('SELECT count(*) AS total FROM geo_provider_requests').first('total'),
+    ).toBe(0);
+  });
   it('lets only the active staging owner create a project without enrollment or legacy scans', async () => {
     const at = new Date(),
       owner = await seed(0, false, at);

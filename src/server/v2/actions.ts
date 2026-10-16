@@ -1,7 +1,16 @@
 import { actionCandidates, sourceOpportunities } from '../../domain/geo-playbooks';
 import { geoHash, type GeoEngine } from '../../shared/geo';
+import { belongsToDomain } from '../../domain/geo-classification';
+import { canonicalSourceUrl } from '../../domain/evidence';
+import { measurementCohort } from '../../domain/geo-measurement';
+import { geoVersions } from '../../shared/geo-analysis';
+import type { GeoMetricObservation } from '../../shared/geo-measurement';
+import { getConfig } from '../config';
+import { readCurrentGeoContexts } from './geo-store';
 import {
   geoActionPatchSchema,
+  geoFollowUpSchema,
+  type GeoFollowUpInput,
   type GeoAction,
   type GeoActionCandidate,
   type GeoActionDetail,
@@ -247,6 +256,246 @@ export async function readGeoAction(
     nextEvidenceCursor:
       page.results.length > 50 && last ? `${String(last.created_at)}.${last.id}` : null,
   };
+}
+export async function createGeoFollowUp(
+  env: CloudflareBindings,
+  userId: string,
+  sourceId: string,
+  body: GeoFollowUpInput,
+  at = new Date(),
+): Promise<GeoActionDetail> {
+  const input = geoFollowUpSchema.parse(body),
+    source = await ownedAction(env, userId, sourceId),
+    candidate = JSON.parse(source.candidate_json) as Omit<GeoActionCandidate, 'evidence'>,
+    bodyHash = await geoHash({ sourceId, ...input });
+  const replay = await sql(
+    env,
+    'SELECT action_id,body_hash FROM geo_action_events WHERE project_id=? AND request_id=?',
+    source.project_id,
+    input.requestId,
+  ).first<{ action_id: string; body_hash: string }>();
+  if (replay) {
+    if (replay.body_hash !== bodyHash) throw new Error('IDEMPOTENCY_CONFLICT');
+    return readGeoAction(env, userId, replay.action_id);
+  }
+  if (source.revision !== input.revision) throw new Error('GEO_ACTION_CHANGED');
+  if (candidate.category !== 'owned') throw new Error('INVALID_FOLLOW_UP_TARGET');
+  const sourceProofs = await sql(
+    env,
+    'SELECT observation_id,analysis_id FROM geo_action_evidence WHERE action_id=? ORDER BY created_at DESC,id DESC LIMIT 2001',
+    sourceId,
+  ).all<{ observation_id: string; analysis_id: string }>();
+  if (sourceProofs.results.length > 2000) throw new Error('GEO_SCOPE_TOO_LARGE');
+  const proofs = await sql(
+    env,
+    `SELECT e.*,o.context_json,json_remove(o.capture_json,'$.raw','$.answerText','$.textParts') AS capture_json,
+    o.captured_at,a.model,a.rubric_version,a.policy_version,
+    json_object('classification',json_object('answerQuality',json_extract(a.result_json,'$.classification.answerQuality'),
+      'scope',json_extract(a.result_json,'$.classification.scope'),'brandPresence',json_extract(a.result_json,'$.classification.brandPresence'),
+      'brandStance',json_extract(a.result_json,'$.classification.brandStance'))) AS result_json
+    FROM geo_action_evidence e JOIN geo_observations o ON o.id=e.observation_id
+    JOIN geo_processing_attempts a ON a.id=e.analysis_id AND a.observation_id=o.id
+    WHERE e.action_id=? AND o.project_id=? AND a.project_id=o.project_id AND a.kind='analysis' AND a.state='completed'
+    AND EXISTS(SELECT 1 FROM json_each(?) j WHERE e.observation_id=json_extract(j.value,'$.observationId') AND e.analysis_id=json_extract(j.value,'$.analysisId'))
+    ORDER BY e.created_at DESC,e.id DESC LIMIT 20`,
+    sourceId,
+    source.project_id,
+    JSON.stringify(input.proofs),
+  ).all<
+    EvidenceRow & {
+      context_json: string;
+      capture_json: string;
+      captured_at: number;
+      model: string;
+      rubric_version: string;
+      policy_version: string;
+      result_json: string;
+    }
+  >();
+  const selected = input.proofs.map((proof) => {
+    const row = proofs.results.find(
+      (row) => row.observation_id === proof.observationId && row.analysis_id === proof.analysisId,
+    );
+    if (!row) throw new Error('INVALID_FOLLOW_UP_PROOF');
+    return row;
+  });
+  if (new Set(input.proofs.map((proof) => proof.analysisId)).size !== input.proofs.length)
+    throw new Error('INVALID_FOLLOW_UP_PROOF');
+  const config = getConfig(env),
+    scopes: GeoActionScope[] = [],
+    pairs = new Set<string>();
+  const contexts = selected.map(
+    (proof) => JSON.parse(proof.context_json) as GeoActionScope['context'],
+  );
+  let currentContexts;
+  try {
+    currentContexts = await readCurrentGeoContexts(env, userId, contexts);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      [
+        'PROJECT_NOT_FOUND',
+        'GEO_CONFIGURATION_REQUIRED',
+        'ENGINE_NOT_SELECTED',
+        'INVALID_PROMPT_SELECTION',
+      ].includes(error.message)
+    )
+      throw new Error('FOLLOW_UP_CONTEXT_CHANGED', { cause: error });
+    throw error;
+  }
+  for (const [index, proof] of selected.entries()) {
+    const context = contexts[index],
+      current = currentContexts[index],
+      capture = JSON.parse(proof.capture_json) as GeoMetricObservation['capture'],
+      result = JSON.parse(proof.result_json) as {
+        classification: NonNullable<GeoMetricObservation['analysis']>;
+      };
+    if (!context || !current) throw new Error('FOLLOW_UP_CONTEXT_CHANGED');
+    const analysis = {
+      ...result.classification,
+      id: proof.analysis_id,
+      model: proof.model,
+      rubricVersion: proof.rubric_version,
+      policyVersion: proof.policy_version,
+    };
+    if (
+      capture.quality !== 'complete' ||
+      analysis.answerQuality !== 'usable' ||
+      analysis.scope !== 'complete'
+    )
+      throw new Error('INVALID_FOLLOW_UP_PROOF');
+    const pair = `${context.promptId}:${context.engine}`;
+    if (pairs.has(pair)) throw new Error('INVALID_FOLLOW_UP_PROOF');
+    pairs.add(pair);
+    const row = {
+      id: proof.observation_id,
+      projectId: source.project_id,
+      capturedAt: new Date(proof.captured_at).toISOString(),
+      requestedAt: new Date(proof.captured_at).toISOString(),
+      context,
+      capture,
+      analysis,
+    };
+    const actual = await measurementCohort(row, 'mention'),
+      expected = await measurementCohort(
+        {
+          ...row,
+          context: current,
+          analysis: {
+            ...analysis,
+            model: config.GEO_CLASSIFIER_MODEL,
+            rubricVersion: geoVersions.rubric,
+            policyVersion: geoVersions.policy,
+          },
+        },
+        'mention',
+      );
+    if (!actual || actual !== expected) throw new Error('FOLLOW_UP_CONTEXT_CHANGED');
+    if (
+      !canonicalSourceUrl(input.targetUrl) ||
+      !belongsToDomain(input.targetUrl, current.brand.domain)
+    )
+      throw new Error('INVALID_FOLLOW_UP_TARGET');
+    scopes.push({
+      observationId: proof.observation_id,
+      analysisId: proof.analysis_id,
+      context,
+      capturedAt: row.capturedAt,
+    });
+  }
+  const dedupeKey = JSON.stringify(['follow-up', source.project_id, sourceId, input.requestId]),
+    id = await geoHash(dedupeKey),
+    eventId = await geoHash([id, 'accepted']),
+    brief = {
+      ...candidate,
+      dedupeKey,
+      targetUrl: input.targetUrl,
+      reason: input.changeDescription,
+    },
+    details = {
+      sourceActionId: sourceId,
+      sourceRevision: input.revision,
+      selectedProofs: input.proofs,
+      excludedProofs: sourceProofs.results
+        .filter(
+          (proof) => !input.proofs.some((selected) => selected.analysisId === proof.analysis_id),
+        )
+        .map((proof) => ({ observationId: proof.observation_id, analysisId: proof.analysis_id })),
+      targetUrl: input.targetUrl,
+      changeDescription: input.changeDescription,
+    };
+  const proofIds = await Promise.all(selected.map((proof) => geoHash([id, proof.analysis_id])));
+  await env.DB.batch([
+    sql(
+      env,
+      `INSERT OR IGNORE INTO geo_actions(id,project_id,dedupe_key,candidate_json,status,created_at,updated_at)
+      SELECT ?,s.project_id,?,?,'accepted',?,? FROM geo_actions s JOIN projects p ON p.id=s.project_id
+      WHERE s.id=? AND p.user_id=? AND s.revision=?
+      AND NOT EXISTS(SELECT 1 FROM geo_action_events e WHERE e.project_id=p.id AND e.request_id=?)
+      AND NOT EXISTS(SELECT 1 FROM json_each(?) j WHERE NOT EXISTS(
+        SELECT 1 FROM geo_action_evidence e JOIN geo_observations o ON o.id=e.observation_id
+        JOIN geo_processing_attempts r ON r.id=e.analysis_id AND r.observation_id=o.id
+        WHERE e.action_id=s.id AND e.observation_id=json_extract(j.value,'$.observationId')
+        AND e.analysis_id=json_extract(j.value,'$.analysisId') AND o.project_id=p.id AND r.project_id=p.id
+        AND r.kind='analysis' AND r.state='completed' AND json_extract(o.capture_json,'$.quality')='complete'
+        AND json_extract(r.result_json,'$.classification.answerQuality')='usable' AND json_extract(r.result_json,'$.classification.scope')='complete'))
+      AND NOT EXISTS(SELECT 1 FROM json_each(?) j WHERE NOT EXISTS(
+        SELECT 1 FROM prompts q JOIN geo_settings g ON g.project_id=q.project_id
+        WHERE q.id=json_extract(j.value,'$.promptId') AND q.project_id=p.id AND q.enabled=1 AND q.archived_at IS NULL
+        AND q.text=json_extract(j.value,'$.promptText') AND p.context_version=json_extract(j.value,'$.contextVersion')
+        AND g.revision=json_extract(j.value,'$.settingsRevision')))`,
+      id,
+      dedupeKey,
+      JSON.stringify(brief),
+      at.getTime(),
+      at.getTime(),
+      sourceId,
+      userId,
+      input.revision,
+      input.requestId,
+      JSON.stringify(input.proofs),
+      JSON.stringify(currentContexts),
+    ),
+    sql(
+      env,
+      `INSERT OR IGNORE INTO geo_action_events(id,project_id,action_id,request_id,body_hash,kind,details_json,scope_json,evidence_json,recorded_at)
+      SELECT ?,a.project_id,a.id,?,?,'accepted',?,?,?,? FROM geo_actions a WHERE a.id=? AND a.dedupe_key=?`,
+      eventId,
+      input.requestId,
+      bodyHash,
+      JSON.stringify(details),
+      JSON.stringify(scopes),
+      JSON.stringify(input.proofs.map((proof) => proof.observationId)),
+      at.getTime(),
+      id,
+      dedupeKey,
+    ),
+    ...selected.map((proof, index) => {
+      return sql(
+        env,
+        `INSERT OR IGNORE INTO geo_action_evidence(id,action_id,observation_id,analysis_id,scope_json,evidence_ids_json,created_at)
+        SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM geo_action_events WHERE id=? AND body_hash=?)`,
+        proofIds[index],
+        id,
+        proof.observation_id,
+        proof.analysis_id,
+        JSON.stringify(scopes[index]),
+        proof.evidence_ids_json,
+        proof.captured_at,
+        eventId,
+        bodyHash,
+      );
+    }),
+  ]);
+  const saved = await sql(
+    env,
+    'SELECT action_id,body_hash FROM geo_action_events WHERE project_id=? AND request_id=?',
+    source.project_id,
+    input.requestId,
+  ).first<{ action_id: string; body_hash: string }>();
+  if (!saved) throw new Error('GEO_ACTION_CHANGED');
+  if (saved.body_hash !== bodyHash) throw new Error('IDEMPOTENCY_CONFLICT');
+  return readGeoAction(env, userId, saved.action_id);
 }
 export async function patchGeoAction(
   env: CloudflareBindings,

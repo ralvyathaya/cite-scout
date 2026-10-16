@@ -25,8 +25,14 @@ import {
 } from './analysis';
 import { z } from 'zod';
 import { consumeRateLimit } from '../rate-limit';
-import { patchGeoAction, readGeoAction, readGeoActions, readGeoSources } from './actions';
-import { geoActionPatchSchema } from '../../shared/geo-actions';
+import {
+  createGeoFollowUp,
+  patchGeoAction,
+  readGeoAction,
+  readGeoActions,
+  readGeoSources,
+} from './actions';
+import { geoActionPatchSchema, geoFollowUpSchema } from '../../shared/geo-actions';
 import { geoEngineSchema } from '../../shared/geo';
 import {
   completeGeoAction,
@@ -82,6 +88,12 @@ const errors: Record<string, string> = {
   GEO_ACTION_REOPEN_REQUIRED: 'Reopen this completed task to record another cycle of work.',
   INVALID_IMPLEMENTATION_TIME: 'Implementation time cannot be in the future.',
   INVALID_CHECKLIST: 'Choose checklist steps from this action.',
+  INVALID_FOLLOW_UP_TARGET:
+    'Choose an HTTP or HTTPS page on the tracked brand website for this Owned follow-up.',
+  INVALID_FOLLOW_UP_PROOF:
+    'Select distinct complete, usable baseline answers from this source action, with one per prompt and engine.',
+  FOLLOW_UP_CONTEXT_CHANGED:
+    'This baseline no longer matches the active prompt, engine, configuration or diagnosis version. Choose current evidence.',
   INVALID_EVIDENCE_PERIOD: 'Choose a period from one to thirty days.',
   GEO_SCOPE_TOO_LARGE:
     'This scope contains too much evidence. Choose a shorter period or a single engine/prompt.',
@@ -266,6 +278,16 @@ geoRoutes.patch('/actions/:id', async (c) =>
       c.get('userId'),
       c.req.param('id'),
       geoActionPatchSchema.parse(await readJson(c.req.raw)),
+    ),
+  }),
+);
+geoRoutes.post('/actions/:id/follow-ups', async (c) =>
+  c.json({
+    data: await createGeoFollowUp(
+      c.env,
+      c.get('userId'),
+      c.req.param('id'),
+      geoFollowUpSchema.parse(await readJson(c.req.raw)),
     ),
   }),
 );

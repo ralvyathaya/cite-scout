@@ -58,6 +58,8 @@ Six held-out records cover only one prompt family. Even after review, this is a 
 
 Tests were written first and observed failing because the evaluation module did not exist. The implementation then passed nine focused synthetic tests: twenty unique IDs, grouped partitions, hidden model outputs, frozen input/labels/split rejection, abstention misses, unknown denominators, quote/source/diagnosis failures, fixture isolation, partial/no-feature suppression, homonyms, competitor-only text and embedded instructions. A fetch spy verifies the scorer makes no network requests. These application guardrails are separate from real human review.
 
+A tenth test exercises the CLI in a temporary synthetic workspace through subprocesses: it rejects public output paths, refuses to overwrite an existing packet or frozen label lock, preserves their bytes, and completes synthetic prepare/freeze/score. No real private corpus is used by this test.
+
 Authoritative full-tree typecheck, lint, unit/Worker integration, migration checks, build and browser receipts belong to the parent implementation. Focused test success does not claim those checks ran.
 
 No human labels, label lock or real scored report were generated. The owner must review the blind private packet, run freeze/score and inspect held-out disagreements and safety failures before G3 can pass. New live inference remains outside this offline scope.

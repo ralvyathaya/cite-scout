@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import {
   freezeHumanLabels,
   prepareEvaluation,
@@ -149,6 +153,46 @@ function gold(source: EvaluationInput, packet: ReturnType<typeof prepareEvaluati
 }
 
 describe('local human GEO evaluation', () => {
+  it('the CLI rejects public paths and preserves prepared packets and frozen label locks', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'citescout-evaluation-'));
+    const privateRoot = join(directory, 'research/private');
+    const cli = resolve('node_modules/tsx/dist/cli.mjs'),
+      script = resolve('scripts/evaluate-geo.ts');
+    const run = (command: string, output = 'research/private/review') =>
+      execFileSync(
+        process.execPath,
+        [cli, script, command, 'research/private/input.json', output],
+        { cwd: directory, encoding: 'utf8', stdio: 'pipe' },
+      );
+    try {
+      mkdirSync(privateRoot, { recursive: true });
+      const data = input();
+      writeFileSync(join(privateRoot, 'input.json'), JSON.stringify(data));
+      expect(() => run('prepare', 'public-report')).toThrow(
+        'Evaluation files must stay under ignored research/private/',
+      );
+      run('prepare');
+      const packetFile = join(privateRoot, 'review/packet.json');
+      const original = readFileSync(packetFile, 'utf8');
+      expect(() => run('prepare')).toThrow('EEXIST');
+      expect(readFileSync(packetFile, 'utf8')).toBe(original);
+      writeFileSync(
+        join(privateRoot, 'review/human-labels.json'),
+        JSON.stringify(gold(data, prepareEvaluation(data))),
+      );
+      run('freeze');
+      const lockFile = join(privateRoot, 'review/labels-lock.json');
+      const lock = readFileSync(lockFile, 'utf8');
+      expect(() => run('freeze')).toThrow('EEXIST');
+      expect(readFileSync(lockFile, 'utf8')).toBe(lock);
+      run('score');
+      expect(
+        JSON.parse(readFileSync(join(privateRoot, 'review/report.json'), 'utf8')),
+      ).toMatchObject({ dataset: 'synthetic', pilotGatePassed: false });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }, 30_000);
   it('accounts for all 20 IDs once, freezes grouped splits across days, and hides model decisions', () => {
     const data = input(
       Array.from({ length: 20 }, (_, i) => record(String(i), at(['one', 'two', 'three'], i % 3))),

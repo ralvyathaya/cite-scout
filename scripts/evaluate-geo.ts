@@ -404,7 +404,7 @@ export function scoreEvaluation(
   return {
     status: input.dataset === 'synthetic' ? 'human_reviewed_synthetic' : 'human_reviewed_real',
     dataset: input.dataset,
-    pilotGatePassed: false, // A local score cannot close the separate live/human launch gates.
+    pilotGatePassed: false,
     manifestHash: hash(packet.manifest),
     labelsHash: hash(labels),
     abstentionLabels: [...abstentions],
@@ -556,7 +556,6 @@ async function main() {
     );
     return;
   }
-  // Files originate from prepare; hashes reject edits to frozen evidence, labels and split.
   const packet = (await readJson(resolve(output, 'packet.json'))) as Packet;
   const labels = (await readJson(resolve(output, 'human-labels.json'))) as HumanLabels;
   if (hash(packet) !== hash(prepareEvaluation(input)))

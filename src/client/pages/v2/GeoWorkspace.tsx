@@ -24,6 +24,7 @@ import {
 } from '../../components/ui/select';
 import { api, useResource } from './api';
 import { WorkspaceHeading } from './WorkspaceHeading';
+import { GeoFollowUpDialog } from './GeoFollowUpDialog';
 import type { WorkspaceContext } from './Workspace';
 import {
   geoSurfaces,
@@ -1921,6 +1922,9 @@ export function GeoPlaybook() {
 }
 export function GeoActionPage() {
   const { actionId = '' } = useParams();
+  return <GeoActionDetailPage key={actionId} actionId={actionId} />;
+}
+function GeoActionDetailPage({ actionId }: { actionId: string }) {
   const path = `/geo/actions/${encodeURIComponent(actionId)}`;
   const detail = useResource<GeoActionDetail>(path);
   const mutation = useMutation();
@@ -1934,6 +1938,9 @@ export function GeoActionPage() {
   const [measurementRevision, setMeasurementRevision] = useState(0);
   const moreEvidenceCursor = evidenceCursor ?? detail.data?.nextEvidenceCursor;
   const action = detail.data?.action;
+  const origin = detail.data?.events.find(
+    (event) => event.kind === 'accepted' && typeof event.details.sourceActionId === 'string',
+  );
   async function patch(values: Pick<GeoActionPatch, 'status' | 'checkedIds' | 'notes'>) {
     if (!action) return;
     await api(
@@ -2004,6 +2011,9 @@ export function GeoActionPage() {
                   >
                     Accept action
                   </Button>
+                )}
+                {action.category === 'owned' && detail.data && (
+                  <GeoFollowUpDialog key={action.id} detail={detail.data} />
                 )}
                 {action.status !== 'completed' && action.status !== 'dismissed' && (
                   <Button
@@ -2078,6 +2088,23 @@ export function GeoActionPage() {
                 </Button>
               </form>
             </section>
+            {origin && (
+              <section className={`${box} space-y-2 text-sm`} aria-label="Follow-up origin">
+                <h2 className="font-semibold">New work from an explicit baseline</h2>
+                <p>Included baseline records: {origin.scopes.length}</p>
+                <p>
+                  {typeof origin.details.changeDescription === 'string'
+                    ? origin.details.changeDescription
+                    : ''}
+                </p>
+                <Link
+                  className="text-primary underline"
+                  to={`/app/playbook/${encodeURIComponent(String(origin.details.sourceActionId))}`}
+                >
+                  Source action history
+                </Link>
+              </section>
+            )}
             <details className={`${box} space-y-3`}>
               <summary className="cursor-pointer font-semibold">
                 Supporting evidence & frozen scope · {action.evidenceCount} records

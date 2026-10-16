@@ -5,6 +5,7 @@ import {
   geoSettingsSchema,
   geoPromptSetSchema,
   geoSurfaces,
+  geoCollectorPolicy,
   type GeoAllowance,
   type GeoCapture,
   type GeoEngine,
@@ -456,6 +457,77 @@ export async function readGeoRunHistory(
   };
 }
 
+async function currentContexts(
+  env: CloudflareBindings,
+  project: ProjectRow,
+  settings: GeoSettings,
+  prompts: PromptRow[],
+  engines: GeoEngine[],
+) {
+  const config = getConfig(env);
+  const competitors = (
+    await sql(
+      env,
+      'SELECT id,name,canonical_domain AS domain FROM competitors WHERE project_id=? AND archived_at IS NULL ORDER BY id',
+      project.id,
+    ).all<GeoRequestContext['competitors'][number]>()
+  ).results;
+  const versioned = await Promise.all(
+    prompts.map(async (prompt) => ({ prompt, versionId: await promptVersionId(prompt) })),
+  );
+  const contexts: GeoRequestContext[] = versioned.flatMap(({ prompt, versionId }) =>
+    engines.map((engine) => ({
+      schemaVersion: 'geo-context-1',
+      projectId: project.id,
+      contextVersion: project.context_version,
+      settingsRevision: settings.revision,
+      promptId: prompt.id,
+      promptVersionId: versionId,
+      promptText: prompt.text,
+      engine,
+      surface: geoSurfaces[engine].surface,
+      collector:
+        engine === 'google_aio' || engine === 'bing_copilot'
+          ? config.GEO_SERP_COLLECTOR
+          : geoSurfaces[engine].collector,
+      ...geoCollectorPolicy(engine, config.GEO_SERP_COLLECTOR),
+      ...(engine === 'openai_web_search' ? { requestedModel: config.GEO_OPENAI_MODEL } : {}),
+      languageCode: settings.languageCode,
+      locationCode: settings.locationCode,
+      device: settings.device,
+      forceWebSearch: engine === 'chatgpt_search' || engine === 'openai_web_search',
+      brand: { id: project.id, name: project.brand_name, domain: project.canonical_domain },
+      competitors,
+      instructionVersion: 'neutral-research-1',
+    })),
+  );
+  return { versioned, contexts };
+}
+
+export async function readCurrentGeoContexts(
+  env: CloudflareBindings,
+  userId: string,
+  pairs: { promptId: string; engine: GeoEngine }[],
+): Promise<GeoRequestContext[]> {
+  const project = await projectFor(env, userId),
+    settings = await readGeoSettings(env, userId);
+  if (!settings.configured) throw new Error('GEO_CONFIGURATION_REQUIRED');
+  const engines = [...new Set(pairs.map((pair) => pair.engine))];
+  if (engines.some((engine) => !settings.engines.includes(engine)))
+    throw new Error('ENGINE_NOT_SELECTED');
+  const prompts = await selectedPrompts(env, project.id, [
+    ...new Set(pairs.map((pair) => pair.promptId)),
+  ]);
+  const { contexts } = await currentContexts(env, project, settings, prompts, engines);
+  return pairs.map((pair) => {
+    const context = contexts.find(
+      (context) => context.promptId === pair.promptId && context.engine === pair.engine,
+    );
+    if (!context) throw new Error('INVALID_PROMPT_SELECTION');
+    return context;
+  });
+}
+
 export async function startGeoRun(
   env: CloudflareBindings,
   userId: string,
@@ -486,49 +558,7 @@ export async function startGeoRun(
   const engines = [...(input.engines ?? settings.engines)].sort();
   if (engines.some((engine) => !settings.engines.includes(engine)))
     throw new Error('ENGINE_NOT_SELECTED');
-  const competitors = (
-    await sql(
-      env,
-      'SELECT id,name,canonical_domain AS domain FROM competitors WHERE project_id=? AND archived_at IS NULL ORDER BY id',
-      project.id,
-    ).all<GeoRequestContext['competitors'][number]>()
-  ).results;
-  const versioned = await Promise.all(
-    prompts.map(async (prompt) => ({ prompt, versionId: await promptVersionId(prompt) })),
-  );
-  const contexts: GeoRequestContext[] = versioned.flatMap(({ prompt, versionId }) =>
-    engines.map((engine) => ({
-      schemaVersion: 'geo-context-1',
-      projectId: project.id,
-      contextVersion: project.context_version,
-      settingsRevision: settings.revision,
-      promptId: prompt.id,
-      promptVersionId: versionId,
-      promptText: prompt.text,
-      engine,
-      surface: geoSurfaces[engine].surface,
-      collector:
-        engine === 'google_aio' || engine === 'bing_copilot'
-          ? config.GEO_SERP_COLLECTOR
-          : geoSurfaces[engine].collector,
-      collectorVersion:
-        engine === 'openai_web_search'
-          ? 'geo-collector-3'
-          : (engine === 'google_aio' || engine === 'bing_copilot') &&
-              config.GEO_SERP_COLLECTOR === 'serpapi'
-            ? 'geo-collector-2'
-            : 'geo-collector-1',
-      ...(engine === 'openai_web_search' ? { requestedModel: config.GEO_OPENAI_MODEL } : {}),
-      languageCode: settings.languageCode,
-      locationCode: settings.locationCode,
-      device: settings.device,
-      forceWebSearch: engine === 'chatgpt_search' || engine === 'openai_web_search',
-      brand: { id: project.id, name: project.brand_name, domain: project.canonical_domain },
-      competitors,
-      instructionVersion: 'neutral-research-1',
-      maxOutputTokens: engine === 'openai_web_search' ? 1600 : 700,
-    })),
-  );
+  const { versioned, contexts } = await currentContexts(env, project, settings, prompts, engines);
   const snapshotHash = await geoHash(contexts);
   const intent =
     trigger === 'scheduled'

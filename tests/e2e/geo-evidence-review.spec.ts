@@ -1,7 +1,170 @@
 import { expect, test } from '@playwright/test';
 import { GeoFixtureWorkspace } from '../../src/client/pages/v2/geo-fixture';
 import type { GeoObservation, GeoObservationPage } from '../../src/shared/geo';
-import type { GeoAction } from '../../src/shared/geo-actions';
+import type { GeoAction, GeoActionDetail } from '../../src/shared/geo-actions';
+
+test('a closed pagination request cannot overwrite a reopened follow-up review', async ({
+  page,
+}) => {
+  const fixture = new GeoFixtureWorkspace();
+  const source = ((await fixture.request('/geo/actions')) as GeoAction[]).find(
+    (action) => action.category === 'owned',
+  );
+  if (!source) throw new Error('Expected owned action');
+  const detail = (await fixture.request(`/geo/actions/${source.id}`)) as GeoActionDetail;
+  const first = detail.evidence[0],
+    latest = detail.evidence[1];
+  if (!first || !latest) throw new Error('Expected multiple proofs');
+  let releaseOld: (() => void) | undefined;
+  const oldResponse = new Promise<void>((resolve) => {
+    releaseOld = resolve;
+  });
+  let pageRequests = 0;
+  await page.route('**/api/v2/**', async (route) => {
+    const request = route.request(),
+      url = new URL(request.url());
+    const path = url.pathname.replace('/api/v2', '');
+    if (path === `/geo/actions/${source.id}`) {
+      if (!url.search) {
+        await route.fulfill({
+          json: { data: { ...detail, evidence: [first], nextEvidenceCursor: 'next' } },
+        });
+      } else if (++pageRequests === 1) {
+        await oldResponse;
+        await route.fulfill({
+          headers: { 'X-Fixture-Generation': 'old' },
+          json: { data: { ...detail, evidence: [], nextEvidenceCursor: null } },
+        });
+      } else {
+        await route.fulfill({
+          json: { data: { ...detail, evidence: [latest], nextEvidenceCursor: null } },
+        });
+      }
+      return;
+    }
+    await route.fulfill({ json: { data: await fixture.request(path + url.search) } });
+  });
+  await page.goto(`/app/playbook/${source.id}`);
+  const trigger = page.getByRole('button', { name: 'Plan follow-up work', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Plan follow-up work', exact: true });
+  await trigger.click();
+  await expect.poll(() => pageRequests).toBe(1);
+  await page.keyboard.press('Escape');
+  await trigger.click();
+  await expect(dialog.getByRole('checkbox')).toHaveCount(2);
+  const oldFinished = page.waitForResponse(
+    (response) => response.headers()['x-fixture-generation'] === 'old',
+  );
+  releaseOld?.();
+  await (await oldFinished).finished();
+  await dialog
+    .getByLabel('Owned page for new work', { exact: true })
+    .fill('https://cedarflow.example/comparison');
+  await dialog
+    .getByLabel('Planned change', { exact: true })
+    .fill('Keep the reopened review scope.');
+  await expect(dialog.getByRole('checkbox')).toHaveCount(2);
+  await dialog.getByRole('checkbox').last().check();
+  await expect(
+    dialog.getByRole('button', { name: 'Create follow-up action', exact: true }),
+  ).toBeEnabled();
+});
+
+test('review and create a synthetic follow-up with an explicit baseline', async ({ page }) => {
+  const fixture = new GeoFixtureWorkspace();
+  const action = ((await fixture.request('/geo/actions')) as GeoAction[]).find(
+    (action) => action.category === 'owned',
+  );
+  if (!action) throw new Error('Expected owned fixture action');
+  await page.goto(`/app/playbook/${action.id}?fixture=1`);
+  const trigger = page.getByRole('button', { name: 'Plan follow-up work', exact: true });
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Plan follow-up work', exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByRole('button', { name: 'Create follow-up action', exact: true }),
+  ).toBeDisabled();
+  await dialog.getByRole('checkbox').first().check();
+  await dialog
+    .getByLabel('Owned page for new work', { exact: true })
+    .fill('https://cedarflow.example/comparison');
+  await dialog
+    .getByLabel('Planned change', { exact: true })
+    .fill('Synthetic comparison update with verified feature details.');
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+  await trigger.press('Enter');
+  await expect(dialog.getByLabel('Planned change', { exact: true })).toHaveValue(
+    'Synthetic comparison update with verified feature details.',
+  );
+  await expect(dialog.getByText(/Included: 1/)).toBeVisible();
+  await expect(dialog.getByText(/Excluded:/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Create follow-up action', exact: true }).click();
+  await dialog.getByRole('link', { name: 'Open follow-up action', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Action brief', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'Source action history', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Fixture workspace — synthetic data · no provider calls', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('Included baseline records: 1', { exact: true })).toBeVisible();
+});
+
+test('a failed follow-up save retains the draft and retries with the same request identity', async ({
+  page,
+}) => {
+  const fixture = new GeoFixtureWorkspace();
+  const action = ((await fixture.request('/geo/actions')) as GeoAction[]).find(
+    (action) => action.category === 'owned',
+  );
+  if (!action) throw new Error('Expected an owned fixture');
+  const requests: { requestId: string }[] = [];
+  await page.route('**/api/v2/**', async (route) => {
+    const request = route.request(),
+      url = new URL(request.url());
+    const path = url.pathname.replace('/api/v2', '') + url.search;
+    const body: unknown =
+      request.method() === 'GET' ? undefined : JSON.parse(request.postData() ?? '{}');
+    if (path.endsWith('/follow-ups')) {
+      requests.push(body as { requestId: string });
+      if (requests.length === 1) {
+        await route.fulfill({
+          status: 503,
+          json: {
+            error: { code: 'UNAVAILABLE', message: 'Save unavailable. Your draft is retained.' },
+          },
+        });
+        return;
+      }
+    }
+    await route.fulfill({ json: { data: await fixture.request(path, body, request.method()) } });
+  });
+  await page.goto(`/app/playbook/${action.id}`);
+  await page.getByRole('button', { name: 'Plan follow-up work', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Plan follow-up work', exact: true });
+  await dialog.getByRole('checkbox').first().check();
+  await dialog
+    .getByLabel('Owned page for new work', { exact: true })
+    .fill('https://cedarflow.example/comparison');
+  await dialog
+    .getByLabel('Planned change', { exact: true })
+    .fill('Keep this planned change when the save fails.');
+  const submit = dialog.getByRole('button', { name: 'Create follow-up action', exact: true });
+  await submit.click();
+  await expect(dialog.getByRole('alert')).toHaveText('Save unavailable. Your draft is retained.');
+  await expect(dialog.getByLabel('Planned change', { exact: true })).toHaveValue(
+    'Keep this planned change when the save fails.',
+  );
+  await expect(dialog.getByRole('checkbox').first()).toBeChecked();
+  await submit.click();
+  await expect(
+    dialog.getByRole('link', { name: 'Open follow-up action', exact: true }),
+  ).toBeVisible();
+  expect(requests).toHaveLength(2);
+  expect(requests[0]?.requestId).toBe(requests[1]?.requestId);
+});
 
 test('opening a filtered observation and returning keeps the evidence scope', async ({ page }) => {
   await page.goto('/app/observations?fixture=1&engine=perplexity&days=30');

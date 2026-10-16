@@ -1,9 +1,43 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createExecutionContext } from 'cloudflare:test';
 import { seed, withBindings, cookie } from './fixtures';
 import { v2Routes } from '../../src/server/v2/routes';
 import { saveGeoSettings } from '../../src/server/v2/geo-store';
+import { geoCapabilities } from '../../src/server/v2/geo-readiness';
+it.each([0, 1])(
+  'reports the staging classifier allowance of %i without inference',
+  (classifier) => {
+    const run = vi.fn();
+    const readiness = geoCapabilities({
+      ...withBindings({
+        APP_URL: 'https://staging.cite-scout.com',
+        DEPLOYMENT_ENV: 'staging',
+        EXTERNAL_INTEGRATIONS_ENABLED: 'true',
+        GEO_ANALYSIS_ENABLED: 'true',
+        GEO_PROCESSING_PROJECT_DAILY_CAP: '10',
+        GEO_PROCESSING_GLOBAL_DAILY_CAP: '10',
+        GEO_INTERNAL_TEST_SPEND_CAP_USD: '5',
+        GEO_INTERNAL_TEST_PROCESSING_MAX_COST_USD: '0.002',
+        GEO_INTERNAL_TEST_LIMITS: JSON.stringify({
+          observations: 24,
+          openai: 6,
+          perplexity: 6,
+          serpapi: 18,
+          classifier,
+        }),
+      }),
+      AI: { run } as unknown as Ai,
+    });
+    expect(readiness.classifier.available).toBe(classifier > 0);
+    expect(readiness.classifier.reason).toBe(
+      classifier
+        ? null
+        : 'Classification has no owner-test request allowance. Original answers remain readable.',
+    );
+    expect(run).not.toHaveBeenCalled();
+  },
+);
 it('shows unavailable provider readiness without exposing secrets or blocking saved evidence at zero budget', async () => {
   const owner = await seed(1, true),
     env = withBindings({
