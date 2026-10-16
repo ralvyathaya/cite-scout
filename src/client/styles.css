@@ -3,30 +3,28 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* --- Design tokens: neutral zinc, near-black primary, data blue accent --- */
 :root {
   --radius: 0.5rem;
-  --background: #ffffff;
-  --foreground: #09090b;
+  --background: #f6f8fb;
+  --foreground: #17243c;
   --card: #ffffff;
-  --card-foreground: #09090b;
+  --card-foreground: #17243c;
   --popover: #ffffff;
-  --popover-foreground: #09090b;
-  --primary: #09090b;
+  --popover-foreground: #17243c;
+  --primary: #245bdb;
   --primary-foreground: #ffffff;
-  --secondary: #f4f4f5;
-  --secondary-foreground: #09090b;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
-  --accent: #f4f4f5;
-  --accent-foreground: #09090b;
+  --secondary: #eef2f8;
+  --secondary-foreground: #17243c;
+  --muted: #eef2f8;
+  --muted-foreground: #59697f;
+  --accent: #eaf0fe;
+  --accent-foreground: #1e4db7;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --ring: #71717a;
-  /* neutral high-taste palette: deep charcoal/slate for charts and signals, no harsh blue */
-  --chart-1: #09090b;
+  --border: #e0e6ef;
+  --input: #d4dce8;
+  --ring: #245bdb;
+  --chart-1: #245bdb;
   --chart-2: #52525b;
   --chart-3: #71717a;
   --chart-4: #d4d4d8;

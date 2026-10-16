@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type SubmitEvent } from 'react';
+import { useEffect, useState, type ReactNode, type SubmitEvent } from 'react';
 import {
   BarChart3,
   ListChecks,
@@ -27,6 +27,7 @@ import {
 } from 'react-router';
 import { Button } from '../../components/ui/button';
 import { BrandLogo } from '../../components/BrandLogo';
+import { WorkspaceHeading } from './WorkspaceHeading';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import {
@@ -58,7 +59,7 @@ const time = (date: string | null | undefined) =>
   date
     ? new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     : 'Not scheduled';
-const box = 'rounded-xl border bg-card p-5 shadow-sm';
+const box = 'min-w-0 break-words rounded-xl border bg-card p-5 shadow-sm';
 function Notice({ children }: { children: ReactNode }) {
   return (
     <p className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">{children}</p>
@@ -125,7 +126,7 @@ export function V2Shell() {
         onClick={() => {
           setMobileOpen(false);
         }}
-        className="m-3 flex items-center gap-3 rounded-lg border bg-background p-3"
+        className="mx-4 mb-1 mt-5 flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:border-primary/40"
       >
         <span
           className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold text-primary"
@@ -156,7 +157,7 @@ export function V2Shell() {
                 setMobileOpen(false);
               }}
               className={({ isActive }) =>
-                `mb-1 flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`
+                `mb-1 flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${isActive ? 'bg-primary/10 text-primary shadow-[inset_3px_0_0_var(--primary)]' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`
               }
             >
               <Icon className="size-4 shrink-0" aria-hidden="true" />
@@ -166,9 +167,19 @@ export function V2Shell() {
         ))}
       </nav>
       <div className="border-t p-3">
-        <p className="px-3 py-2 text-xs text-muted-foreground">
-          {resource.data?.canScan ? 'Paid monitoring access' : 'Saved evidence stays available'}
-        </p>
+        <div className="mb-2 rounded-lg bg-muted/60 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
+          {fixture.requested ? (
+            <p className="font-medium text-foreground">Synthetic workspace</p>
+          ) : resource.data?.internalTestAccess ? (
+            <p className="font-medium text-primary">Owner preview</p>
+          ) : null}
+          <p>
+            {resource.data?.canScan ? 'Perplexity subscription active' : 'Saved evidence access'}
+          </p>
+          {resource.data?.internalTestAccess && (
+            <p className="mt-1">GEO preview has a separate allowance.</p>
+          )}
+        </div>
         <Button
           variant="ghost"
           className="w-full justify-start"
@@ -200,14 +211,14 @@ export function V2Shell() {
     return <Navigate to="/login" replace />;
   return (
     <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
-      <div className="flex min-h-svh bg-background">
+      <div className="workspace-theme flex min-h-svh bg-background text-foreground">
         <aside
-          className="sticky top-0 hidden h-svh w-60 shrink-0 flex-col self-start border-r bg-muted/25 lg:flex"
+          className="sticky top-0 hidden h-svh w-60 shrink-0 flex-col self-start border-r bg-card lg:flex"
           aria-label="Workspace sidebar"
         >
           {sidebar}
         </aside>
-        <DialogContent className="inset-y-0 left-0 top-0 flex h-svh w-72 max-w-[calc(100%-3rem)] translate-x-0 translate-y-0 flex-col gap-0 rounded-none bg-background p-0 sm:max-w-72">
+        <DialogContent className="workspace-theme inset-y-0 left-0 top-0 flex h-svh w-72 max-w-[calc(100%-3rem)] translate-x-0 translate-y-0 flex-col gap-0 rounded-none bg-card p-0 text-foreground sm:max-w-72">
           <DialogTitle className="sr-only">Workspace navigation</DialogTitle>
           <DialogDescription className="sr-only">
             Navigate your CiteScout workspace.
@@ -215,7 +226,7 @@ export function V2Shell() {
           {sidebar}
         </DialogContent>
         <div className="min-w-0 flex-1">
-          <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background px-4 sm:px-8">
+          <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-card px-4 sm:px-7">
             <DialogTrigger asChild>
               <Button
                 variant="ghost"
@@ -244,12 +255,12 @@ export function V2Shell() {
           <main
             id="main"
             tabIndex={-1}
-            className="mx-auto max-w-[1440px] space-y-5 px-4 py-7 outline-none sm:px-8"
+            className="mx-auto max-w-[1440px] space-y-5 px-4 py-5 outline-none sm:px-7 sm:py-6"
           >
             {fixture.requested && (
               <div
                 role="status"
-                className="sticky top-16 z-20 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-background p-3 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-50 px-3 py-2 text-xs text-amber-950"
               >
                 <span className="font-medium">
                   Fixture workspace — synthetic data · no provider calls
@@ -425,15 +436,20 @@ export function V2Onboarding() {
     return <Navigate to={data.internalTestAccess ? '/app/overview' : '/app/questions'} replace />;
   if (!data.enrolled && !data.canScan && !data.internalTestAccess)
     return (
-      <section className="mx-auto max-w-xl space-y-5 py-12">
-        <h1 className="text-3xl font-semibold">Run your first buyer-question baseline</h1>
-        <Notice>
-          The pilot is currently founder-assisted. Bring three real questions you have already
-          checked in Perplexity.
-        </Notice>
-        <Button asChild>
-          <a href={`mailto:${data.supportEmail}`}>Contact the founder</a>
-        </Button>
+      <section className="mx-auto max-w-2xl space-y-5 py-6">
+        <WorkspaceHeading
+          title="Run your first buyer-question baseline"
+          description="Start with a focused set of questions about your market."
+        />
+        <div className={`${box} space-y-5`}>
+          <Notice>
+            The pilot is currently founder-assisted. Bring three real questions you have already
+            checked in Perplexity.
+          </Notice>
+          <Button asChild>
+            <a href={`mailto:${data.supportEmail}`}>Contact the founder</a>
+          </Button>
+        </div>
       </section>
     );
   async function submit(e: SubmitEvent) {
@@ -458,45 +474,82 @@ export function V2Onboarding() {
     });
   }
   return (
-    <section className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">
-          {data.internalTestAccess ? 'Owner staging validation' : 'Your first baseline'}
-        </p>
-        <h1 className="text-3xl font-semibold tracking-tight">What do your buyers ask?</h1>
-      </div>
+    <section className="mx-auto max-w-3xl space-y-5">
+      <WorkspaceHeading
+        title="What do your buyers ask?"
+        description={
+          data.internalTestAccess
+            ? 'Set up your staging project first. You will choose engines and start monitoring separately.'
+            : 'Define your company, competitors, and three buyer questions before running your first baseline.'
+        }
+      />
+      <ol aria-label="Project setup steps" className="grid grid-cols-2 gap-3 text-sm">
+        <li
+          aria-current={!review ? 'step' : undefined}
+          className={`rounded-lg border px-3 py-3 ${!review ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
+        >
+          <span className="block text-xs">Step 1</span>
+          <span className="mt-1 block font-medium">Project & questions</span>
+        </li>
+        <li
+          aria-current={review ? 'step' : undefined}
+          className={`rounded-lg border px-3 py-3 ${review ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
+        >
+          <span className="block text-xs">Step 2</span>
+          <span className="mt-1 block font-medium">
+            {data.internalTestAccess ? 'Review & save' : 'Review & run'}
+          </span>
+        </li>
+      </ol>
       <TrialStatus data={data} />
-      <form onSubmit={(e) => void submit(e)} className={`${box} space-y-5`}>
-        <IdentityFields value={identity} set={setIdentity} disabled={review} />
-        {questions.map((q, index) => (
-          <label key={index} className="block space-y-2 text-sm">
-            Buyer question {index + 1}
-            <Textarea
-              required
-              minLength={10}
-              maxLength={500}
-              disabled={review}
-              value={q}
-              placeholder="Which customer onboarding tools work for a small B2B SaaS team?"
-              onChange={(e) => {
-                setQuestions(questions.map((text, i) => (i === index ? e.target.value : text)));
-              }}
-            />
-            {identity.brandName.length > 1 &&
-              q.toLowerCase().includes(identity.brandName.toLowerCase()) && (
-                <span className="text-muted-foreground">
-                  Naming your brand may encourage a mention. Keep it if that reflects a real buyer
-                  question.
-                </span>
-              )}
-          </label>
-        ))}
-        <p className="text-sm text-muted-foreground">
-          Use questions a buyer would ask when comparing options.
-          {data.internalTestAccess
-            ? ' Saving creates your project without calling a provider. Choose engines and use Monitor Prompts afterward.'
-            : ' All three questions will be checked.'}
-        </p>
+      <form onSubmit={(e) => void submit(e)} className={`${box} space-y-6`}>
+        <section className="space-y-4" aria-labelledby="project-identity-heading">
+          <div className="space-y-1">
+            <h2 id="project-identity-heading" className="font-semibold">
+              Company & competitors
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              These names and domains provide context for your saved evidence.
+            </p>
+          </div>
+          <IdentityFields value={identity} set={setIdentity} disabled={review} />
+        </section>
+        <section className="space-y-4 border-t pt-5" aria-labelledby="buyer-questions-heading">
+          <div className="space-y-1">
+            <h2 id="buyer-questions-heading" className="font-semibold">
+              Three buyer questions
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Use questions a buyer would ask when comparing options.
+              {data.internalTestAccess
+                ? ' Saving creates your project without calling a provider.'
+                : ' All three questions will be checked.'}
+            </p>
+          </div>
+          {questions.map((q, index) => (
+            <label key={index} className="block space-y-2 rounded-lg bg-muted/40 p-3 text-sm">
+              Buyer question {index + 1}
+              <Textarea
+                required
+                minLength={10}
+                maxLength={500}
+                disabled={review}
+                value={q}
+                placeholder="Which customer onboarding tools work for a small B2B SaaS team?"
+                onChange={(e) => {
+                  setQuestions(questions.map((text, i) => (i === index ? e.target.value : text)));
+                }}
+              />
+              {identity.brandName.length > 1 &&
+                q.toLowerCase().includes(identity.brandName.toLowerCase()) && (
+                  <span className="text-muted-foreground">
+                    Naming your brand may encourage a mention. Keep it if that reflects a real buyer
+                    question.
+                  </span>
+                )}
+            </label>
+          ))}
+        </section>
         {review && (
           <Notice>
             {data.internalTestAccess
@@ -505,7 +558,7 @@ export function V2Onboarding() {
           </Notice>
         )}
         <Failure error={action.error} />
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3 border-t pt-5">
           {review && (
             <Button
               type="button"
@@ -635,13 +688,10 @@ export function V2Questions() {
     ) ?? [];
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-sm text-muted-foreground">{data.project.brandName}</p>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            {geoSettings.data?.configured ? 'Prompt Sets' : 'Buyer questions'}
-          </h1>
-        </div>
+      <WorkspaceHeading
+        title={geoSettings.data?.configured ? 'Prompt Sets' : 'Buyer questions'}
+        description={`Manage buyer questions for ${data.project.brandName}, group them into sets and inspect their saved evidence.`}
+      >
         {geoSettings.data?.configured !== true &&
           !geoSettings.loading &&
           (data.canScan || data.trial?.state === 'eligible') && (
@@ -652,7 +702,7 @@ export function V2Questions() {
               {data.canScan ? 'Check today' : 'Run my baseline'}
             </Button>
           )}
-      </div>
+      </WorkspaceHeading>
       <TrialStatus data={data} />
       <GeoPromptSets />
       {geoSettings.data?.configured && (
@@ -664,6 +714,13 @@ export function V2Questions() {
       )}
       <Failure error={action.error ?? rows.error ?? geoSettings.error} />
       {runId && <RunProgress id={runId} />}
+      <div className="space-y-1 border-t pt-5">
+        <h2 className="text-lg font-semibold">Buyer question library</h2>
+        <p className="text-sm text-muted-foreground">
+          Manage the questions used in your prompt sets. Saved Perplexity answers and literal-match
+          summaries remain available below.
+        </p>
+      </div>
       {rows.data && (
         <div className="space-y-2">
           <p className="text-xl font-medium">
@@ -1339,12 +1396,18 @@ interface Billing {
 }
 export function V2Settings() {
   const fixture = fixtureMode();
+  const { hash } = useLocation();
   const { data, reload } = useOutletContext<WorkspaceContext>();
   const billing = useResource<Billing>('/api/billing/status');
   const action = useAction(reload);
   const [identity, setIdentity] = useState<IdentityDraft | null>(null);
   const [confirmation, setConfirmation] = useState('');
   const [forfeit, setForfeit] = useState(false);
+  const [monitoringReady, setMonitoringReady] = useState(false);
+  useEffect(() => {
+    if (hash === '#subscription' && monitoringReady)
+      document.getElementById('subscription')?.scrollIntoView();
+  }, [hash, monitoringReady]);
   if (!data.project) return <Navigate to="/app/onboarding" replace />;
   const value = identity ?? {
     brandName: data.project.brandName,
@@ -1362,13 +1425,34 @@ export function V2Settings() {
     });
   }
   return (
-    <section className="mx-auto max-w-3xl space-y-6">
-      <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
+    <section className="mx-auto max-w-5xl space-y-6">
+      <WorkspaceHeading
+        title="Settings"
+        description="Manage monitoring, the brand context used for diagnosis and your account."
+      />
+      <nav
+        aria-label="Settings sections"
+        className="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border bg-card px-4 py-3 text-sm text-primary"
+      >
+        <a className="underline underline-offset-4" href="#monitoring">
+          Monitoring
+        </a>
+        <a className="underline underline-offset-4" href="#brand-context">
+          Brand context
+        </a>
+        <a className="underline underline-offset-4" href="#subscription">
+          Subscription
+        </a>
+        <a className="underline underline-offset-4" href="#account">
+          Account
+        </a>
+      </nav>
       <TrialStatus data={data} />
-      <GeoSettingsPanel />
+      <GeoSettingsPanel onReady={setMonitoringReady} />
       <Failure error={action.error ?? billing.error} />
       <form
-        className={`${box} space-y-4`}
+        id="brand-context"
+        className={`${box} scroll-mt-20 space-y-4`}
         onSubmit={(e) => {
           e.preventDefault();
           void action.run(async () => {
@@ -1400,9 +1484,15 @@ export function V2Settings() {
           <Button disabled={action.busy}>Save configuration</Button>
         )}
       </form>
-      <section className={`${box} space-y-4`}>
+      <section id="subscription" className={`${box} scroll-mt-20 space-y-4`}>
         <h2 className="text-lg font-medium">Monitoring and billing</h2>
-        <p>$19/month · One project · Up to 10 active questions · Daily checks</p>
+        <p className="text-sm">
+          Legacy Perplexity plan · $19/month · One project · Up to 10 active questions · Daily
+          checks
+        </p>
+        <p className="text-xs text-muted-foreground">
+          GEO owner preview and collector budgets are separate from this subscription.
+        </p>
         <p className="text-sm text-muted-foreground">
           {data.usage.today}/{data.usage.dailyLimit} attempts today · {data.usage.month}/
           {data.usage.monthlyLimit} this calendar month. Daily allowance resets{' '}
@@ -1442,7 +1532,7 @@ export function V2Settings() {
           does not confirm payment.
         </p>
       </section>
-      <details className={`${box} space-y-4`}>
+      <details id="account" className={`${box} scroll-mt-20 space-y-4`}>
         <summary className="cursor-pointer font-medium">Delete account permanently</summary>
         <p className="mt-4 text-sm">
           This removes your project, evidence and product events. Cancel renewal in the billing
