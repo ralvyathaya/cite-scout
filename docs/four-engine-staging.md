@@ -6,7 +6,7 @@ The committed configuration keeps GEO collection, analysis, page checks, and bud
 
 ## 1. Provision the isolated database
 
-The database in the committed config has already been provisioned as `citescout-staging` (`35be5adc-b1c8-48ab-86d8-debb1f131551`), with migrations `0000`–`0010` applied. Reuse it in this account. The creation steps below apply only if setting up a different account; never create a second database just to reset the test budget.
+The database in the committed config has already been provisioned as `citescout-staging` (`35be5adc-b1c8-48ab-86d8-debb1f131551`), with migrations `0000`–`0011` applied. Reuse it in this account. The creation steps below apply only if setting up a different account; never create a second database just to reset the test budget.
 
 Use the existing authenticated Wrangler session; these commands name the staging config explicitly:
 
@@ -101,7 +101,7 @@ npx wrangler secret put GEO_INTERNAL_TEST_EXPIRES_AT --config wrangler.staging.j
 
 This grants GEO access to that authenticated account only; it does not disable authentication, enroll other users, or change their trials/billing. The grant is rejected in the production deployment. Removing the grant or passing its expiry stops new internal test work.
 
-The active staging owner can complete project onboarding without a pilot enrollment or subscription. **Create staging project** saves the brand, competitors and three questions without starting the legacy Perplexity baseline. It opens the GEO overview; provider selection and **Monitor Prompts** are separate steps. Other accounts retain the existing enrollment requirement.
+Project setup starts with the website, followed by the brand, competitors and three questions entered in CiteScout; a prior Perplexity check is not required. Any authenticated account can save one project without a pilot enrollment or subscription. For the active staging owner, **Create staging project** opens the GEO overview without starting the legacy Perplexity baseline. Other unenrolled accounts use **Create project**, which also saves without starting a check. Provider selection and **Monitor Prompts** are separate steps; the existing owner grant, trial, subscription and quota requirements still control monitoring access.
 
 Before enabling collection, verify the current provider tariffs and access to the requested OpenAI model. Set conservative **per-call USD ceilings** in `GEO_INTERNAL_TEST_OPENAI_MAX_COST_USD`, `GEO_INTERNAL_TEST_PERPLEXITY_MAX_COST_USD`, and `GEO_INTERNAL_TEST_PROCESSING_MAX_COST_USD`. All three default to zero, so paid work stays blocked until reviewed. Include the OpenAI search tool and token budget in its ceiling. Treat free allowances as a provider-side limit, not unlimited usage.
 

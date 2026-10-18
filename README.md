@@ -90,8 +90,8 @@ wrangler secret put OPERATOR_SECRET --config wrangler.production.jsonc
 moves the stable `staging` alias to it (find the URL under dashboard → Workers &
 Pages → citescout → Deployments). Full ritual, golden rules, and the launch gate
 live in [docs/dogfood.md](docs/dogfood.md). Two hard limits: full login only works
-on `cite-scout.com` (Turnstile rejects other hostnames), and preview URLs expose
-no logs — debug locally.
+on hostnames configured for the environment's Turnstile and OAuth clients, and
+preview URLs expose no logs — debug locally.
 
 Remote migrations are an explicit operator step. Review SQL and backup/restore strategy first. The Cron Trigger runs at `*/5 * * * *` UTC. `MAX_PROVIDER_CALLS_PER_CRON_INVOCATION` bounds the collector work limit; it is not an end-to-end D1 query or dollar-cost cap. GEO production activation requires the separate gates in the operations document.
 
@@ -122,6 +122,59 @@ The stable instruction is neutral; tracked brands and competitors are never inje
 Better Auth uses the Drizzle adapter and D1 core tables. Magic links are hashed, single-use, and expire. Production cookies are Secure, HttpOnly, and SameSite Lax. Configure a verified Resend domain and use its address in `RESEND_FROM_EMAIL`.
 
 Create a Turnstile widget for local and production hostnames. Login requests must be verified server-side through Siteverify; a client success state is never trusted. Production expected hostnames must not include localhost.
+
+### Google sign-in locally and in production
+
+The Google button is visible immediately. Clicking it starts the server-side OAuth flow;
+missing credentials or a failed request show an error without removing email sign-in.
+The initial public-config request is still needed for email verification, but does not gate Google.
+
+Store `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the ignored `.dev.vars` for local
+development, and in Worker secrets for each deployed environment. Use `npm run dev` for
+real local OAuth: `npm run preview` serves the secret-free build and does not load these
+credentials. To use the same port as the UI review, run
+`npm run dev -- --host 127.0.0.1 --port 4173 --strictPort` instead of preview.
+
+In the Google Cloud Console, register the exact authorized redirect URIs for that OAuth client:
+
+- `http://localhost:5173/api/auth/callback/google` (development)
+- `http://localhost:4173/api/auth/callback/google` (local review)
+- `https://staging.cite-scout.com/api/auth/callback/google` (staging client)
+- `https://cite-scout.com/api/auth/callback/google` (production client)
+
+If using `127.0.0.1` instead of `localhost`, register that exact URI too. Local development
+accepts only those two loopback hosts on ports 5173 and 4173. Staging/production always
+use their configured `APP_URL` and do not trust localhost. If the Google consent screen is
+in Testing mode, add your Google account as a test user. A successful local login uses
+local D1 data; it does not grant access to your staging project. Automated OAuth tests use
+synthetic credentials and intercepted authorization pages, without calling Google.
+
+### Website-first project setup
+
+New accounts can set up a project without contacting the founder: enter a website first,
+then review/edit suggested brand, one to three competitor candidates and three buyer questions.
+Manual setup remains available when suggestions are disabled or the homepage cannot be read.
+Questions do not need to have been checked in Perplexity beforehand. Unenrolled accounts
+save setup without starting a check, enrolling in a trial, or enabling a daily schedule.
+Monitoring still requires its existing access, provider configuration and quota. The existing
+enrolled trial flow retains its explicit review and baseline action.
+
+Automatic drafts use the existing server-side `OPENAI_API_KEY` and a separate
+`ONBOARDING_SUGGESTIONS_DAILY_CAP` and `ONBOARDING_SUGGESTIONS_TOTAL_BUDGET_USD`,
+which default to **0** in all environments. Apply
+`0011_onboarding_suggestions.sql` to the intended D1 before enabling a positive cap.
+The cap counts reserved attempts globally per UTC day, with an additional three-attempt
+account limit. The total budget retains US$0.01 per reserved attempt across accounts and
+UTC days, including failed attempts and deleted accounts; it does not reset daily.
+Saved drafts remain available to their owner for the same website/parser version even
+when new generation is disabled or its key is absent. Their original timestamp stays visible.
+This is separate from GEO monitoring budgets and never enables a scan.
+The active staging owner can open **Settings → Review onboarding** (or
+`/app/onboarding?review=1`) with their existing account. It starts an empty review
+form and uses a separate suggestions cache within the same allowance. **Finish review**
+does not save/replace a project or start checks; **Start again** resets the form.
+Both the UI and suggestions endpoint restrict review mode to the active staging owner.
+See [suggestion methodology, limits and AI change review](docs/validation/2026-10-17-onboarding-suggestions.md).
 
 ## Lemon Squeezy setup
 

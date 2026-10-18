@@ -23,7 +23,6 @@ export function Login() {
   usePageTitle('Sign in');
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
-  const [googleAvailable, setGoogleAvailable] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [turnstileToken, setTurnstileToken] = useState('');
@@ -37,18 +36,37 @@ export function Login() {
       const response = await fetch('/api/auth/sign-in/social', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(10_000),
         body: JSON.stringify({
           provider: 'google',
           callbackURL: '/app/overview',
+          disableRedirect: true,
         }),
       });
-      const body = (await response.json()) as { url?: string; error?: { message?: string } };
+      const body = (await response.json()) as {
+        url?: string;
+        code?: string;
+        message?: string;
+        error?: { message?: string };
+      };
       if (!response.ok || !body.url) {
-        throw new Error(body.error?.message ?? 'Google sign-in is not configured or unavailable.');
+        throw new Error(
+          body.code === 'PROVIDER_NOT_FOUND'
+            ? 'Google sign-in is not configured here yet. Use a secure email link instead.'
+            : (body.error?.message ??
+                body.message ??
+                'Google sign-in is unavailable. Try again or use a secure email link.'),
+        );
       }
       window.location.href = body.url;
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Google sign-in failed.');
+      setMessage(
+        error instanceof Error && error.name === 'TimeoutError'
+          ? 'Google sign-in took too long. Try again or use a secure email link.'
+          : error instanceof Error
+            ? error.message
+            : 'Google sign-in failed. Try again or use a secure email link.',
+      );
       setStatus('error');
       setGoogleLoading(false);
     }
@@ -63,13 +81,11 @@ export function Login() {
             data: {
               turnstileSiteKey: string;
               integrationsEnabled: boolean;
-              googleOAuthAvailable: boolean;
             };
           }>,
       )
       .then(({ data }) => {
         if (!active) return;
-        setGoogleAvailable(data.googleOAuthAvailable);
         if (!data.integrationsEnabled) {
           setTurnstileToken('local-development');
           return;
@@ -88,7 +104,7 @@ export function Login() {
       .catch(() => {
         if (active) {
           setStatus('error');
-          setMessage('Could not load sign-in options. Refresh to try again.');
+          setMessage('Could not load email verification. Refresh to try email sign-in again.');
         }
       });
     return () => {
@@ -167,31 +183,28 @@ export function Login() {
                 <h1 className="text-2xl font-semibold tracking-tight">Sign in to CiteScout</h1>
               </CardTitle>
               <CardDescription className="leading-relaxed">
-                Sign in to inspect saved answers to your buyers’ questions. Use a secure email link
-                {googleAvailable ? ' or your Google account' : ''}; no password needed.
+                Sign in to inspect saved answers to your buyers’ questions. Use your Google account
+                or a secure email link; no password needed.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex min-w-0 flex-col gap-4">
-              {googleAvailable && (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={googleLoading || status === 'sending'}
-                    onClick={() => {
-                      void handleGoogleSignIn();
-                    }}
-                    className="flex w-full items-center justify-center gap-2.5 font-medium shadow-none hover:bg-accent"
-                  >
-                    <GoogleColorIcon className="size-4 shrink-0" />
-                    <span>{googleLoading ? 'Connecting to Google…' : 'Continue with Google'}</span>
-                  </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={googleLoading || status === 'sending'}
+                aria-busy={googleLoading}
+                onClick={() => {
+                  void handleGoogleSignIn();
+                }}
+                className="flex w-full items-center justify-center gap-2.5 font-medium shadow-none hover:bg-accent"
+              >
+                <GoogleColorIcon className="size-4 shrink-0" />
+                <span>{googleLoading ? 'Connecting to Google…' : 'Continue with Google'}</span>
+              </Button>
 
-                  <div className="relative my-0.5 text-center text-xs text-muted-foreground after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">
-                    <span className="relative z-10 bg-card px-2">or continue with work email</span>
-                  </div>
-                </>
-              )}
+              <div className="relative my-0.5 text-center text-xs text-muted-foreground after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">
+                <span className="relative z-10 bg-card px-2">or continue with work email</span>
+              </div>
               <form
                 className="flex min-w-0 flex-col gap-4"
                 onSubmit={(event) => {

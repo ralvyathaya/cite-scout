@@ -1,4 +1,5 @@
 import { actionCandidates, sourceOpportunities } from '../../../domain/geo-playbooks';
+import { syntheticOnboardingSuggestion } from '../../../shared/onboarding-fixture';
 import {
   buildGeoEvaluation,
   projectGeoClassification,
@@ -466,6 +467,8 @@ export class GeoFixtureWorkspace {
               this.at.getTime() - Number(url.searchParams.get('days')) * DAY),
       );
     if (route === '/project' && method === 'GET') return this.project;
+    if (route === '/onboarding/suggestions' && method === 'POST')
+      return syntheticOnboardingSuggestion;
     if (route === '/api/billing/status' && method === 'GET')
       return {
         subscription: null,

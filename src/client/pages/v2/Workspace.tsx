@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode, type SubmitEvent } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
 import {
   BarChart3,
   ListChecks,
@@ -41,6 +41,8 @@ import { highlight } from '../../lib/highlight';
 import { ApiError, api, emitEvent, useInspection, useResource } from './api';
 import { fixtureMode, leaveFixture } from './geo-fixture-mode';
 import { GeoPromptSets, GeoSettingsPanel } from './GeoWorkspace';
+import { normalizeDomain } from '../../../domain/normalization';
+import type { OnboardingSuggestion } from '../../../shared/onboarding';
 import type { GeoSettings } from '../../../shared/geo';
 import type {
   V2HistoryPayload,
@@ -303,7 +305,7 @@ function TrialStatus({ data }: { data: V2ProjectPayload }) {
           ? 'Perplexity monitoring access · legacy plan & history'
           : data.trial
             ? `Pilot · ${data.trial.state}`
-            : 'Founder-assisted pilot'}
+            : 'Project setup · monitoring access not active'}
       {data.trial?.followupDueAt && !data.canScan && (
         <> · Follow-up: {time(data.trial.followupDueAt)}</>
       )}
@@ -329,10 +331,12 @@ function IdentityFields({
   value,
   set,
   disabled,
+  domainReadOnly,
 }: {
   value: IdentityDraft;
   set: (value: IdentityDraft) => void;
   disabled?: boolean;
+  domainReadOnly?: boolean;
 }) {
   return (
     <fieldset disabled={disabled} className="space-y-4">
@@ -353,6 +357,7 @@ function IdentityFields({
           <Input
             required
             placeholder="example.com"
+            readOnly={domainReadOnly}
             value={value.canonicalDomain}
             onChange={(e) => {
               set({ ...value, canonicalDomain: e.target.value });
@@ -422,6 +427,9 @@ function IdentityFields({
 }
 export function V2Onboarding() {
   const { data, reload } = useOutletContext<WorkspaceContext>();
+  const [searchParams] = useSearchParams();
+  const reviewRequested = searchParams.get('review') === '1';
+  const reviewMode = reviewRequested && data.internalTestAccess;
   const navigate = useNavigate();
   const action = useAction();
   const [identity, setIdentity] = useState<IdentityDraft>({
@@ -430,37 +438,102 @@ export function V2Onboarding() {
     competitors: [{ name: '', canonicalDomain: null }],
   });
   const [questions, setQuestions] = useState(['', '', '']);
+  const [websiteReady, setWebsiteReady] = useState(false);
   const [review, setReview] = useState(false);
   const [key] = useState(() => crypto.randomUUID());
-  if (data.project)
-    return <Navigate to={data.internalTestAccess ? '/app/overview' : '/app/questions'} replace />;
-  if (!data.enrolled && !data.canScan && !data.internalTestAccess)
+  const [suggestion, setSuggestion] = useState<OnboardingSuggestion | null>(null);
+  const [reviewFinished, setReviewFinished] = useState(false);
+  const completionHeading = useRef<HTMLHeadingElement>(null);
+  const suggestionRequest = useRef<{ domain: string; id: string } | null>(null);
+  const saveOnly = reviewMode || data.internalTestAccess || (!data.enrolled && !data.canScan);
+  useEffect(() => {
+    if (reviewFinished) completionHeading.current?.focus();
+  }, [reviewFinished]);
+  if (reviewRequested && !reviewMode)
     return (
-      <section className="mx-auto max-w-2xl space-y-5 py-6">
-        <WorkspaceHeading
-          title="Run your first buyer-question baseline"
-          description="Start with a focused set of questions about your market."
-        />
-        <div className={`${box} space-y-5`}>
-          <Notice>
-            The pilot is currently founder-assisted. Bring three real questions you have already
-            checked in Perplexity.
-          </Notice>
+      <Notice>
+        Onboarding review is available only to the staging owner.{' '}
+        <Link className="underline" to="/app/overview">
+          Return to dashboard
+        </Link>
+      </Notice>
+    );
+  if (data.project && !reviewMode)
+    return <Navigate to={saveOnly ? '/app/overview' : '/app/questions'} replace />;
+  if (reviewFinished)
+    return (
+      <section className="mx-auto max-w-3xl space-y-5">
+        <h1
+          ref={completionHeading}
+          tabIndex={-1}
+          className="text-2xl font-semibold tracking-tight outline-none"
+        >
+          Onboarding review complete
+        </h1>
+        <Notice>No project changes were saved and no monitoring check was started.</Notice>
+        <div className="flex flex-wrap gap-3">
           <Button asChild>
-            <a href={`mailto:${data.supportEmail}`}>Contact the founder</a>
+            <Link to="/app/overview">Return to dashboard</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/app/onboarding?review=1" reloadDocument>
+              Start again
+            </Link>
           </Button>
         </div>
       </section>
     );
+  async function prepareWebsite(automatic: boolean) {
+    await action.run(async () => {
+      const domain = normalizeDomain(identity.canonicalDomain);
+      if (automatic && suggestion?.source.domain !== domain) {
+        if (suggestionRequest.current?.domain !== domain)
+          suggestionRequest.current = { domain, id: crypto.randomUUID() };
+        const value = await api<OnboardingSuggestion>('/onboarding/suggestions', {
+          website: identity.canonicalDomain,
+          requestId: suggestionRequest.current.id,
+          ...(reviewMode ? { review: true } : {}),
+        });
+        setSuggestion(value);
+        setIdentity({
+          brandName: value.draft.brandName,
+          canonicalDomain: value.source.domain,
+          competitors: value.draft.competitors.map((item) => ({
+            name: item.name,
+            canonicalDomain: null,
+          })),
+        });
+        setQuestions(value.draft.questions.map((item) => item.text));
+      } else if (suggestion && suggestion.source.domain !== domain) {
+        setSuggestion(null);
+        setIdentity({
+          brandName: '',
+          canonicalDomain: identity.canonicalDomain,
+          competitors: [{ name: '', canonicalDomain: null }],
+        });
+        setQuestions(['', '', '']);
+      }
+      setWebsiteReady(true);
+    });
+  }
   async function submit(e: SubmitEvent) {
     e.preventDefault();
+    if (action.busy) return;
+    if (!websiteReady) {
+      await prepareWebsite(true);
+      return;
+    }
     if (!review) {
       setReview(true);
       return;
     }
+    if (reviewMode) {
+      setReviewFinished(true);
+      return;
+    }
     await action.run(async () => {
       await api('/project', { ...identity, questions, idempotencyKey: key });
-      if (data.internalTestAccess) {
+      if (saveOnly) {
         await reload();
         await navigate('/app/overview');
         return;
@@ -476,93 +549,243 @@ export function V2Onboarding() {
   return (
     <section className="mx-auto max-w-3xl space-y-5">
       <WorkspaceHeading
-        title="What do your buyers ask?"
+        title={
+          websiteReady ? 'Set up your website monitoring' : 'Which website do you want to check?'
+        }
         description={
-          data.internalTestAccess
-            ? 'Set up your staging project first. You will choose engines and start monitoring separately.'
-            : 'Define your company, competitors, and three buyer questions before running your first baseline.'
+          !websiteReady
+            ? 'Enter your website to get draft brand, competitor and buyer-question suggestions. Review and edit them before any monitoring check.'
+            : saveOnly
+              ? 'Add your brand, competitors, and questions here. You do not need to check them in another tool first.'
+              : 'Define your company, competitors, and three buyer questions before running your first baseline.'
         }
       />
-      <ol aria-label="Project setup steps" className="grid grid-cols-2 gap-3 text-sm">
+      {reviewMode && (
+        <div role="status" className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm">
+          <p className="font-semibold">Staging onboarding review</p>
+          <p className="mt-1">
+            Your existing project stays unchanged. Form edits are not applied. Automatic suggestions
+            are saved separately and use the existing staging allowance.
+          </p>
+          <Link className="mt-2 inline-block underline" to="/app/overview">
+            Exit review
+          </Link>
+        </div>
+      )}
+      <ol aria-label="Project setup steps" className="grid grid-cols-3 gap-3 text-sm">
         <li
-          aria-current={!review ? 'step' : undefined}
-          className={`rounded-lg border px-3 py-3 ${!review ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
+          aria-current={!websiteReady ? 'step' : undefined}
+          className={`rounded-lg border px-3 py-3 ${!websiteReady ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
         >
           <span className="block text-xs">Step 1</span>
+          <span className="mt-1 block font-medium">Website</span>
+        </li>
+        <li
+          aria-current={websiteReady && !review ? 'step' : undefined}
+          className={`rounded-lg border px-3 py-3 ${websiteReady && !review ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
+        >
+          <span className="block text-xs">Step 2</span>
           <span className="mt-1 block font-medium">Project & questions</span>
         </li>
         <li
           aria-current={review ? 'step' : undefined}
           className={`rounded-lg border px-3 py-3 ${review ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
         >
-          <span className="block text-xs">Step 2</span>
+          <span className="block text-xs">Step 3</span>
           <span className="mt-1 block font-medium">
-            {data.internalTestAccess ? 'Review & save' : 'Review & run'}
+            {reviewMode ? 'Review only' : saveOnly ? 'Review & save' : 'Review & run'}
           </span>
         </li>
       </ol>
-      <TrialStatus data={data} />
+      {websiteReady &&
+        !reviewMode &&
+        (data.enrolled || data.canScan || data.internalTestAccess) && <TrialStatus data={data} />}
       <form onSubmit={(e) => void submit(e)} className={`${box} space-y-6`}>
-        <section className="space-y-4" aria-labelledby="project-identity-heading">
-          <div className="space-y-1">
-            <h2 id="project-identity-heading" className="font-semibold">
-              Company & competitors
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              These names and domains provide context for your saved evidence.
-            </p>
-          </div>
-          <IdentityFields value={identity} set={setIdentity} disabled={review} />
-        </section>
-        <section className="space-y-4 border-t pt-5" aria-labelledby="buyer-questions-heading">
-          <div className="space-y-1">
-            <h2 id="buyer-questions-heading" className="font-semibold">
-              Three buyer questions
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Use questions a buyer would ask when comparing options.
-              {data.internalTestAccess
-                ? ' Saving creates your project without calling a provider.'
-                : ' All three questions will be checked.'}
-            </p>
-          </div>
-          {questions.map((q, index) => (
-            <label key={index} className="block space-y-2 rounded-lg bg-muted/40 p-3 text-sm">
-              Buyer question {index + 1}
-              <Textarea
+        {!websiteReady ? (
+          <div className="space-y-3">
+            <label className="block space-y-2 text-sm" htmlFor="onboarding-website">
+              Website to monitor
+              <Input
+                id="onboarding-website"
                 required
-                minLength={10}
-                maxLength={500}
-                disabled={review}
-                value={q}
-                placeholder="Which customer onboarding tools work for a small B2B SaaS team?"
+                maxLength={253}
+                disabled={action.busy}
+                inputMode="url"
+                autoComplete="url"
+                placeholder="yourwebsite.com"
+                aria-describedby="onboarding-website-help"
+                value={identity.canonicalDomain}
                 onChange={(e) => {
-                  setQuestions(questions.map((text, i) => (i === index ? e.target.value : text)));
+                  setIdentity({ ...identity, canonicalDomain: e.target.value });
                 }}
               />
-              {identity.brandName.length > 1 &&
-                q.toLowerCase().includes(identity.brandName.toLowerCase()) && (
-                  <span className="text-muted-foreground">
-                    Naming your brand may encourage a mention. Keep it if that reflects a real buyer
-                    question.
-                  </span>
-                )}
             </label>
-          ))}
-        </section>
-        {review && (
-          <Notice>
-            {data.internalTestAccess
-              ? 'Save these three questions for GEO validation. Daily monitoring stays off. Review provider setup and quota before starting a manual check.'
-              : 'We will save a baseline, then re-check successful questions 72 hours after baseline processing finishes. Your trial ends after 14 days. Questions stay fixed during the trial. No card required.'}
-          </Notice>
+            <p id="onboarding-website-help" className="text-sm text-muted-foreground">
+              We read the public homepage and send a short text excerpt to OpenAI to draft setup
+              suggestions. This does not start an AI visibility check.
+            </p>
+            {suggestion && (
+              <p className="text-sm text-muted-foreground">
+                Your edits are kept for the same website. Changing the website starts a new draft.
+              </p>
+            )}
+          </div>
+        ) : (
+          <>
+            {suggestion && (
+              <section
+                className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm"
+                aria-label="Suggested setup"
+              >
+                <p className="font-semibold">
+                  {suggestion.synthetic
+                    ? 'Synthetic example — no website or AI request was made'
+                    : 'Draft suggestions — review before saving'}
+                </p>
+                <p>
+                  {suggestion.draft.category} · Based on{' '}
+                  <a
+                    className="break-all underline"
+                    href={suggestion.source.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {suggestion.source.domain}
+                  </a>
+                  . {suggestion.cached ? 'Saved draft, generated ' : 'Generated '}
+                  <time dateTime={suggestion.generatedAt}>{time(suggestion.generatedAt)}</time>.
+                </p>
+                <p>
+                  Competitors are inferred candidates, not independently verified. These suggestions
+                  are not monitoring results.
+                </p>
+                <details>
+                  <summary className="cursor-pointer font-medium">Why these suggestions?</summary>
+                  <div className="mt-3 space-y-3">
+                    <p>Brand evidence from the homepage: “{suggestion.draft.brandEvidence}”</p>
+                    <ul className="list-disc space-y-1 pl-5">
+                      {suggestion.draft.competitors.map((item) => (
+                        <li key={item.name}>
+                          {item.name}: {item.reason}
+                        </li>
+                      ))}
+                    </ul>
+                    <ul className="list-disc space-y-1 pl-5">
+                      {suggestion.draft.questions.map((item) => (
+                        <li key={item.text}>
+                          {item.text} — {item.reason}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-muted-foreground">
+                      We only read homepage metadata and text. JavaScript-only content, login pages
+                      and other pages may be missing.
+                    </p>
+                  </div>
+                </details>
+              </section>
+            )}
+            <section className="space-y-4" aria-labelledby="project-identity-heading">
+              <div className="space-y-1">
+                <h2 id="project-identity-heading" className="font-semibold">
+                  Company & competitors
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  These names and domains provide context for your saved evidence.
+                </p>
+              </div>
+              <IdentityFields
+                value={identity}
+                set={setIdentity}
+                disabled={review || action.busy}
+                domainReadOnly
+              />
+              <p className="text-xs text-muted-foreground">
+                Use Back to website to change the domain.
+              </p>
+            </section>
+            <section className="space-y-4 border-t pt-5" aria-labelledby="buyer-questions-heading">
+              <div className="space-y-1">
+                <h2 id="buyer-questions-heading" className="font-semibold">
+                  Three buyer questions
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Use questions a buyer would ask when comparing options.
+                  {reviewMode
+                    ? ' Finish review leaves your existing project and questions unchanged.'
+                    : saveOnly
+                      ? ' Saving creates your project without calling a provider.'
+                      : ' All three questions will be checked.'}
+                </p>
+              </div>
+              {questions.map((q, index) => (
+                <label key={index} className="block space-y-2 rounded-lg bg-muted/40 p-3 text-sm">
+                  Buyer question {index + 1}
+                  <Textarea
+                    required
+                    minLength={10}
+                    maxLength={500}
+                    disabled={review || action.busy}
+                    value={q}
+                    placeholder="Which customer onboarding tools work for a small B2B SaaS team?"
+                    onChange={(e) => {
+                      setQuestions(
+                        questions.map((text, i) => (i === index ? e.target.value : text)),
+                      );
+                    }}
+                  />
+                  {identity.brandName.length > 1 &&
+                    q.toLowerCase().includes(identity.brandName.toLowerCase()) && (
+                      <span className="text-muted-foreground">
+                        Naming your brand may encourage a mention. Keep it if that reflects a real
+                        buyer question.
+                      </span>
+                    )}
+                </label>
+              ))}
+            </section>
+            {review && (
+              <Notice>
+                {reviewMode
+                  ? 'Finish this review without saving a project or running checks. Your existing project, trial and schedule remain unchanged.'
+                  : saveOnly
+                    ? 'Save your project without starting a check. Daily monitoring stays off. Review provider setup, access and quota before starting a manual check.'
+                    : 'We will save a baseline, then re-check successful questions 72 hours after baseline processing finishes. Your trial ends after 14 days. Questions stay fixed during the trial. No card required.'}
+              </Notice>
+            )}
+          </>
         )}
         <Failure error={action.error} />
         <div className="flex flex-wrap gap-3 border-t pt-5">
+          {!websiteReady && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={action.busy}
+              onClick={() => {
+                void prepareWebsite(false);
+              }}
+            >
+              Set up manually
+            </Button>
+          )}
+          {websiteReady && !review && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={action.busy}
+              onClick={() => {
+                setWebsiteReady(false);
+              }}
+            >
+              Back to website
+            </Button>
+          )}
           {review && (
             <Button
               type="button"
               variant="outline"
+              disabled={action.busy}
               onClick={() => {
                 setReview(false);
               }}
@@ -572,14 +795,22 @@ export function V2Onboarding() {
           )}
           <Button disabled={action.busy}>
             {action.busy
-              ? 'Starting…'
-              : review
-                ? data.internalTestAccess
-                  ? 'Create staging project'
-                  : 'Run my baseline'
-                : data.internalTestAccess
-                  ? 'Review project'
-                  : 'Review baseline'}
+              ? websiteReady
+                ? 'Saving…'
+                : 'Reading website and drafting…'
+              : !websiteReady
+                ? 'Suggest setup'
+                : review
+                  ? reviewMode
+                    ? 'Finish review'
+                    : saveOnly
+                      ? data.internalTestAccess
+                        ? 'Create staging project'
+                        : 'Create project'
+                      : 'Run my baseline'
+                  : saveOnly
+                    ? 'Review project'
+                    : 'Review baseline'}
           </Button>
         </div>
       </form>
@@ -1429,7 +1660,13 @@ export function V2Settings() {
       <WorkspaceHeading
         title="Settings"
         description="Manage monitoring, the brand context used for diagnosis and your account."
-      />
+      >
+        {data.internalTestAccess && (
+          <Button asChild variant="outline">
+            <Link to="/app/onboarding?review=1">Review onboarding</Link>
+          </Button>
+        )}
+      </WorkspaceHeading>
       <nav
         aria-label="Settings sections"
         className="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border bg-card px-4 py-3 text-sm text-primary"

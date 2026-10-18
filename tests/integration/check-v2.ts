@@ -25,6 +25,7 @@ for (const name of [
   '0008_geo_playbook_recovery',
   '0009_geo_daily_outcomes',
   '0010_tough_gamma_corps',
+  '0011_onboarding_suggestions',
 ]) {
   if (name === '0002_citescout_v2')
     db.exec(`

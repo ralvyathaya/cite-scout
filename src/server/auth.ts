@@ -9,12 +9,22 @@ import { getConfig } from './config';
 export function createAuth(env: CloudflareBindings) {
   const config = getConfig(env);
   const db = drizzle(env.DB, { schema });
+  const localDevelopment = config.APP_ENV === 'development' && config.DEPLOYMENT_ENV === 'local';
+  const localHosts = ['localhost:5173', 'localhost:4173', '127.0.0.1:5173', '127.0.0.1:4173'];
   return betterAuth({
     appName: 'CiteScout',
-    baseURL: env.APP_URL,
+    baseURL: localDevelopment
+      ? {
+          allowedHosts: localHosts,
+          protocol: 'http',
+          fallback: env.APP_URL,
+        }
+      : env.APP_URL,
     secret: env.BETTER_AUTH_SECRET,
     database: drizzleAdapter(db, { provider: 'sqlite', schema, usePlural: true }),
-    trustedOrigins: [new URL(env.APP_URL).origin],
+    trustedOrigins: localDevelopment
+      ? localHosts.map((host) => `http://${host}`)
+      : [new URL(env.APP_URL).origin],
     emailAndPassword: { enabled: false },
     advanced: { useSecureCookies: config.APP_ENV === 'production' },
     socialProviders: {

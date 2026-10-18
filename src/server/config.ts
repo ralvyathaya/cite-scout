@@ -12,6 +12,8 @@ const configSchema = z.object({
   GEO_CLASSIFIER_MODEL: z.enum(['clef-flash', 'clef', 'jev-1.13.0']).default('clef-flash'),
   GEO_SERP_COLLECTOR: z.enum(['serpapi', 'dataforseo_standard']).default('serpapi'),
   GEO_OPENAI_MODEL: z.string().min(1).max(100).default('gpt-6-luna'),
+  ONBOARDING_SUGGESTIONS_DAILY_CAP: z.coerce.number().int().min(0).max(100).default(0),
+  ONBOARDING_SUGGESTIONS_TOTAL_BUDGET_USD: z.coerce.number().nonnegative().default(0),
   GEO_INTERNAL_TEST_USER_ID: z
     .string()
     .regex(/^[a-zA-Z0-9_-]{0,100}$/)
