@@ -144,6 +144,7 @@ v2Routes.post('/onboarding/suggestions', async (c) => {
   } catch (error) {
     const code = error instanceof Error ? error.message : 'SUGGESTION_FAILED';
     const messages: Record<string, string> = {
+      ONBOARDING_REVIEW_UNAVAILABLE: 'Onboarding review is available only to the staging owner.',
       SUGGESTIONS_UNAVAILABLE:
         'New automatic setup suggestions are disabled or not configured here. You can continue manually.',
       SUGGESTION_LIMIT_REACHED:
@@ -167,11 +168,13 @@ v2Routes.post('/onboarding/suggestions', async (c) => {
     if (!messages[code]) throw error;
     return c.json(
       { error: { code, message: messages[code] } },
-      code === 'SUGGESTION_LIMIT_REACHED'
-        ? 429
-        : code === 'UNSAFE_PAGE_TARGET' || code === 'NON_PUBLIC_DNS'
-          ? 422
-          : 503,
+      code === 'ONBOARDING_REVIEW_UNAVAILABLE'
+        ? 403
+        : code === 'SUGGESTION_LIMIT_REACHED'
+          ? 429
+          : code === 'UNSAFE_PAGE_TARGET' || code === 'NON_PUBLIC_DNS'
+            ? 422
+            : 503,
     );
   }
 });

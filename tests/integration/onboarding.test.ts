@@ -45,8 +45,10 @@ afterEach(async () => {
   vi.restoreAllMocks();
   for (const id of requests.splice(0))
     await env.DB.prepare('DELETE FROM onboarding_suggestions WHERE id=?').bind(id).run();
-  for (const id of users.splice(0))
+  for (const id of users.splice(0)) {
+    await env.DB.prepare('DELETE FROM subscriptions WHERE user_id=?').bind(id).run();
     await env.DB.prepare('DELETE FROM users WHERE id=?').bind(id).run();
+  }
 });
 
 it('requires authentication and rejects unavailable or malformed setup requests without creating a project', async () => {
@@ -325,4 +327,86 @@ it('cannot restore a generated draft after deletion during inference', async () 
       .bind(request.requestId)
       .first(),
   ).toMatchObject({ user_id: null, state: 'failed', draft_json: null, source_key: 'REDACTED' });
+});
+
+function reviewConfig(userId: string, expires = new Date(Date.now() + 86_400_000)) {
+  return withBindings({
+    APP_URL: 'https://staging.cite-scout.com',
+    DEPLOYMENT_ENV: 'staging',
+    GEO_INTERNAL_TEST_USER_ID: userId,
+    GEO_INTERNAL_TEST_EXPIRES_AT: expires.toISOString(),
+    ONBOARDING_SUGGESTIONS_DAILY_CAP: '20',
+    ONBOARDING_SUGGESTIONS_TOTAL_BUDGET_USD: '1',
+    OPENAI_API_KEY: 'synthetic-secret',
+  });
+}
+
+it('lets the staging owner review suggestions with an existing project without changing project, trial or monitoring data', async () => {
+  const account = await seed(3, true);
+  users.push(account.userId);
+  const protectedRows = () =>
+    Promise.all(
+      [
+        'projects',
+        'prompts',
+        'competitors',
+        'pilot_enrollments',
+        'subscriptions',
+        'scan_runs',
+        'scan_results',
+      ].map(async (table) => (await env.DB.prepare(`SELECT * FROM ${table}`).all()).results),
+    );
+  const before = await protectedRows();
+  const settings = reviewConfig(account.userId),
+    adapter = provider();
+  await expect(suggestWebsiteSetup(settings, account.userId, input(), adapter)).rejects.toThrow(
+    'SETUP_ALREADY_COMPLETE',
+  );
+  const request = { ...input(), review: true };
+  const draft = await suggestWebsiteSetup(settings, account.userId, request, adapter);
+  expect(draft.draft).toEqual(example.draft);
+  expect(
+    await env.DB.prepare('SELECT source_key FROM onboarding_suggestions WHERE id=?')
+      .bind(request.requestId)
+      .first('source_key'),
+  ).toBe(`${onboardingSuggestionVersion}:review:cedarflow.example`);
+  expect(
+    (await suggestWebsiteSetup(settings, account.userId, { ...input(), review: true }, adapter))
+      .cached,
+  ).toBe(true);
+  expect(adapter.generateOnboardingDraft).toHaveBeenCalledTimes(1);
+  expect(await protectedRows()).toEqual(before);
+});
+
+it('rejects review mode outside the active staging owner on the authenticated endpoint before retrieval or reservation', async () => {
+  const account = await seed(0),
+    other = await owner();
+  users.push(account.userId);
+  const app = new Hono<{ Bindings: CloudflareBindings }>().route('/api/v2', v2Routes);
+  const headers = { Cookie: await cookie(account.userId), 'Content-Type': 'application/json' };
+  for (const settings of [
+    config(),
+    withBindings({ DEPLOYMENT_ENV: 'production', APP_URL: 'https://cite-scout.com' }),
+    reviewConfig(other.userId),
+    reviewConfig(account.userId, new Date(Date.now() - 1000)),
+  ]) {
+    const response = await app.request(
+      '/api/v2/onboarding/suggestions',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...input(), review: true }),
+      },
+      settings,
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'ONBOARDING_REVIEW_UNAVAILABLE' },
+    });
+  }
+  expect(
+    await env.DB.prepare('SELECT count(*) AS n FROM onboarding_suggestions WHERE user_id=?')
+      .bind(account.userId)
+      .first('n'),
+  ).toBe(0);
 });

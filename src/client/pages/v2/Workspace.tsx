@@ -427,6 +427,9 @@ function IdentityFields({
 }
 export function V2Onboarding() {
   const { data, reload } = useOutletContext<WorkspaceContext>();
+  const [searchParams] = useSearchParams();
+  const reviewRequested = searchParams.get('review') === '1';
+  const reviewMode = reviewRequested && data.internalTestAccess;
   const navigate = useNavigate();
   const action = useAction();
   const [identity, setIdentity] = useState<IdentityDraft>({
@@ -439,9 +442,47 @@ export function V2Onboarding() {
   const [review, setReview] = useState(false);
   const [key] = useState(() => crypto.randomUUID());
   const [suggestion, setSuggestion] = useState<OnboardingSuggestion | null>(null);
+  const [reviewFinished, setReviewFinished] = useState(false);
+  const completionHeading = useRef<HTMLHeadingElement>(null);
   const suggestionRequest = useRef<{ domain: string; id: string } | null>(null);
-  const saveOnly = data.internalTestAccess || (!data.enrolled && !data.canScan);
-  if (data.project) return <Navigate to={saveOnly ? '/app/overview' : '/app/questions'} replace />;
+  const saveOnly = reviewMode || data.internalTestAccess || (!data.enrolled && !data.canScan);
+  useEffect(() => {
+    if (reviewFinished) completionHeading.current?.focus();
+  }, [reviewFinished]);
+  if (reviewRequested && !reviewMode)
+    return (
+      <Notice>
+        Onboarding review is available only to the staging owner.{' '}
+        <Link className="underline" to="/app/overview">
+          Return to dashboard
+        </Link>
+      </Notice>
+    );
+  if (data.project && !reviewMode)
+    return <Navigate to={saveOnly ? '/app/overview' : '/app/questions'} replace />;
+  if (reviewFinished)
+    return (
+      <section className="mx-auto max-w-3xl space-y-5">
+        <h1
+          ref={completionHeading}
+          tabIndex={-1}
+          className="text-2xl font-semibold tracking-tight outline-none"
+        >
+          Onboarding review complete
+        </h1>
+        <Notice>No project changes were saved and no monitoring check was started.</Notice>
+        <div className="flex flex-wrap gap-3">
+          <Button asChild>
+            <Link to="/app/overview">Return to dashboard</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/app/onboarding?review=1" reloadDocument>
+              Start again
+            </Link>
+          </Button>
+        </div>
+      </section>
+    );
   async function prepareWebsite(automatic: boolean) {
     await action.run(async () => {
       const domain = normalizeDomain(identity.canonicalDomain);
@@ -451,6 +492,7 @@ export function V2Onboarding() {
         const value = await api<OnboardingSuggestion>('/onboarding/suggestions', {
           website: identity.canonicalDomain,
           requestId: suggestionRequest.current.id,
+          ...(reviewMode ? { review: true } : {}),
         });
         setSuggestion(value);
         setIdentity({
@@ -485,6 +527,10 @@ export function V2Onboarding() {
       setReview(true);
       return;
     }
+    if (reviewMode) {
+      setReviewFinished(true);
+      return;
+    }
     await action.run(async () => {
       await api('/project', { ...identity, questions, idempotencyKey: key });
       if (saveOnly) {
@@ -514,6 +560,18 @@ export function V2Onboarding() {
               : 'Define your company, competitors, and three buyer questions before running your first baseline.'
         }
       />
+      {reviewMode && (
+        <div role="status" className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm">
+          <p className="font-semibold">Staging onboarding review</p>
+          <p className="mt-1">
+            Your existing project stays unchanged. Form edits are not applied. Automatic suggestions
+            are saved separately and use the existing staging allowance.
+          </p>
+          <Link className="mt-2 inline-block underline" to="/app/overview">
+            Exit review
+          </Link>
+        </div>
+      )}
       <ol aria-label="Project setup steps" className="grid grid-cols-3 gap-3 text-sm">
         <li
           aria-current={!websiteReady ? 'step' : undefined}
@@ -535,13 +593,13 @@ export function V2Onboarding() {
         >
           <span className="block text-xs">Step 3</span>
           <span className="mt-1 block font-medium">
-            {saveOnly ? 'Review & save' : 'Review & run'}
+            {reviewMode ? 'Review only' : saveOnly ? 'Review & save' : 'Review & run'}
           </span>
         </li>
       </ol>
-      {websiteReady && (data.enrolled || data.canScan || data.internalTestAccess) && (
-        <TrialStatus data={data} />
-      )}
+      {websiteReady &&
+        !reviewMode &&
+        (data.enrolled || data.canScan || data.internalTestAccess) && <TrialStatus data={data} />}
       <form onSubmit={(e) => void submit(e)} className={`${box} space-y-6`}>
         {!websiteReady ? (
           <div className="space-y-3">
@@ -653,9 +711,11 @@ export function V2Onboarding() {
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   Use questions a buyer would ask when comparing options.
-                  {saveOnly
-                    ? ' Saving creates your project without calling a provider.'
-                    : ' All three questions will be checked.'}
+                  {reviewMode
+                    ? ' Finish review leaves your existing project and questions unchanged.'
+                    : saveOnly
+                      ? ' Saving creates your project without calling a provider.'
+                      : ' All three questions will be checked.'}
                 </p>
               </div>
               {questions.map((q, index) => (
@@ -686,9 +746,11 @@ export function V2Onboarding() {
             </section>
             {review && (
               <Notice>
-                {saveOnly
-                  ? 'Save your project without starting a check. Daily monitoring stays off. Review provider setup, access and quota before starting a manual check.'
-                  : 'We will save a baseline, then re-check successful questions 72 hours after baseline processing finishes. Your trial ends after 14 days. Questions stay fixed during the trial. No card required.'}
+                {reviewMode
+                  ? 'Finish this review without saving a project or running checks. Your existing project, trial and schedule remain unchanged.'
+                  : saveOnly
+                    ? 'Save your project without starting a check. Daily monitoring stays off. Review provider setup, access and quota before starting a manual check.'
+                    : 'We will save a baseline, then re-check successful questions 72 hours after baseline processing finishes. Your trial ends after 14 days. Questions stay fixed during the trial. No card required.'}
               </Notice>
             )}
           </>
@@ -739,11 +801,13 @@ export function V2Onboarding() {
               : !websiteReady
                 ? 'Suggest setup'
                 : review
-                  ? saveOnly
-                    ? data.internalTestAccess
-                      ? 'Create staging project'
-                      : 'Create project'
-                    : 'Run my baseline'
+                  ? reviewMode
+                    ? 'Finish review'
+                    : saveOnly
+                      ? data.internalTestAccess
+                        ? 'Create staging project'
+                        : 'Create project'
+                      : 'Run my baseline'
                   : saveOnly
                     ? 'Review project'
                     : 'Review baseline'}
@@ -1596,7 +1660,13 @@ export function V2Settings() {
       <WorkspaceHeading
         title="Settings"
         description="Manage monitoring, the brand context used for diagnosis and your account."
-      />
+      >
+        {data.internalTestAccess && (
+          <Button asChild variant="outline">
+            <Link to="/app/onboarding?review=1">Review onboarding</Link>
+          </Button>
+        )}
+      </WorkspaceHeading>
       <nav
         aria-label="Settings sections"
         className="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border bg-card px-4 py-3 text-sm text-primary"

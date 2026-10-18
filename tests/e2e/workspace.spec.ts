@@ -444,6 +444,63 @@ test('automatic onboarding fills an editable draft and preserves edits before ex
   );
 });
 
+test('staging owner reviews onboarding from an empty draft without saving over the existing project or starting checks', async ({
+  page,
+}, testInfo) => {
+  if (testInfo.project.name === 'mobile') await page.setViewportSize({ width: 320, height: 720 });
+  await workspace(page, { ...project, internalTestAccess: true });
+  const mutations: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/api/') && request.method() !== 'GET')
+      mutations.push(new URL(request.url()).pathname);
+  });
+  let suggestionInput: unknown;
+  await page.route('**/api/v2/onboarding/suggestions', async (route) => {
+    suggestionInput = route.request().postDataJSON();
+    await route.fulfill({ json: { data: syntheticOnboardingSuggestion } });
+  });
+  await page.goto('/app/settings');
+  await page.getByRole('link', { name: 'Review onboarding', exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/onboarding\?review=1$/);
+  await expect(page.getByText('Staging onboarding review', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Website to monitor', { exact: true })).toHaveValue('');
+  await page.getByLabel('Website to monitor', { exact: true }).fill('cedarflow.example');
+  await page.getByRole('button', { name: 'Suggest setup', exact: true }).click();
+  await expect(page.getByLabel('Company name', { exact: true })).toHaveValue('CedarFlow');
+  expect(suggestionInput).toMatchObject({ review: true, website: 'cedarflow.example' });
+  await page.getByLabel('Company name', { exact: true }).fill('Review only brand');
+  await page.getByRole('button', { name: 'Review project', exact: true }).click();
+  await page.screenshot({
+    path: testInfo.outputPath('onboarding-review-ready.png'),
+    fullPage: true,
+  });
+  await page.getByRole('button', { name: 'Finish review', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Onboarding review complete' })).toBeFocused();
+  await expect(
+    page.getByText('No project changes were saved and no monitoring check was started.'),
+  ).toBeVisible();
+  expect(mutations).toEqual(['/api/v2/onboarding/suggestions']);
+  await page.getByRole('link', { name: 'Start again', exact: true }).click();
+  await expect(page.getByLabel('Website to monitor', { exact: true })).toHaveValue('');
+  expect(mutations).toEqual(['/api/v2/onboarding/suggestions']);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
+  await page.getByRole('link', { name: 'Exit review', exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/overview$/);
+});
+
+test('onboarding review is unavailable without the staging owner capability', async ({ page }) => {
+  await workspace(page);
+  await page.goto('/app/settings');
+  await expect(page.getByRole('link', { name: 'Review onboarding', exact: true })).toHaveCount(0);
+  await page.goto('/app/onboarding?review=1');
+  await expect(
+    page.getByText(/Onboarding review is available only to the staging owner/),
+  ).toBeVisible();
+  await expect(page.getByLabel('Website to monitor', { exact: true })).toHaveCount(0);
+});
+
 test('unavailable automatic onboarding leaves the URL intact and offers a manual fallback', async ({
   page,
 }) => {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getConfig } from '../config';
+import { getConfig, internalTestUserId } from '../config';
 import { ownedProject } from './read-model';
 import {
   generateOnboardingDraft,
@@ -15,6 +15,7 @@ import {
 export const onboardingRequest = z.strictObject({
   website: z.string().trim().min(1).max(253),
   requestId: z.uuid(),
+  review: z.boolean().optional(),
 });
 const DAY = 86_400_000;
 interface StoredSuggestion {
@@ -42,9 +43,11 @@ export async function suggestWebsiteSetup(
   now = new Date(),
 ): Promise<OnboardingSuggestion> {
   const config = getConfig(env);
-  if (await ownedProject(env, userId)) throw new Error('SETUP_ALREADY_COMPLETE');
+  if (input.review && (config.DEPLOYMENT_ENV !== 'staging' || internalTestUserId(env) !== userId))
+    throw new Error('ONBOARDING_REVIEW_UNAVAILABLE');
+  if (!input.review && (await ownedProject(env, userId))) throw new Error('SETUP_ALREADY_COMPLETE');
   const target = onboardingWebsite(input.website);
-  const sourceKey = `${onboardingSuggestionVersion}:${target.domain}`;
+  const sourceKey = `${onboardingSuggestionVersion}:${input.review ? 'review:' : ''}${target.domain}`;
   const timestamp = now.getTime();
   const replay = await env.DB.prepare(
     'SELECT id,source_key,state,draft_json FROM onboarding_suggestions WHERE id=? AND user_id=?',

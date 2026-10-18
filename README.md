@@ -169,6 +169,11 @@ UTC days, including failed attempts and deleted accounts; it does not reset dail
 Saved drafts remain available to their owner for the same website/parser version even
 when new generation is disabled or its key is absent. Their original timestamp stays visible.
 This is separate from GEO monitoring budgets and never enables a scan.
+The active staging owner can open **Settings → Review onboarding** (or
+`/app/onboarding?review=1`) with their existing account. It starts an empty review
+form and uses a separate suggestions cache within the same allowance. **Finish review**
+does not save/replace a project or start checks; **Start again** resets the form.
+Both the UI and suggestions endpoint restrict review mode to the active staging owner.
 See [suggestion methodology, limits and AI change review](docs/validation/2026-10-17-onboarding-suggestions.md).
 
 ## Lemon Squeezy setup
