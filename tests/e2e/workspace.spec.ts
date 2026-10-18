@@ -3,6 +3,7 @@ import type { V2ProjectPayload, V2QuestionsPayload, V2Observation } from '../../
 import type { RequestContext } from '../../src/shared/evidence';
 import { analyzeEvidence, compareEvidence } from '../../src/domain/evidence';
 import { legacyGeoFixture } from './geo-legacy-fixtures';
+import { syntheticOnboardingSuggestion } from '../../src/shared/onboarding-fixture';
 
 const date = '2026-10-08T12:00:00Z';
 const question = {
@@ -209,8 +210,10 @@ test('staging owner onboarding saves a project without launching a legacy baseli
     if (new URL(request.url()).pathname === '/api/v2/scans') legacyScans.push(request.url());
   });
   await page.goto('/app/onboarding');
+  await page.getByLabel('Website to monitor', { exact: true }).fill('cedarflow.example');
+  await page.getByRole('button', { name: 'Set up manually', exact: true }).click();
   await page.getByLabel('Company name', { exact: true }).fill('CedarFlow');
-  await page.getByLabel('Company domain', { exact: true }).fill('cedarflow.example');
+  await expect(page.getByLabel('Company domain', { exact: true })).toHaveValue('cedarflow.example');
   await page.getByLabel('Competitor 1 name', { exact: true }).fill('Rival');
   for (let index = 1; index <= 3; index++)
     await page
@@ -233,6 +236,288 @@ test('staging owner onboarding saves a project without launching a legacy baseli
   expect(saved).toBe(true);
   expect(legacyScans).toEqual([]);
 });
+
+test('a new account starts with a website and saves setup without enrollment or provider calls', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  const initial = {
+    ...project,
+    project: null,
+    enrolled: false,
+    canScan: false,
+    internalTestAccess: false,
+    trial: null,
+  };
+  await workspace(page, initial);
+  let saved = false;
+  const requests: string[] = [];
+  const payloads: unknown[] = [];
+  await page.route('**/api/v2/project', async (route) => {
+    if (route.request().method() === 'POST') {
+      payloads.push(route.request().postDataJSON());
+      if (payloads.length === 1) {
+        await route.fulfill({
+          status: 503,
+          json: { error: { message: 'Could not save project. Try again.' } },
+        });
+        return;
+      }
+      saved = true;
+      await route.fulfill({ status: 201, json: { data: { projectId: 'project' } } });
+    } else
+      await route.fulfill({
+        json: { data: { ...initial, project: saved ? project.project : null } },
+      });
+  });
+  page.on('request', (request) => {
+    if (
+      /\/api\/v2\/(scans|geo\/runs)$/.test(new URL(request.url()).pathname) &&
+      request.method() === 'POST'
+    )
+      requests.push(request.url());
+  });
+  await page.goto('/app/onboarding');
+  await expect(
+    page.getByRole('heading', { name: 'Which website do you want to check?' }),
+  ).toBeVisible();
+  await expect(page.getByText(/founder-assisted|already checked in Perplexity/)).toHaveCount(0);
+  await expect(page.getByLabel('Company name', { exact: true })).toHaveCount(0);
+  const website = page.getByLabel('Website to monitor', { exact: true });
+  await website.fill('not-a-website');
+  await page.getByRole('button', { name: 'Set up manually', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText('Enter a valid domain.');
+  await website.fill('https://www.cedarflow.example/features');
+  await page.getByRole('button', { name: 'Set up manually', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.getByLabel('Company name', { exact: true }).fill('CedarFlow');
+  await page.getByLabel('Competitor 1 name', { exact: true }).fill('Rival');
+  for (let index = 1; index <= 3; index++)
+    await page
+      .getByLabel(`Buyer question ${String(index)}`)
+      .fill(`Which scheduling tools suit marketing team ${String(index)}?`);
+  await page.getByRole('button', { name: 'Back to website', exact: true }).click();
+  await expect(website).toHaveValue('https://www.cedarflow.example/features');
+  await page.getByRole('button', { name: 'Set up manually', exact: true }).click();
+  await expect(page.getByLabel('Company name', { exact: true })).toHaveValue('CedarFlow');
+  await page.getByRole('button', { name: 'Review project', exact: true }).click();
+  await expect(page.getByText(/Save your project without starting a check/)).toBeVisible();
+  await page.getByRole('button', { name: 'Create project', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText('Could not save project. Try again.');
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.getByLabel('Buyer question 1')).toHaveValue(
+    'Which scheduling tools suit marketing team 1?',
+  );
+  await page.getByRole('button', { name: 'Review project', exact: true }).click();
+  await page.getByRole('button', { name: 'Create project', exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/overview$/);
+  await expect(page.getByRole('button', { name: 'Monitor Prompts', exact: true })).toBeDisabled();
+  expect(payloads).toHaveLength(2);
+  expect(payloads[0]).toEqual(payloads[1]);
+  expect(requests).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
+});
+test('an existing subscription requests monitoring only after the final setup confirmation', async ({
+  page,
+}) => {
+  await workspace(page, { ...project, project: null });
+  const scans: unknown[] = [];
+  await page.route('**/api/v2/project', (route) =>
+    route.fulfill({
+      json: {
+        data:
+          route.request().method() === 'POST'
+            ? { projectId: 'project' }
+            : { ...project, project: null },
+      },
+    }),
+  );
+  await page.route('**/api/v2/scans', async (route) => {
+    scans.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 503,
+      json: { error: { message: 'Synthetic monitoring unavailable.' } },
+    });
+  });
+  await page.goto('/app/onboarding');
+  await page.getByLabel('Website to monitor', { exact: true }).fill('cedarflow.example');
+  await page.getByRole('button', { name: 'Set up manually', exact: true }).click();
+  await page.getByLabel('Company name', { exact: true }).fill('CedarFlow');
+  await page.getByLabel('Competitor 1 name', { exact: true }).fill('Rival');
+  for (let index = 1; index <= 3; index++)
+    await page
+      .getByLabel(`Buyer question ${String(index)}`)
+      .fill(`Which scheduling tools suit marketing team ${String(index)}?`);
+  await page.getByRole('button', { name: 'Review baseline', exact: true }).click();
+  expect(scans).toEqual([]);
+  await page.getByRole('button', { name: 'Run my baseline', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText('Synthetic monitoring unavailable.');
+  expect(scans).toEqual([{ mode: 'today' }]);
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.getByLabel('Company name', { exact: true })).toHaveValue('CedarFlow');
+});
+
+test('automatic onboarding fills an editable draft and preserves edits before explicit project creation', async ({
+  page,
+}, testInfo) => {
+  if (testInfo.project.name === 'mobile') await page.setViewportSize({ width: 320, height: 720 });
+  const initial = { ...project, project: null, enrolled: false, canScan: false, trial: null };
+  await workspace(page, initial);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const suggestions: unknown[] = [],
+    saves: { brandName: string; questions: string[]; competitors: { name: string }[] }[] = [],
+    scans: string[] = [];
+  let saved = false;
+  await page.route('**/api/v2/onboarding/suggestions', async (route) => {
+    suggestions.push(route.request().postDataJSON());
+    await pending;
+    await route.fulfill({ json: { data: syntheticOnboardingSuggestion } });
+  });
+  await page.route('**/api/v2/project', async (route) => {
+    if (route.request().method() === 'POST') {
+      saves.push(route.request().postDataJSON() as (typeof saves)[number]);
+      saved = true;
+      await route.fulfill({ status: 201, json: { data: { projectId: 'project' } } });
+    } else
+      await route.fulfill({
+        json: { data: { ...initial, project: saved ? project.project : null } },
+      });
+  });
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      /\/api\/v2\/(scans|geo\/runs)$/.test(new URL(request.url()).pathname)
+    )
+      scans.push(request.url());
+  });
+  await page.goto('/app/onboarding');
+  await page.getByLabel('Website to monitor', { exact: true }).fill('cedarflow.example');
+  await page.getByRole('button', { name: 'Suggest setup', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Reading website and drafting…' })).toBeDisabled();
+  await expect(page.getByLabel('Website to monitor', { exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Set up manually', exact: true })).toBeDisabled();
+  expect(scans).toEqual([]);
+  expect(saves).toEqual([]);
+  release();
+  await expect(
+    page.getByText('Synthetic example — no website or AI request was made'),
+  ).toBeVisible();
+  await expect(page.getByLabel('Company name', { exact: true })).toHaveValue('CedarFlow');
+  await expect(page.getByLabel('Company domain', { exact: true })).toHaveAttribute('readonly', '');
+  await expect(page.getByLabel('Competitor 1 name', { exact: true })).toHaveValue('Rival');
+  await expect(page.getByLabel('Buyer question 1')).toHaveValue(
+    syntheticOnboardingSuggestion.draft.questions[0]?.text ?? '',
+  );
+  await page.screenshot({ path: testInfo.outputPath('onboarding-suggested.png'), fullPage: true });
+  await page.getByText('Why these suggestions?', { exact: true }).click();
+  await expect(page.getByText(/Brand evidence from the homepage/)).toBeVisible();
+  await page.getByLabel('Company name', { exact: true }).fill('Edited CedarFlow');
+  await page.getByLabel('Competitor 1 name', { exact: true }).fill('Chosen Rival');
+  await page
+    .getByLabel('Buyer question 1')
+    .fill('Which onboarding tools fit a remote marketing team?');
+  await page.getByRole('button', { name: 'Back to website', exact: true }).click();
+  await page.getByRole('button', { name: 'Suggest setup', exact: true }).click();
+  await expect(page.getByLabel('Company name', { exact: true })).toHaveValue('Edited CedarFlow');
+  expect(suggestions).toHaveLength(1);
+  await page.getByRole('button', { name: 'Review project', exact: true }).click();
+  expect(saves).toEqual([]);
+  expect(scans).toEqual([]);
+  await page.getByRole('button', { name: 'Create project', exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/overview$/);
+  expect(saves[0]).toMatchObject({
+    brandName: 'Edited CedarFlow',
+    questions: [
+      'Which onboarding tools fit a remote marketing team?',
+      ...syntheticOnboardingSuggestion.draft.questions.slice(1).map((item) => item.text),
+    ],
+  });
+  expect(saves[0]?.competitors[0]?.name).toBe('Chosen Rival');
+  expect(scans).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
+});
+
+test('unavailable automatic onboarding leaves the URL intact and offers a manual fallback', async ({
+  page,
+}) => {
+  await workspace(page, {
+    ...project,
+    project: null,
+    enrolled: false,
+    canScan: false,
+    trial: null,
+  });
+  let calls = 0;
+  await page.route('**/api/v2/onboarding/suggestions', async (route) => {
+    calls++;
+    await route.fulfill({
+      status: 503,
+      json: { error: { message: 'Automatic suggestions are unavailable. Continue manually.' } },
+    });
+  });
+  await page.goto('/app/onboarding');
+  await page.getByLabel('Website to monitor', { exact: true }).fill('cedarflow.example');
+  await page.getByRole('button', { name: 'Suggest setup', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText(
+    'Automatic suggestions are unavailable. Continue manually.',
+  );
+  await expect(page.getByLabel('Website to monitor', { exact: true })).toHaveValue(
+    'cedarflow.example',
+  );
+  await page.getByRole('button', { name: 'Set up manually', exact: true }).click();
+  await expect(page.getByLabel('Company domain', { exact: true })).toHaveValue('cedarflow.example');
+  await expect(page.getByLabel('Company name', { exact: true })).toHaveValue('');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(calls).toBe(1);
+});
+
+test('changed onboarding websites receive a distinct suggestion request without stale edits', async ({
+  page,
+}) => {
+  await workspace(page, {
+    ...project,
+    project: null,
+    enrolled: false,
+    canScan: false,
+    trial: null,
+  });
+  const ids: string[] = [];
+  await page.route('**/api/v2/onboarding/suggestions', async (route) => {
+    const input = route.request().postDataJSON() as { website: string; requestId: string };
+    ids.push(input.requestId);
+    await route.fulfill({
+      json: {
+        data: {
+          ...syntheticOnboardingSuggestion,
+          source: {
+            ...syntheticOnboardingSuggestion.source,
+            domain: input.website,
+            url: `https://${input.website}/`,
+          },
+        },
+      },
+    });
+  });
+  await page.goto('/app/onboarding');
+  await page.getByLabel('Website to monitor', { exact: true }).fill('cedarflow.example');
+  await page.getByRole('button', { name: 'Suggest setup', exact: true }).click();
+  await page.getByLabel('Company name', { exact: true }).fill('My manual edit');
+  await page.getByRole('button', { name: 'Back to website', exact: true }).click();
+  await page.getByLabel('Website to monitor', { exact: true }).fill('other.example');
+  await page.getByRole('button', { name: 'Suggest setup', exact: true }).click();
+  await expect(page.getByLabel('Company domain', { exact: true })).toHaveValue('other.example');
+  await expect(page.getByLabel('Company name', { exact: true })).toHaveValue('CedarFlow');
+  expect(ids).toHaveLength(2);
+  expect(ids[0]).not.toBe(ids[1]);
+});
+
 test('a failed older history request leaves the selected answer readable', async ({ page }) => {
   await workspace(page);
   await page.goto('/app/questions/question?observation=answer');

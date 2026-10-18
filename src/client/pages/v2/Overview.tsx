@@ -23,7 +23,9 @@ export function V2Overview() {
   ) : (
     <>
       <p className="text-xs text-muted-foreground">
-        Legacy Perplexity workspace · frozen trial and saved history.{' '}
+        {data.enrolled || data.canScan || data.trial
+          ? 'Legacy Perplexity workspace · frozen trial and saved history. '
+          : 'Your project is ready. Configure engines and review monitoring access. '}
         <Link className="text-primary underline" to="/app/settings">
           Configure GEO monitoring
         </Link>

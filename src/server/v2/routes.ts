@@ -7,10 +7,10 @@ import { normalizeDomain, normalizeText } from '../../domain/normalization';
 import { createAuth } from '../auth';
 import { readJson } from '../http';
 import { consumeRateLimit } from '../rate-limit';
-import { internalTestUserId } from '../config';
 import { eventStatement } from './events';
 import { cancelTrial, processDueScans, readRun, startScan } from './scans';
 import { geoRoutes } from './geo-routes';
+import { onboardingRequest, suggestWebsiteSetup } from './onboarding';
 import {
   ownedProject,
   paidAccess,
@@ -109,24 +109,72 @@ v2Routes.use('*', async (c, next) => {
   if (!session)
     return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
   c.set('userId', session.user.id);
-  try {
-    await next();
-  } catch (error) {
-    const code = error instanceof Error ? error.message : '';
-    if (!errorMessages[code]) throw error;
+  await next();
+});
+v2Routes.onError((error, c) => {
+  const code = error.message;
+  if (!errorMessages[code]) throw error;
+  return c.json(
+    { error: { code, message: errorMessages[code] } },
+    code.endsWith('NOT_FOUND')
+      ? 404
+      : code === 'VALIDATION_ERROR' || code === 'DUPLICATE_INPUT'
+        ? 422
+        : code.includes('REQUIRED') && code !== 'REPLACE_REQUIRED'
+          ? 403
+          : 409,
+  );
+});
+v2Routes.route('/geo', geoRoutes);
+v2Routes.post('/onboarding/suggestions', async (c) => {
+  if (!(await consumeRateLimit(c.env.DB, `setup:${c.get('userId')}`, 6, 60)))
     return c.json(
-      { error: { code, message: errorMessages[code] } },
-      code.endsWith('NOT_FOUND')
-        ? 404
-        : code === 'VALIDATION_ERROR' || code === 'DUPLICATE_INPUT'
+      {
+        error: {
+          code: 'RATE_LIMITED',
+          message: 'Too many setup requests. Wait a minute or continue manually.',
+        },
+      },
+      429,
+    );
+  const input = parsed(onboardingRequest, await readJson(c.req.raw));
+  try {
+    c.header('Cache-Control', 'no-store');
+    return c.json({ data: await suggestWebsiteSetup(c.env, c.get('userId'), input) });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'SUGGESTION_FAILED';
+    const messages: Record<string, string> = {
+      SUGGESTIONS_UNAVAILABLE:
+        'New automatic setup suggestions are disabled or not configured here. You can continue manually.',
+      SUGGESTION_LIMIT_REACHED:
+        'Setup suggestion budget or quota reached. Use your saved draft or continue manually.',
+      SUGGESTIONS_IN_PROGRESS:
+        'Suggestions are still being prepared. Wait briefly, or continue manually.',
+      SUGGESTION_PREVIOUSLY_FAILED:
+        'This suggestion attempt did not finish. Continue manually; no automatic retry was made.',
+      SUGGESTION_REQUEST_CONFLICT:
+        'The website changed. Start a new setup request or continue manually.',
+      SETUP_ALREADY_COMPLETE:
+        'A project is already saved. Open your dashboard to edit its settings.',
+      UNSAFE_PAGE_TARGET: 'Enter a public website URL without credentials or a custom port.',
+      NON_PUBLIC_DNS: 'This address does not resolve to a public website. Continue manually.',
+      WEBSITE_UNREADABLE: 'The public homepage could not be read. Continue manually.',
+      WEBSITE_TOO_LITTLE_TEXT:
+        'The homepage has too little readable text to suggest a setup. Continue manually.',
+      SUGGESTION_FAILED:
+        'Suggestions could not be completed. Your draft is safe; continue manually.',
+    };
+    if (!messages[code]) throw error;
+    return c.json(
+      { error: { code, message: messages[code] } },
+      code === 'SUGGESTION_LIMIT_REACHED'
+        ? 429
+        : code === 'UNSAFE_PAGE_TARGET' || code === 'NON_PUBLIC_DNS'
           ? 422
-          : code.includes('REQUIRED') && code !== 'REPLACE_REQUIRED'
-            ? 403
-            : 409,
+          : 503,
     );
   }
 });
-v2Routes.route('/geo', geoRoutes);
 v2Routes.get('/project', async (c) =>
   c.json({ data: await projectPayload(c.env, c.get('userId')) }),
 );
@@ -153,21 +201,6 @@ v2Routes.post('/project', async (c) => {
       return c.json({ data: { projectId: existing.id } });
     throw new Error('PROJECT_LIMIT');
   }
-  const enrollment = await drizzle(c.env.DB)
-    .select()
-    .from(pilotEnrollments)
-    .where(eq(pilotEnrollments.userId, userId))
-    .get();
-  if (!enrollment && internalTestUserId(c.env) !== userId && !(await paidAccess(c.env, userId)))
-    return c.json(
-      {
-        error: {
-          code: 'PILOT_ENROLLMENT_REQUIRED',
-          message: errorMessages.PILOT_ENROLLMENT_REQUIRED,
-        },
-      },
-      403,
-    );
   const projectId = crypto.randomUUID();
   const now = Date.now();
   const statements = [
