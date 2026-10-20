@@ -135,10 +135,10 @@ export function V2Shell() {
         onClick={() => {
           setMobileOpen(false);
         }}
-        className="mx-4 mb-1 mt-5 flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:border-primary/40"
+        className="mx-4 mb-1 mt-5 flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:border-sidebar-ring/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring"
       >
         <span
-          className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold text-primary"
+          className="flex size-9 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-sm font-semibold text-sidebar-accent-foreground"
           aria-hidden="true"
         >
           {resource.data?.project?.brandName.slice(0, 2).toUpperCase() ?? 'CS'}
@@ -169,7 +169,7 @@ export function V2Shell() {
                   setMobileOpen(false);
                 }}
                 aria-current={current ? 'page' : undefined}
-                className={`mb-1 flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${current ? 'bg-primary/10 text-primary shadow-[inset_3px_0_0_var(--primary)]' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+                className={`mb-1 flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring ${current ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}
               >
                 <Icon className="size-4 shrink-0" aria-hidden="true" />
                 {label}
@@ -181,7 +181,7 @@ export function V2Shell() {
       <div className="border-t p-3">
         <Button
           variant="ghost"
-          className="w-full justify-start"
+          className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:border-sidebar-ring focus-visible:ring-sidebar-ring/50"
           size="sm"
           disabled={action.busy}
           onClick={() =>
