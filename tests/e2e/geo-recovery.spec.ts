@@ -176,9 +176,7 @@ test('owned-page picker submits the canonical observed target', async ({ page })
     await route.fulfill({ json: { data } });
   });
   await page.goto(`/app/observations/${observation.id}`);
-  await expect(
-    page.getByRole('heading', { name: 'Original observation', exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Answer details', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Check owned page', exact: true }).click();
   await expect.poll(() => submitted).toBe(source.canonicalUrl);
 });

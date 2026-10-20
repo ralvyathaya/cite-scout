@@ -48,6 +48,7 @@ export function legacyGeoFixture(path: string, projectId: string): unknown {
   if (path.endsWith('/trends'))
     return {
       version: 'geo-measurement-1',
+      asOf: new Date().toISOString(),
       samples: [],
       captures: 0,
       classifiedCaptures: 0,

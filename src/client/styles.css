@@ -3,6 +3,56 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+  font-family: 'Switzer';
+  src: url('/fonts/Switzer-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Switzer';
+  src: url('/fonts/Switzer-VariableItalic.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Newsreader';
+  src: url('/fonts/Newsreader-Latin.woff2') format('woff2');
+  font-weight: 400 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Newsreader';
+  src: url('/fonts/Newsreader-LatinExt.woff2') format('woff2');
+  font-weight: 400 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Newsreader';
+  src: url('/fonts/Newsreader-Vietnamese.woff2') format('woff2');
+  font-weight: 400 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301,
+    U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+
 :root {
   --radius: 0.5rem;
   --background: #f6f8fb;
@@ -80,7 +130,7 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Switzer', ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer base {
@@ -89,8 +139,6 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased tabular-nums;
-    font-feature-settings: 'cv11', 'ss01';
-    font-variation-settings: 'opsz' 32;
   }
   html {
     scroll-behavior: smooth;
@@ -128,10 +176,91 @@
   }
 }
 
-/* --- Landing display type --- */
-.font-display {
-  font-weight: 700;
-  letter-spacing: -0.035em;
+body:has(.workspace-theme) {
+  --background: #f8f9fc;
+}
+
+.font-display,
+.workspace-theme h1 {
+  font-family: 'Newsreader', Georgia, serif;
+  font-weight: 400;
+  font-optical-sizing: auto;
+  letter-spacing: -0.025em;
+}
+
+.workspace-theme h1 {
+  font-size: clamp(1.75rem, 1.5rem + 0.5vw, 2rem);
+  line-height: 1.2;
+}
+
+.workspace-theme .shadow-sm {
+  box-shadow: none;
+}
+
+[data-sonner-toaster] {
+  @apply font-sans;
+}
+
+.answer-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+.answer-markdown > * + * {
+  margin-top: 0.75rem;
+}
+.answer-markdown :is(h2, h3, h4, h5, h6, strong) {
+  font-weight: 600;
+}
+.answer-markdown :is(ul, ol) {
+  padding-left: 1.5rem;
+}
+.answer-markdown ul {
+  list-style: disc;
+}
+.answer-markdown ol {
+  list-style: decimal;
+}
+.answer-markdown li + li {
+  margin-top: 0.375rem;
+}
+.answer-markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.answer-markdown blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 1rem;
+}
+.answer-markdown code {
+  border-radius: 0.25rem;
+  background: var(--muted);
+  padding: 0.125rem 0.25rem;
+  font-size: 0.8125rem;
+}
+.answer-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+  border-radius: 0.5rem;
+  background: var(--muted);
+  padding: 0.75rem;
+}
+.answer-markdown pre code {
+  padding: 0;
+}
+.answer-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.answer-markdown :is(th, td) {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
 }
 
 /* Stack dense evidence rows on phones while keeping every status and action visible. */
@@ -160,9 +289,146 @@
 }
 
 /* Preserve keyboard focus across links, icon controls and native disclosure widgets. */
+@media (max-width: 767px) {
+  .prompt-table,
+  .prompt-table tbody {
+    display: block;
+  }
+  .prompt-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .prompt-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+  .prompt-table tbody :is(th, td) {
+    padding: 0;
+    min-width: 0;
+  }
+  .prompt-table th,
+  .prompt-table td[data-label='Engines'],
+  .prompt-table td:last-child {
+    grid-column: 1 / -1;
+  }
+  .prompt-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.375rem;
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+  }
+}
+
+.monitoring-toolbar {
+  margin-block-end: 0;
+}
+
+.answer-preview .answer-markdown {
+  font-size: inherit;
+  line-height: 1.5;
+}
+.answer-preview .answer-markdown > * + * {
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 767px) {
+  .answers-table,
+  .answers-table tbody {
+    display: block;
+  }
+  .answers-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .answers-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+  .answers-table tbody :is(th, td) {
+    min-width: 0;
+    padding: 0;
+  }
+  .answers-table tbody :is(th, td:first-child, td:last-child) {
+    grid-column: 1 / -1;
+  }
+  .answers-table [data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+  .monitoring-toolbar > label:first-child {
+    flex-basis: 100%;
+  }
+}
+
 @layer base {
   :where(a, button, summary):focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 3px;
+  }
+}
+
+@media (max-width: 767px) {
+  :is(.sources-table, .competitors-table, .diagnoses-table),
+  :is(.sources-table, .competitors-table, .diagnoses-table) > tbody {
+    display: block;
+  }
+  :is(.sources-table, .competitors-table, .diagnoses-table) > thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  :is(.sources-table, .competitors-table, .diagnoses-table) > tbody > tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+  :is(.sources-table, .competitors-table, .diagnoses-table) > tbody > tr > :is(th, td) {
+    min-width: 0;
+    padding: 0;
+  }
+  :is(.sources-table, .competitors-table, .diagnoses-table) > tbody > tr > :is(th, td:last-child),
+  .sources-table > tbody > tr > td[data-label='Engines'],
+  .competitors-table > tbody > tr > td[data-label='Engine & captured'],
+  .diagnoses-table > tbody > tr > td[data-label='Next step'] {
+    grid-column: 1 / -1;
+  }
+  :is(.sources-table, .competitors-table, .diagnoses-table) > tbody > tr > [data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+  .diagnoses-table > tbody > tr > td[data-label='Next step'] {
+    order: 1;
+  }
+  .diagnoses-table > tbody > tr > td:last-child {
+    order: 2;
+  }
+  .sources-table > tbody > .source-evidence,
+  .diagnoses-table > tbody > .diagnosis-detail {
+    display: block;
+  }
+  .sources-table > tbody > .source-evidence > td,
+  .diagnoses-table > tbody > .diagnosis-detail > td {
+    display: block;
+    width: 100%;
   }
 }

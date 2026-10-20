@@ -24,10 +24,10 @@ export function V2Overview() {
     <>
       <p className="text-xs text-muted-foreground">
         {data.enrolled || data.canScan || data.trial
-          ? 'Legacy Perplexity workspace · frozen trial and saved history. '
+          ? 'Your saved Perplexity answers and monitoring history. '
           : 'Your project is ready. Configure engines and review monitoring access. '}
         <Link className="text-primary underline" to="/app/settings">
-          Configure GEO monitoring
+          Configure monitoring
         </Link>
       </p>
       {settings.error && (
@@ -124,18 +124,10 @@ function LegacyOverview({ configurationAvailable }: { configurationAvailable: bo
             {reason ??
               (data.canScan
                 ? 'Perplexity · daily checks within your usage allowance.'
-                : 'Start your frozen trial baseline.')}
+                : 'Start your trial baseline.')}
           </p>
         </div>
       </div>
-      {(!data.scansEnabled || questions.length === 0) && (
-        <p className="text-xs text-muted-foreground">
-          Explore a local demo:{' '}
-          <a className="text-primary underline" href="/app/overview?fixture=1">
-            Open fixture workspace — synthetic data, no provider calls
-          </a>
-        </p>
-      )}
       {[error, rows.error].filter(Boolean).map((e, i) => (
         <p
           key={i}
@@ -165,16 +157,18 @@ function LegacyOverview({ configurationAvailable }: { configurationAvailable: bo
               summary?.available
                 ? `${String(Math.round((summary.brandMatched / summary.available) * 100))}%`
                 : '—',
-              `${String(summary?.brandMatched ?? 0)} of ${String(summary?.available ?? 0)} available answers`,
+              summary
+                ? `${String(summary.brandMatched)} of ${String(summary.available)} available answers`
+                : 'Answer summary unavailable',
             ],
             [
               'Answer coverage',
-              `${String(summary?.available ?? 0)} / ${String(summary?.tracked ?? 0)}`,
+              summary ? `${String(summary.available)} / ${String(summary.tracked)}` : '—',
               'Active prompts with a saved answer',
             ],
             [
               'Comparable changes',
-              `${String(summary?.changed ?? 0)} / ${String(summary?.comparable ?? 0)}`,
+              summary ? `${String(summary.changed)} / ${String(summary.comparable)}` : '—',
               'Changes among comparable prompt pairs',
             ],
             [
@@ -199,7 +193,15 @@ function LegacyOverview({ configurationAvailable }: { configurationAvailable: bo
               All prompts →
             </Link>
           </div>
-          {inspect.length === 0 ? (
+          {rows.loading ? (
+            <p role="status" className="text-sm">
+              Loading changes…
+            </p>
+          ) : rows.error ? (
+            <p className="text-sm text-muted-foreground">
+              Changes are unavailable. Reload to try again.
+            </p>
+          ) : inspect.length === 0 ? (
             <div className="flex gap-3 rounded-lg bg-muted/30 p-4">
               <CheckCircle2
                 className="mt-0.5 size-5 shrink-0 text-muted-foreground"
@@ -239,11 +241,16 @@ function LegacyOverview({ configurationAvailable }: { configurationAvailable: bo
               </Link>
             ))
           )}
-          <p className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">
-            Method: literal brand matching in captured answers. Failed checks are excluded from the
-            answer denominator. This summary uses latest saved evidence; historical cohort trends
-            are being added.
-          </p>
+          <details className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">
+            <summary className="cursor-pointer font-medium text-foreground">
+              How these summaries work
+            </summary>
+            <p className="mt-2">
+              Summaries use literal brand matching in the latest saved answers. Failed checks are
+              excluded from answer coverage. Comparable changes require matching measurement
+              context.
+            </p>
+          </details>
         </section>
         <section className={`${box} space-y-4`}>
           <h2 className="font-semibold">Monitoring & usage</h2>
@@ -277,10 +284,15 @@ function LegacyOverview({ configurationAvailable }: { configurationAvailable: bo
             <h2 className="font-semibold">What to inspect next</h2>
             <span className="text-xs text-muted-foreground">{questions.length} active prompts</span>
           </div>
-          {!questions.length && (
+          {rows.error ? (
             <p className="text-sm text-muted-foreground">
-              Add your buyer questions in Prompt Sets.
+              Saved prompts are unavailable. Reload to try again.
             </p>
+          ) : (
+            !rows.loading &&
+            !questions.length && (
+              <p className="text-sm text-muted-foreground">Add your buyer questions in Prompts.</p>
+            )
           )}
           {questions.slice(0, 8).map((q) => (
             <div
@@ -314,10 +326,6 @@ function LegacyOverview({ configurationAvailable }: { configurationAvailable: bo
               )}
             </div>
           ))}
-          <p className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">
-            Diagnosis and actionable Owned / Earned Media briefs are being added. Saved answers
-            remain available for inspection.
-          </p>
         </section>
         <section className={`${box} space-y-4`} aria-label="Original observation evidence">
           <div className="flex items-center gap-2">
@@ -334,7 +342,7 @@ function LegacyOverview({ configurationAvailable }: { configurationAvailable: bo
           ) : observation ? (
             <>
               <div className="rounded-lg border bg-muted/20 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Observed prompt
                 </p>
                 <p className="mt-1 whitespace-pre-wrap text-sm">

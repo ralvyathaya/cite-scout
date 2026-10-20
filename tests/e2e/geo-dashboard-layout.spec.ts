@@ -92,10 +92,10 @@ for (const state of ['new owner', 'quota reached', 'inactive prompts'] as const)
     if ((page.viewportSize()?.width ?? 1440) < 1024) {
       await page.getByRole('button', { name: 'Open navigation' }).click();
       const drawer = page.getByRole('dialog', { name: 'Workspace navigation' });
-      await expect(drawer.getByText('Owner preview', { exact: true })).toBeVisible();
+      await expect(drawer.getByText('Owner preview', { exact: true })).toHaveCount(0);
       await page.keyboard.press('Escape');
     } else {
-      await expect(page.getByText('Owner preview', { exact: true }).first()).toBeVisible();
+      await expect(page.getByText('Owner preview', { exact: true })).toHaveCount(0);
     }
     await expect(page.getByText('Perplexity subscription active', { exact: true })).toHaveCount(0);
     await expect(
@@ -104,8 +104,8 @@ for (const state of ['new owner', 'quota reached', 'inactive prompts'] as const)
           state === 'new owner'
             ? 'Review monitoring settings'
             : state === 'quota reached'
-              ? 'Review GEO allowance'
-              : 'Review prompt sets',
+              ? 'Review monitoring usage'
+              : 'Review prompts',
       }),
     ).toBeVisible();
     await expect(page.locator('#geo-monitor-status')).toContainText(

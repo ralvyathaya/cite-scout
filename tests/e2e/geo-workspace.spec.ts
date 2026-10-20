@@ -1,9 +1,109 @@
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { GeoFixtureWorkspace } from '../../src/client/pages/v2/geo-fixture';
-import type { GeoRun, GeoObservation } from '../../src/shared/geo';
+import type { GeoRun, GeoObservation, GeoObservationPage } from '../../src/shared/geo';
 import type { GeoAnalysis } from '../../src/shared/geo-analysis';
 import type { GeoCapabilities } from '../../src/client/pages/v2/GeoWorkspace';
+
+test('saved Markdown answers and adjacent evidence segments stay readable and inert', async ({
+  page,
+}, testInfo) => {
+  const fixture = new GeoFixtureWorkspace();
+  const saved = (await fixture.request('/geo/observations?days=7')) as GeoObservationPage;
+  const observation = saved.observations[0];
+  if (!observation) throw new Error('Expected a saved observation');
+  const prefix =
+    '## Compare tools\n\n- **Peec AI** — review [documentation](https://docs.example.com/guide).\n- *Another tool* — compare options.\n\n| Tool | Fit |\n| --- | --- |\n| Peec | Small teams |\n\n```js\nconst answer = "**literal**";\n```\n\n';
+  const excerpt =
+    (prefix + 'Review supporting context. '.repeat(70)).slice(
+      0,
+      1600 - '**Founder’s sh'.length - 2,
+    ) +
+    '\n\n' +
+    '**Founder’s shortlist:** Start with the saved evidence.\n\n<script>window.markdownExecuted = true</script>\n\n[Unsafe](javascript:alert(1))\n\n![Tracking image](https://tracking.invalid/pixel.png)';
+  const omitted = '\n\nContext excluded from the supporting excerpts.\n\n';
+  const separate = 'A separate **passage**.';
+  const text = excerpt + omitted + separate;
+  const writes: string[] = [],
+    images: string[] = [];
+  await page.route('https://tracking.invalid/**', async (route) => {
+    images.push(route.request().url());
+    await route.abort();
+  });
+  await page.route('**/api/v2/**', async (route) => {
+    const request = route.request(),
+      url = new URL(request.url());
+    const path = url.pathname.replace('/api/v2', '') + url.search;
+    if (request.method() !== 'GET') writes.push(path);
+    const data = await fixture.request(path);
+    if (url.pathname === `/api/v2/geo/observations/${observation.id}`)
+      (data as GeoObservation).capture.answerText = text;
+    if (url.pathname.endsWith('/analyses')) {
+      for (const analysis of data as GeoAnalysis[]) {
+        if (!analysis.classification) continue;
+        analysis.classification.evidence = [0, 1600].map((start, index) => ({
+          id: `segment_${String(index + 1)}`,
+          start,
+          end: index === 0 ? 1600 : excerpt.length,
+          quote: excerpt.slice(start, index === 0 ? 1600 : excerpt.length),
+          supportProbability: 0.8,
+        }));
+        analysis.classification.evidence.push({
+          id: 'segment_3',
+          start: excerpt.length + omitted.length,
+          end: text.length,
+          quote: separate,
+          supportProbability: 0.4,
+        });
+      }
+    }
+    await route.fulfill({ json: { data } });
+  });
+  await page.goto(`/app/observations/${observation.id}`);
+  const answer = page.getByRole('region', { name: 'Original observation evidence' });
+  const analysis = page
+    .locator('article')
+    .filter({ has: page.getByRole('heading', { name: 'Answer analysis', exact: true }) })
+    .first();
+  for (const content of [answer, analysis]) {
+    await expect(
+      content.locator('strong').filter({ hasText: 'Founder’s shortlist:' }),
+    ).toBeVisible();
+    await expect(content.locator('ul li').filter({ hasText: 'Peec AI' })).toBeVisible();
+    await expect(content.getByRole('table')).toBeVisible();
+    await expect(content.locator('pre code')).toContainText('"**literal**"');
+    await expect(content.getByRole('link', { name: 'documentation' })).toHaveAttribute(
+      'href',
+      'https://docs.example.com/guide',
+    );
+    await expect(content.getByRole('link', { name: 'documentation' })).toHaveAttribute(
+      'rel',
+      /noopener/,
+    );
+    await expect(content.locator('script, iframe, img, a[href^="javascript:"]')).toHaveCount(0);
+  }
+  await expect(analysis.locator('blockquote')).toHaveCount(2);
+  await expect(analysis.locator('blockquote').last()).toHaveText(/A separate passage/);
+  await expect(analysis.locator('blockquote').first()).not.toContainText('Context excluded');
+  await expect(analysis.getByText(/Original answer offsets 0–1600/)).toBeHidden();
+  await expect(analysis.getByText(/Original answer offsets 1600–/)).toBeHidden();
+  await analysis.screenshot({ path: testInfo.outputPath('markdown-analysis.png') });
+  const details = analysis.locator('summary').filter({ hasText: /^Analysis details$/ });
+  await details.focus();
+  await page.keyboard.press('Enter');
+  await expect(analysis.getByText(/Original answer offsets 0–1600/)).toBeVisible();
+  await expect(analysis.getByText(/Original answer offsets 1600–/)).toBeVisible();
+  await page.keyboard.press('Space');
+  await expect(analysis.getByText(/Original answer offsets 0–1600/)).toBeHidden();
+  await page.setViewportSize({ width: 320, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath('markdown-evidence.png'), fullPage: true });
+  expect(writes).toEqual([]);
+  expect(images).toEqual([]);
+  expect(await page.evaluate(() => Object.hasOwn(window, 'markdownExecuted'))).toBe(false);
+});
 test('local fixture workspace completes the evidence-action loop without any API transport', async ({
   page,
 }, testInfo) => {
@@ -33,7 +133,7 @@ test('local fixture workspace completes the evidence-action loop without any API
     .getByLabel('Change description', { exact: true })
     .fill('Synthetic update: published a clearer buyer comparison with verified product facts.');
   await page
-    .getByLabel('Reported implementation time', { exact: true })
+    .getByLabel('When was the work completed?', { exact: true })
     .fill(new Date(Date.now() - 3600_000).toISOString().slice(0, 16));
   await page.getByRole('button', { name: /Complete action/ }).focus();
   await page.keyboard.press('Enter');
@@ -60,9 +160,7 @@ test('local fixture workspace completes the evidence-action loop without any API
     .getByRole('textbox', { name: 'Reason for reopening', exact: true })
     .fill('Synthetic follow-up: verify the updated comparison evidence.');
   await page.getByRole('button', { name: 'Reopen action', exact: true }).click();
-  await expect(
-    page.getByRole('button', { name: 'Complete action & record pin', exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Complete action', exact: true })).toBeVisible();
   await expect(
     page
       .getByText('Synthetic follow-up: verify the updated comparison evidence.', { exact: false })
@@ -84,8 +182,9 @@ test('GEO pages retain usable layout at mobile and tablet widths', async ({ page
     await page.goto('/app/overview?fixture=1');
     for (const [path, title] of [
       ['overview', 'Visibility & action overview'],
-      ['questions', 'Prompt Sets'],
-      ['observations', 'Observations'],
+      ['questions', 'Prompts'],
+      ['observations', 'Answers'],
+      ['trends', 'Trends'],
       ['diagnoses', 'Diagnoses'],
       ['playbook', 'Action Playbook'],
       ['sources', 'Sources'],
@@ -167,10 +266,9 @@ test('GEO quota and partial run retain original evidence when classification fai
   await expect(page.getByText('6 of 8 observations saved · running')).toBeVisible();
   await expect(page.getByText('provider_unavailable', { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'View full answer & provenance' }).first().click();
-  await expect(
-    page.getByRole('heading', { name: 'Original observation', exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Failed classification' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Answer details', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Answer analysis', exact: true })).toBeVisible();
+  await expect(page.getByText('Analysis unavailable', { exact: true })).toBeVisible();
   await expect(page.getByText(/Parsing is partial/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download original response JSON' })).toBeEnabled();
 });
@@ -183,15 +281,17 @@ test('fixture raw download retains synthetic provenance and mobile navigation wo
   await trigger.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByRole('dialog').getByRole('link', { name: 'Observations', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Observations', exact: true })).toBeVisible();
+  await page.getByRole('dialog').getByRole('link', { name: 'Monitoring', exact: true }).click();
   await page
-    .getByRole('link', { name: /Inspect original|View observation|View full answer/ })
+    .getByRole('navigation', { name: 'Monitoring views' })
+    .getByRole('link', { name: 'Answers', exact: true })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Answers', exact: true })).toBeVisible();
+  await page
+    .getByRole('link', { name: /Inspect original|View observation|View answer/ })
     .first()
     .click();
-  await expect(
-    page.getByRole('heading', { name: 'Original observation', exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Answer details', exact: true })).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: /Download.*raw|Download.*JSON|Raw.*JSON/i }).click();
   const download = await downloadPromise,
@@ -222,6 +322,7 @@ test('monitoring setup offers five engines with at most four selected and readab
   });
   await page.goto('/app/overview?fixture=1');
   await expect(page.getByRole('button', { name: 'Monitor Prompts', exact: true })).toBeEnabled();
+  await page.getByText('Monitoring details', { exact: true }).click();
   const setup = page.locator('summary').filter({ hasText: 'Monitoring setup' });
   await expect(setup).toBeVisible();
   await setup.focus();
@@ -252,7 +353,7 @@ test('monitoring setup offers five engines with at most four selected and readab
   expect(requests).toEqual([]);
 });
 
-test('engine availability shows the configured collector and a concrete secret setup step', async ({
+test('engine availability explains customer options without internal setup details', async ({
   page,
 }) => {
   const fixture = new GeoFixtureWorkspace();
@@ -266,6 +367,7 @@ test('engine availability shows the configured collector and a concrete secret s
     const data = await fixture.request(path);
     if (path === '/geo/capabilities') {
       const capabilities = data as GeoCapabilities;
+      if (!capabilities.engines.google_aio) throw new Error('Expected Google capability');
       capabilities.engines.google_aio.collector = 'dataforseo_standard';
       capabilities.engines.openai_web_search = {
         available: false,
@@ -282,59 +384,48 @@ test('engine availability shows the configured collector and a concrete secret s
   const google = page
     .locator('label')
     .filter({ has: page.getByRole('checkbox', { name: 'Google AI Overview', exact: true }) });
-  await expect(google).toContainText('Configured · DataForSEO Standard');
+  await expect(google).toContainText('Available for monitoring');
   const openai = page
     .locator('label')
     .filter({ has: page.getByRole('checkbox', { name: 'OpenAI Web Search API', exact: true }) });
-  await expect(openai).toContainText('OPENAI_API_KEY is missing.');
-  await expect(openai).toContainText(
-    'Add OPENAI_API_KEY to the staging Worker environment secrets.',
-  );
-  await expect(openai).toContainText('Requested model: gpt-6-luna');
+  await expect(openai).toContainText('Currently unavailable');
+  await expect(openai).not.toContainText('OPENAI_API_KEY');
+  await expect(openai).not.toContainText('gpt-6-luna');
   await expect(
-    page.getByText(
-      'Availability reflects server configuration and secrets, not a validated live capture.',
-      { exact: false },
-    ),
+    page.getByText('Choose another engine or contact support;', { exact: false }),
   ).toBeVisible();
 });
 
-test('usage distinguishes provider requests, SerpApi quota, estimates and unknown-cost review', async ({
+test('billing keeps internal accounting out of customer UI while explaining blocked monitoring', async ({
   page,
 }) => {
   const fixture = new GeoFixtureWorkspace();
-  await page.route('**/api/v2/**', async (route) => {
-    const request = route.request(),
-      url = new URL(request.url());
+  const mutations: string[] = [];
+  await page.route(/\/api\/(?:v2\/|billing\/status)/, async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
     const path = url.pathname.replace('/api/v2', '') + url.search;
+    if (request.method() !== 'GET') mutations.push(path);
     let data = await fixture.request(path);
-    if (path === '/geo/usage')
+    if (path === '/geo/allowance')
       data = {
-        ...(data as Record<string, unknown>),
-        providerRequests: {
-          total: 7,
-          serpapi: 4,
-          reportedCostUsd: 0.001,
-          estimatedCostUsd: 0.03,
-          unknownCostRequests: 1,
-          reservedCostUsd: 0.15,
-          spendCapUsd: 5,
-          serpapiMonthlyCap: 250,
-        },
+        ...(data as object),
+        enabled: false,
+        reason: 'GEO_COST_UNKNOWN',
+        today: 7,
+        month: 24,
       };
     await route.fulfill({ json: { data } });
   });
   await page.goto('/app/billing');
-  const accounting = page.getByRole('region', { name: 'Provider request accounting' });
-  await expect(accounting).toBeVisible();
-  await expect(accounting).toContainText('7 provider requests');
-  await expect(accounting).toContainText('4 / 250 SerpApi requests');
-  await expect(accounting).toContainText('Reported charges: $0.001000 USD');
-  await expect(accounting).toContainText('Estimated charges: $0.030000 USD');
-  await expect(accounting).toContainText('Reserved budget: $0.150000 USD');
-  await expect(accounting).toContainText('Test spend cap: $5.00 USD');
-  await expect(accounting.getByRole('alert')).toContainText('1 request with unknown cost');
-  await expect(accounting.getByRole('alert')).toContainText(
-    'Review unknown costs before another paid check.',
-  );
+  await expect(page.getByRole('region', { name: 'Monitoring usage' })).toContainText('7');
+  await expect(page.getByRole('region', { name: 'Monitoring usage' })).toContainText('24');
+  await expect(page.getByRole('region', { name: 'Provider request accounting' })).toHaveCount(0);
+  await expect(
+    page.getByText(/Reported charges|Estimated charges|Reserved budget|Test spend cap/),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('link', { name: 'Contact support about monitoring' }),
+  ).toHaveAttribute('href', /^mailto:/);
+  expect(mutations).toEqual([]);
 });

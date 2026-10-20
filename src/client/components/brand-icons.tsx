@@ -1,4 +1,6 @@
 import type { SVGProps } from 'react';
+import { Globe } from 'lucide-react';
+import { sourceHost } from '../lib/source-data';
 
 type IconProps = SVGProps<SVGSVGElement>;
 
@@ -161,29 +163,44 @@ export function AnthropicIcon(props: IconProps) {
   );
 }
 
+const sourceBrands = [
+  { domain: 'reddit.com', Icon: RedditIcon, color: '#FF4500' },
+  { domain: 'wikipedia.org', Icon: WikipediaIcon, color: '#000000' },
+  { domain: 'youtube.com', Icon: YoutubeIcon, color: '#FF0033' },
+  { domain: 'youtu.be', Icon: YoutubeIcon, color: '#FF0033' },
+  { domain: 'twitter.com', Icon: XIcon, color: '#000000' },
+  { domain: 'x.com', Icon: XIcon, color: '#000000' },
+  { domain: 'producthunt.com', Icon: ProductHuntIcon, color: '#FF6154' },
+  { domain: 'g2.com', Icon: G2Icon, color: '#FF492C' },
+  { domain: 'github.com', Icon: GithubIcon, color: '#181717' },
+  { domain: 'substack.com', Icon: SubstackIcon, color: '#FF6719' },
+  { domain: 'notion.so', Icon: NotionIcon, color: '#000000' },
+  { domain: 'notion.site', Icon: NotionIcon, color: '#000000' },
+  { domain: 'linkedin.com', Icon: LinkedinIcon, color: '#0A66C2' },
+] as const;
+
+function sourceBrand(url: string) {
+  const host = sourceHost(url);
+  return host
+    ? sourceBrands.find(({ domain }) => host === domain || host.endsWith(`.${domain}`))
+    : undefined;
+}
+
 /** Match exact source hostnames, never a URL path or lookalike hostname. */
 export function DomainIcon({ url, ...props }: IconProps & { url: string }) {
-  let host: string;
-  try {
-    host = new URL(url).hostname.toLowerCase().replace(/^www\./u, '');
-  } catch {
-    return null;
-  }
-  const icons = [
-    ['reddit.com', RedditIcon],
-    ['wikipedia.org', WikipediaIcon],
-    ['youtube.com', YoutubeIcon],
-    ['youtu.be', YoutubeIcon],
-    ['twitter.com', XIcon],
-    ['x.com', XIcon],
-    ['producthunt.com', ProductHuntIcon],
-    ['g2.com', G2Icon],
-    ['github.com', GithubIcon],
-    ['substack.com', SubstackIcon],
-    ['notion.so', NotionIcon],
-    ['notion.site', NotionIcon],
-    ['linkedin.com', LinkedinIcon],
-  ] as const;
-  const Icon = icons.find(([domain]) => host === domain || host.endsWith(`.${domain}`))?.[1];
-  return Icon ? <Icon {...props} /> : null;
+  const brand = sourceBrand(url);
+  return brand ? <brand.Icon {...props} /> : null;
+}
+
+export function SourceIcon({ url }: { url: string }) {
+  const brand = sourceBrand(url);
+  return brand ? (
+    <brand.Icon
+      className="size-[18px] shrink-0"
+      style={{ color: brand.color }}
+      aria-hidden="true"
+    />
+  ) : (
+    <Globe className="size-[18px] shrink-0 text-muted-foreground" aria-hidden="true" />
+  );
 }

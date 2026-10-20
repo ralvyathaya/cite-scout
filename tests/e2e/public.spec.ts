@@ -1,18 +1,94 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('public visitor', () => {
+  test('marketing copy explains demo data and access without internal labels', async ({
+    page,
+  }, testInfo) => {
+    const requests: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() !== 'GET' && request.url().includes('/api/'))
+        requests.push(request.url());
+    });
+    for (const path of ['/', '/demo', '/pricing']) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      const copy = await page.locator('body').textContent();
+      expect(copy).not.toMatch(
+        /owner preview|legacy|synthetic|fixture|collector|provider calls|bounded recovery|baseline phase closes|founder-assisted/i,
+      );
+      await expect(page.getByText(/in preview/i).first()).toBeVisible();
+      if (path === '/') {
+        await expect(
+          page.getByRole('main').getByRole('link', { name: 'Explore the demo', exact: true }),
+        ).toHaveAttribute('href', '/demo');
+        await expect(page.getByText('Sample data', { exact: true }).first()).toBeVisible();
+        await page.screenshot({ path: testInfo.outputPath('landing-copy.png') });
+      }
+      if (path === '/demo') {
+        await expect(page.getByText(/does not run checks or show customer results/)).toBeVisible();
+      }
+      if (path === '/pricing') {
+        await expect(
+          page.getByText('The full workflow is not included in the $19 plan.', { exact: true }),
+        ).toBeVisible();
+        await expect(
+          page
+            .getByText('Access and pricing for these features have not been announced.', {
+              exact: false,
+            })
+            .first(),
+        ).toBeVisible();
+        await page.screenshot({ path: testInfo.outputPath('pricing-copy.png') });
+      }
+    }
+    expect(requests).toEqual([]);
+  });
+
+  test('public pages share local Switzer and Newsreader without loading the old font', async ({
+    page,
+  }, testInfo) => {
+    const unwantedFonts: string[] = [];
+    page.on('request', (request) => {
+      if (/plus-jakarta|fonts\.(googleapis|gstatic)\.com/i.test(request.url()))
+        unwantedFonts.push(request.url());
+    });
+    for (const path of ['/', '/demo', '/pricing', '/login', '/privacy', '/terms']) {
+      await page.goto(path);
+      await expect(page.locator('body')).toHaveCSS('font-family', /Switzer/);
+      for (const heading of await page.locator('.font-display').all()) {
+        await expect(heading).toHaveCSS('font-family', /Newsreader/);
+        await expect(heading).toHaveCSS('font-weight', '400');
+      }
+      if (path === '/') {
+        expect(
+          await page.evaluate(async () => {
+            const faces = await Promise.all([
+              document.fonts.load('400 16px Switzer'),
+              document.fonts.load('400 48px Newsreader'),
+            ]);
+            return faces.every(
+              (loaded) => loaded.length > 0 && loaded.every((face) => face.status === 'loaded'),
+            );
+          }),
+        ).toBe(true);
+        await page.screenshot({ path: testInfo.outputPath('landing-typography.png') });
+      }
+    }
+    expect(unwantedFonts).toEqual([]);
+  });
+
   test('landing page states the honest product position', async ({ page }) => {
     await page.goto('/');
 
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
       'From AI answers to your next marketing action.',
     );
-    await expect(page.getByText('GEO workspace · Preview')).toBeVisible();
-    const preview = page.getByRole('main').getByRole('link', { name: 'Explore GEO preview' });
+    await expect(page.getByText('AI visibility · In preview')).toBeVisible();
+    const preview = page.getByRole('main').getByRole('link', { name: 'Explore the demo' });
     await expect(preview).toHaveAttribute('href', '/demo');
     await preview.click();
     await expect(page).toHaveURL(/\/demo$/);
-    await expect(page.getByText('Synthetic example', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Sample data', { exact: true }).first()).toBeVisible();
   });
 
   test('hero preview distinguishes baseline, follow-up and returned sources', async ({ page }) => {
@@ -21,7 +97,7 @@ test.describe('public visitor', () => {
     await expect(page.getByText('Baseline · example answer')).toBeVisible();
     await expect(page.getByText('Follow-up · example answer')).toBeVisible();
     await expect(page.getByText('Returned only:', { exact: true })).toBeVisible();
-    await expect(page.getByText('Synthetic example', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Sample data', { exact: true }).first()).toBeVisible();
     expect(await page.getByText('Live observation preview').count()).toBe(0);
   });
 
@@ -34,7 +110,7 @@ test.describe('public visitor', () => {
 
     await page.goto('/demo');
 
-    await expect(page.getByText('Synthetic example', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Sample data', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
       'Follow the evidence. Decide what to do next.',
     );
@@ -43,8 +119,8 @@ test.describe('public visitor', () => {
     await expect(page.getByRole('heading', { name: 'Choose a concrete task' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Measure again with context' })).toBeVisible();
     await expect(page.getByText('Needs review', { exact: true })).toBeVisible();
-    await expect(page.getByText('Web / Owned', { exact: true })).toBeVisible();
-    await expect(page.getByText('Earned Media', { exact: true })).toBeVisible();
+    await expect(page.getByText('Your website', { exact: true })).toBeVisible();
+    await expect(page.getByText('External sources', { exact: true })).toBeVisible();
 
     expect(providerCalls).toEqual([]);
   });
@@ -59,8 +135,12 @@ test.describe('public visitor', () => {
     await expect(
       page.getByRole('heading', { name: 'Perplexity monitoring', exact: true }),
     ).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'GEO preview', exact: true })).toBeVisible();
-    await expect(page.getByText('GEO preview is separate from the $19 plan.')).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'AI visibility preview', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('The full workflow is not included in the $19 plan.'),
+    ).toBeVisible();
     await expect(page.getByText(/No card required/).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Can I cancel anytime?' })).toBeVisible();
 

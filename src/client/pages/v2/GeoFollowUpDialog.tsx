@@ -54,7 +54,7 @@ export function GeoFollowUpDialog({ detail }: { detail: GeoActionDetail }) {
       setReady(true);
     } catch (reason) {
       if (generation === evidenceGeneration.current)
-        setError(reason instanceof Error ? reason.message : 'Could not load the baseline records.');
+        setError(reason instanceof Error ? reason.message : 'Could not load the starting answers.');
     } finally {
       if (generation === evidenceGeneration.current) setLoading(false);
     }
@@ -76,13 +76,13 @@ export function GeoFollowUpDialog({ detail }: { detail: GeoActionDetail }) {
         <DialogHeader>
           <DialogTitle>Plan follow-up work</DialogTitle>
           <DialogDescription>
-            Choose the baseline for new work on your website. Your source action, notes and previous
-            pins stay in its history. This does not run monitoring.
+            Choose the saved answers to compare against new work on your website. Your previous
+            task, notes and completed work stay in its history. This does not run monitoring.
           </DialogDescription>
         </DialogHeader>
         {created ? (
           <div className="space-y-3 text-sm" role="status">
-            <p>Follow-up action saved with {created.evidence.length} selected baseline records.</p>
+            <p>Follow-up action saved with {created.evidence.length} selected starting answers.</p>
             <Link
               className="text-primary underline"
               to={`/app/playbook/${encodeURIComponent(created.action.id)}`}
@@ -135,20 +135,20 @@ export function GeoFollowUpDialog({ detail }: { detail: GeoActionDetail }) {
                 setOpen(false);
               }}
             >
-              Review source action history
+              Review previous task history
             </Link>
             {loading ? (
-              <p role="status">Loading all baseline records…</p>
+              <p role="status">Loading starting answers…</p>
             ) : (
               <fieldset disabled={busy} className="max-h-72 min-w-0 space-y-3 overflow-y-auto pr-1">
-                <legend className="mb-2 text-sm font-medium">Select baseline records</legend>
+                <legend className="mb-2 text-sm font-medium">Choose starting answers</legend>
                 <p className="text-xs text-muted-foreground">
-                  Select at most one record per prompt and engine. Complete, usable analysis and the
-                  current monitoring context are checked before saving.
+                  Choose one answer per question and engine. Only complete answers with a usable
+                  analysis and matching monitoring settings can be saved.
                 </p>
                 {!evidence.length && (
                   <p className="text-sm">
-                    No supporting records are available. Capture and review a baseline first.
+                    No starting answers are available. Save and review an answer first.
                   </p>
                 )}
                 {evidence.map((proof) => (
@@ -172,12 +172,6 @@ export function GeoFollowUpDialog({ detail }: { detail: GeoActionDetail }) {
                           {geoSurfaces[proof.scope.context.engine].label} ·{' '}
                           {new Date(proof.scope.capturedAt).toLocaleString()}
                         </span>
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          {proof.scope.context.collector} ·{' '}
-                          {proof.scope.context.requestedModel ?? 'Model not requested'} ·{' '}
-                          {proof.scope.context.languageCode} / {proof.scope.context.locationCode} /{' '}
-                          {proof.scope.context.device}
-                        </span>
                       </span>
                     </label>
                     <Link
@@ -187,7 +181,13 @@ export function GeoFollowUpDialog({ detail }: { detail: GeoActionDetail }) {
                       Inspect original answer
                     </Link>
                     <details className="ml-7 mt-2 text-xs text-muted-foreground">
-                      <summary className="cursor-pointer">Cohort details</summary>
+                      <summary className="cursor-pointer">Answer details</summary>
+                      <p className="mt-1 break-words">
+                        {proof.scope.context.collector} ·{' '}
+                        {proof.scope.context.requestedModel ?? 'Model not requested'} ·{' '}
+                        {proof.scope.context.languageCode} / {proof.scope.context.locationCode} /{' '}
+                        {proof.scope.context.device}
+                      </p>
                       <p className="mt-1 break-all">
                         Prompt version {proof.scope.context.promptVersionId} ·{' '}
                         {proof.scope.context.collectorVersion} · output limit{' '}
@@ -199,11 +199,11 @@ export function GeoFollowUpDialog({ detail }: { detail: GeoActionDetail }) {
               </fieldset>
             )}
             <p className="text-sm" aria-live="polite">
-              Included: {included.length} · Excluded: {evidence.length - included.length}. Excluded
-              records will not be added to this follow-up.
+              Selected: {included.length} · Not selected: {evidence.length - included.length}. Only
+              selected answers will be added to this follow-up.
             </p>
             <div className="space-y-2 text-sm">
-              <label htmlFor={`${formId}-url`}>Owned page for new work</label>
+              <label htmlFor={`${formId}-url`}>Page on your website</label>
               <Input
                 id={`${formId}-url`}
                 required
@@ -233,7 +233,7 @@ export function GeoFollowUpDialog({ detail }: { detail: GeoActionDetail }) {
             </div>
             <p className="text-xs text-muted-foreground">
               After creating this action, do the work in your own tools. Record the actual URL and
-              implementation time when you complete it, then compare fresh observations.
+              completion time when you finish, then compare new answers.
             </p>
             {error && (
               <p role="alert" className="text-sm text-destructive">

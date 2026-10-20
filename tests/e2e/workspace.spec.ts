@@ -170,6 +170,7 @@ test('opens exact evidence through the list and an old deep link', async ({ page
     page.getByRole('heading', { name: 'Returned sources', exact: true }).first(),
   ).toBeVisible();
   await expect(page.getByRole('link', { name: 'Saved source' }).first()).toBeVisible();
+  await expect(page.locator('pre.font-sans').first()).toHaveCSS('font-family', /Switzer/);
   await page.goto('/app/responses?observation=older-answer');
   await expect(page).toHaveURL(/questions\/question\?observation=older-answer/);
   await expect(page.getByRole('heading', { name: 'Brand match appeared' })).toBeVisible();
@@ -221,11 +222,12 @@ test('staging owner onboarding saves a project without launching a legacy baseli
       .fill(`Which scheduling tools suit marketing team ${String(index)}?`);
   await page.getByRole('button', { name: 'Review project', exact: true }).click();
   await expect(page.getByText(/Daily monitoring stays off/)).toBeVisible();
-  await page.getByRole('button', { name: 'Create staging project', exact: true }).click();
+  await page.getByRole('button', { name: 'Create project', exact: true }).click();
   await expect(page).toHaveURL(/\/app\/overview$/);
   await expect(
     page.getByRole('link', { name: 'Review monitoring settings', exact: true }),
   ).toBeVisible();
+  await page.getByText('Monitoring details', { exact: true }).click();
   await page.locator('summary').filter({ hasText: 'Monitoring setup' }).click();
   await expect(page.getByRole('link', { name: 'Configure engines', exact: true })).toBeVisible();
   await expect(page.getByText(/Legacy Perplexity workspace/)).toHaveCount(0);
@@ -460,7 +462,8 @@ test('staging owner reviews onboarding from an empty draft without saving over t
     await route.fulfill({ json: { data: syntheticOnboardingSuggestion } });
   });
   await page.goto('/app/settings');
-  await page.getByRole('link', { name: 'Review onboarding', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Review onboarding', exact: true })).toHaveCount(0);
+  await page.goto('/app/onboarding?review=1');
   await expect(page).toHaveURL(/\/app\/onboarding\?review=1$/);
   await expect(page.getByText('Staging onboarding review', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Website to monitor', { exact: true })).toHaveValue('');
@@ -621,12 +624,15 @@ test('pause remains unchanged after a delayed failure', async ({ page }) => {
     });
   });
   await page.goto('/app/questions');
-  const pause = page.getByRole('button', { name: 'Pause', exact: true });
-  await pause.click();
-  await expect(pause).toBeDisabled();
+  await page.getByRole('button', { name: 'Manage prompt: ' + question.text }).click();
+  const pauseItem = page.getByRole('menuitem', { name: 'Pause', exact: true });
+  await pauseItem.click();
+  await page.getByRole('button', { name: 'Manage prompt: ' + question.text }).click();
+  await expect(page.getByRole('menuitem', { name: 'Pause', exact: true })).toBeDisabled();
   release?.();
-  await expect(pause).toBeEnabled();
-  await expect(page.getByText('Active', { exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Pause', exact: true })).toBeEnabled();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('table').getByText('Active', { exact: true })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveText('Could not update question.');
 });
 for (const status of ['completed', 'partial', 'failed', 'deferred'])
@@ -655,7 +661,7 @@ for (const status of ['completed', 'partial', 'failed', 'deferred'])
       }),
     );
     await page.goto('/app/questions');
-    await page.getByRole('button', { name: 'Check today' }).click();
+    await page.getByRole('button', { name: 'Monitor Prompts', exact: true }).click();
     await expect(
       page.getByRole('heading', { name: new RegExp(`answers captured · ${status}`) }),
     ).toBeVisible();
@@ -669,9 +675,10 @@ test('archive retains question context after failure', async ({ page }) => {
     route.fulfill({ status: 503, json: { error: { message: 'Archive unavailable. Try again.' } } }),
   );
   await page.goto('/app/questions');
-  await page.getByRole('button', { name: 'Archive', exact: true }).click();
+  await page.getByRole('button', { name: 'Manage prompt: ' + question.text }).click();
+  await page.getByRole('menuitem', { name: 'Archive', exact: true }).click();
   await expect(page.getByRole('alert')).toHaveText('Archive unavailable. Try again.');
-  await expect(page.getByRole('heading', { name: question.text })).toBeVisible();
+  await expect(page.getByRole('rowheader', { name: question.text, exact: true })).toBeVisible();
 });
 test('consumed trial never offers another free baseline', async ({ page }) => {
   await workspace(page, {
@@ -681,7 +688,10 @@ test('consumed trial never offers another free baseline', async ({ page }) => {
   });
   await page.goto('/app/questions');
   await expect(page.getByRole('button', { name: 'Run my baseline' })).toHaveCount(0);
-  await expect(page.getByText(/Pilot · completed/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Monitor Prompts', exact: true })).toBeDisabled();
+  await expect(
+    page.getByText('Monitoring access is inactive. Review your plan in Settings.'),
+  ).toBeVisible();
 });
 test('unpaid checkout return does not unlock monitoring', async ({ page }) => {
   await workspace(page, { ...project, canScan: false });
@@ -696,8 +706,11 @@ test('unpaid checkout return does not unlock monitoring', async ({ page }) => {
   await expect(page.getByText(/Subscription: unpaid/)).toBeVisible();
   if ((page.viewportSize()?.width ?? 1440) < 1024)
     await page.getByRole('button', { name: 'Open navigation' }).click();
-  await page.getByRole('link', { name: 'Prompt Sets', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Check today' })).toHaveCount(0);
+  await page
+    .getByRole('navigation', { name: 'Application', exact: true })
+    .getByRole('link', { name: 'Monitoring', exact: true })
+    .click();
+  await expect(page.getByRole('button', { name: 'Monitor Prompts', exact: true })).toBeDisabled();
 });
 test('account deletion preserves confirmation after a verification failure', async ({ page }) => {
   await workspace(page);
@@ -724,7 +737,7 @@ for (const width of [320, 390, 1440])
     await page.setViewportSize({ width, height: 960 });
     await workspace(page);
     await page.goto('/app/questions');
-    await expect(page.getByRole('heading', { name: 'Buyer questions', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Prompts', exact: true })).toBeVisible();
     if (width < 1024) {
       await page.getByRole('button', { name: 'Open navigation' }).focus();
       await page.keyboard.press('Enter');

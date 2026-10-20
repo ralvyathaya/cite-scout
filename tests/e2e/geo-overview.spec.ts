@@ -117,12 +117,12 @@ test('mobile navigation traps focus and returns to its trigger', async ({ page }
   await page.keyboard.press('Enter');
   const drawer = page.getByRole('dialog', { name: 'Workspace navigation' });
   await expect(drawer).toBeVisible();
-  await expect(drawer.getByRole('link', { name: 'Prompt Sets' })).toBeVisible();
+  await expect(drawer.getByRole('link', { name: 'Monitoring' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(drawer).not.toBeVisible();
   await expect(trigger).toBeFocused();
   await trigger.click();
-  await drawer.getByRole('link', { name: 'Prompt Sets' }).click();
+  await drawer.getByRole('link', { name: 'Monitoring' }).click();
   await expect(page).toHaveURL(/\/app\/questions$/);
   await expect(drawer).not.toBeVisible();
 });

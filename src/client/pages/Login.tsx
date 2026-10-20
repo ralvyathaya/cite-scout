@@ -172,8 +172,8 @@ export function Login() {
               </div>
             </div>
             <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-              GEO is in preview and depends on account access. Signing in does not start a
-              monitoring run or a subscription.
+              Monitoring features depend on your account access. Signing in does not start a check
+              or subscription.
             </p>
           </section>
 
