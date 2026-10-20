@@ -11,6 +11,7 @@ import {
 } from '../../src/server/v2/geo-store';
 import { anthropicReply } from '../unit/anthropic-fixture';
 import { getConfig } from '../../src/server/config';
+import { captureAnthropicGeo } from '../../src/integrations/anthropic/geo';
 
 const owners: {
   env: CloudflareBindings;
@@ -78,6 +79,20 @@ afterEach(async () => {
         .run();
   }
   owners.length = 0;
+});
+
+it('constructs the Anthropic request using redirect modes supported by Workers', async () => {
+  const { run } = await setup();
+  const context = run.items[0]?.context;
+  if (!context) throw new Error('Missing synthetic context');
+  const fetcher = vi.fn<typeof fetch>().mockImplementation((url, init) => {
+    const request = new Request(url, init);
+    expect(request.redirect).toBe('manual');
+    return Promise.resolve(Response.json(anthropicReply()));
+  });
+  const capture = await captureAnthropicGeo('synthetic-anthropic-key', context, fetcher);
+  expect(capture.quality).toBe('complete');
+  expect(fetcher).toHaveBeenCalledTimes(1);
 });
 
 it.each([

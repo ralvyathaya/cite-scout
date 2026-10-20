@@ -68,6 +68,7 @@ describe('Claude synthetic capture', () => {
       stream: false,
     });
     expect(init?.signal).toBeInstanceOf(AbortSignal);
+    expect(init?.redirect).toBe('manual');
     expect(capture).toMatchObject({
       quality: 'complete',
       providerRequestId: 'req-synthetic',
@@ -166,6 +167,20 @@ describe('Claude synthetic capture', () => {
       raw: { error: '[REDACTED]' },
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('refuses redirects without forwarding the API key or making a second request', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, {
+        status: 307,
+        headers: { Location: 'https://other.example/messages' },
+      }),
+    );
+    await expect(captureAnthropicGeo('fake-key', context, fetcher)).rejects.toMatchObject({
+      code: 'PROVIDER_HTTP_307',
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]?.[0]).toBe('https://api.anthropic.com/v1/messages');
+    expect(fetcher.mock.calls[0]?.[1]?.redirect).toBe('manual');
   });
   it.each([
     [null, 'EMPTY_BODY'],

@@ -166,7 +166,7 @@ export async function captureAnthropicGeo(
         stream: false,
       }),
       signal,
-      redirect: 'error',
+      redirect: 'manual',
     });
   } catch {
     throw new CaptureError(signal.aborted ? 'PROVIDER_TIMEOUT' : 'PROVIDER_TRANSPORT_ERROR');
