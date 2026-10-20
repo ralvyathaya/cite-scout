@@ -162,7 +162,7 @@ export async function captureAnthropicGeo(
         system: neutralResearchInstruction,
         messages: [{ role: 'user', content: context.promptText }],
         tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }],
-        max_tokens: 1600,
+        max_tokens: context.maxOutputTokens,
         stream: false,
       }),
       signal,

@@ -73,7 +73,8 @@ export function geoCollectorPolicy(
         : (engine === 'google_aio' || engine === 'bing_copilot') && collector === 'serpapi'
           ? 'geo-collector-2'
           : 'geo-collector-1',
-    maxOutputTokens: engine === 'openai_web_search' || engine === 'claude_web_search' ? 1600 : 700,
+    maxOutputTokens:
+      engine === 'claude_web_search' ? 4096 : engine === 'openai_web_search' ? 1600 : 700,
   };
 }
 

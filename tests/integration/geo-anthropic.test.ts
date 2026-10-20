@@ -85,9 +85,13 @@ it('constructs the Anthropic request using redirect modes supported by Workers',
   const { run } = await setup();
   const context = run.items[0]?.context;
   if (!context) throw new Error('Missing synthetic context');
+  expect(context.maxOutputTokens).toBe(4096);
   const fetcher = vi.fn<typeof fetch>().mockImplementation((url, init) => {
     const request = new Request(url, init);
     expect(request.redirect).toBe('manual');
+    expect(JSON.parse(typeof init?.body === 'string' ? init.body : '')).toMatchObject({
+      max_tokens: 4096,
+    });
     return Promise.resolve(Response.json(anthropicReply()));
   });
   const capture = await captureAnthropicGeo('synthetic-anthropic-key', context, fetcher);

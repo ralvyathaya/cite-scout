@@ -64,7 +64,7 @@ describe('Claude synthetic capture', () => {
       system: neutralResearchInstruction,
       messages: [{ role: 'user', content: context.promptText }],
       tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }],
-      max_tokens: 1600,
+      max_tokens: 4096,
       stream: false,
     });
     expect(init?.signal).toBeInstanceOf(AbortSignal);
@@ -166,6 +166,15 @@ describe('Claude synthetic capture', () => {
       code: 'PROVIDER_HTTP_429',
       raw: { error: '[REDACTED]' },
     });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('honours the output limit frozen with older queued captures', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(anthropicReply()));
+    await captureAnthropicGeo('fake-key', { ...context, maxOutputTokens: 1600 }, fetcher);
+    const body = fetcher.mock.calls[0]?.[1]?.body;
+    expect(JSON.parse(typeof body === 'string' ? body : '')).toMatchObject({ max_tokens: 1600 });
+    expect(geoCollectorPolicy('openai_web_search', 'openai_responses').maxOutputTokens).toBe(1600);
+    expect(geoCollectorPolicy('perplexity', 'perplexity_api').maxOutputTokens).toBe(700);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it('refuses redirects without forwarding the API key or making a second request', async () => {
