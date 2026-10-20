@@ -490,7 +490,14 @@ export const geoRunItems = sqliteTable(
       .notNull()
       .references(() => geoPromptVersions.id, { onDelete: 'cascade' }),
     engine: text('engine', {
-      enum: ['perplexity', 'openai_web_search', 'google_aio', 'chatgpt_search', 'bing_copilot'],
+      enum: [
+        'perplexity',
+        'openai_web_search',
+        'google_aio',
+        'chatgpt_search',
+        'bing_copilot',
+        'claude_web_search',
+      ],
     }).notNull(),
     status: text('status', {
       enum: [
@@ -542,7 +549,14 @@ export const geoObservations = sqliteTable(
       .notNull()
       .references(() => geoPromptVersions.id, { onDelete: 'cascade' }),
     engine: text('engine', {
-      enum: ['perplexity', 'openai_web_search', 'google_aio', 'chatgpt_search', 'bing_copilot'],
+      enum: [
+        'perplexity',
+        'openai_web_search',
+        'google_aio',
+        'chatgpt_search',
+        'bing_copilot',
+        'claude_web_search',
+      ],
     }).notNull(),
     model: text('model'),
     status: text('status', { enum: ['complete', 'partial', 'no_feature'] }).notNull(),

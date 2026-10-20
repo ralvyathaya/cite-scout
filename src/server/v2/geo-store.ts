@@ -25,6 +25,7 @@ import {
 import { getConfig, globalCollectorCallCap, internalTestUserId } from '../config';
 import { paidProjectSql } from '../scan-policy';
 import { utcDate } from '../../domain/normalization';
+import { geoCollectorConfigured } from './geo-readiness';
 import { redactProviderData } from '../../integrations/provider-redaction';
 
 const COOLDOWN = 300_000;
@@ -154,6 +155,14 @@ export async function saveGeoSettings(
 ) {
   const input = geoSettingsSchema.parse(value),
     project = await projectFor(env, userId);
+  if (
+    input.engines.includes('claude_web_search') &&
+    !geoCollectorConfigured(env, 'anthropic_messages')
+  ) {
+    const existing = await readGeoSettings(env, userId);
+    if (!existing.engines.includes('claude_web_search') || input.dailyEnabled)
+      throw new Error('GEO_CLAUDE_DISABLED');
+  }
   if (input.dailyEnabled && !(await hasPaidAccess(env, userId, at)))
     throw new Error('PAID_ACCESS_REQUIRED');
   await sql(
@@ -491,7 +500,11 @@ async function currentContexts(
           ? config.GEO_SERP_COLLECTOR
           : geoSurfaces[engine].collector,
       ...geoCollectorPolicy(engine, config.GEO_SERP_COLLECTOR),
-      ...(engine === 'openai_web_search' ? { requestedModel: config.GEO_OPENAI_MODEL } : {}),
+      ...(engine === 'openai_web_search'
+        ? { requestedModel: config.GEO_OPENAI_MODEL }
+        : engine === 'claude_web_search'
+          ? { requestedModel: config.GEO_CLAUDE_MODEL }
+          : {}),
       languageCode: settings.languageCode,
       locationCode: settings.locationCode,
       device: settings.device,
@@ -558,6 +571,13 @@ export async function startGeoRun(
   const engines = [...(input.engines ?? settings.engines)].sort();
   if (engines.some((engine) => !settings.engines.includes(engine)))
     throw new Error('ENGINE_NOT_SELECTED');
+  if (
+    engines.includes('claude_web_search') &&
+    (!geoCollectorConfigured(env, 'anthropic_messages') ||
+      config.GEO_INTERNAL_TEST_ANTHROPIC_REQUEST_CAP <= 0 ||
+      config.GEO_INTERNAL_TEST_ANTHROPIC_MAX_COST_USD <= 0)
+  )
+    throw new Error('GEO_CLAUDE_DISABLED');
   const { versioned, contexts } = await currentContexts(env, project, settings, prompts, engines);
   const snapshotHash = await geoHash(contexts);
   const intent =
@@ -937,6 +957,7 @@ function observationView(row: ObservationRow, env: CloudflareBindings): GeoObser
     capture: {
       ...capture,
       raw: redactProviderData(capture.raw, [
+        env.ANTHROPIC_API_KEY,
         env.OPENAI_API_KEY,
         env.SERPAPI_API_KEY,
         env.PERPLEXITY_API_KEY,

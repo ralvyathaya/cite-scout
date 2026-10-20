@@ -19,7 +19,10 @@ describe('GEO request identity', () => {
         ],
       }).success,
     ).toBe(false);
-    expect(Object.keys(geoSurfaces)).toHaveLength(5);
+    expect(Object.keys(geoSurfaces)).toHaveLength(6);
+    expect(
+      geoRunRequestSchema.safeParse({ requestId, engines: ['claude_web_search'] }).success,
+    ).toBe(true);
   });
   it('rejects repeated engines and prompt ids before accepting work', () => {
     const requestId = '85c8d620-b09b-4a38-9dfd-5db653f5f083';

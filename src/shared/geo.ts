@@ -6,11 +6,20 @@ export const geoEngineSchema = z.enum([
   'google_aio',
   'chatgpt_search',
   'bing_copilot',
+  'claude_web_search',
 ]);
 export type GeoEngine = z.infer<typeof geoEngineSchema>;
 export type GeoCollector =
-  'perplexity_api' | 'openai_responses' | 'serpapi' | 'dataforseo_standard';
+  'perplexity_api' | 'openai_responses' | 'serpapi' | 'dataforseo_standard' | 'anthropic_messages';
 export const geoSurfaces = {
+  claude_web_search: {
+    label: 'Claude Web Search API',
+    surface: 'claude_web_search',
+    collector: 'anthropic_messages',
+    reportsModel: true,
+    supportsLocale: false,
+    supportsDevice: false,
+  },
   perplexity: {
     label: 'Perplexity',
     surface: 'perplexity_agent',
@@ -64,7 +73,7 @@ export function geoCollectorPolicy(
         : (engine === 'google_aio' || engine === 'bing_copilot') && collector === 'serpapi'
           ? 'geo-collector-2'
           : 'geo-collector-1',
-    maxOutputTokens: engine === 'openai_web_search' ? 1600 : 700,
+    maxOutputTokens: engine === 'openai_web_search' || engine === 'claude_web_search' ? 1600 : 700,
   };
 }
 

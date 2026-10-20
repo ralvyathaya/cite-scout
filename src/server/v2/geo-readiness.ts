@@ -1,9 +1,18 @@
-import { getConfig } from '../config';
+import { getConfig, internalTestUserId } from '../config';
 import { geoSurfaces, type GeoEngine, type GeoCollector } from '../../shared/geo';
 import { utcDate } from '../../domain/normalization';
 const secretReady = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
 export function geoCollectorConfigured(env: CloudflareBindings, collector: GeoCollector): boolean {
   switch (collector) {
+    case 'anthropic_messages': {
+      const config = getConfig(env);
+      return (
+        config.GEO_CLAUDE_ENABLED === 'true' &&
+        config.DEPLOYMENT_ENV === 'staging' &&
+        Boolean(internalTestUserId(env)) &&
+        secretReady(config.ANTHROPIC_API_KEY)
+      );
+    }
     case 'perplexity_api':
       return secretReady(env.PERPLEXITY_API_KEY);
     case 'openai_responses':
@@ -32,6 +41,7 @@ export function geoCapabilities(env: CloudflareBindings) {
         engine === 'google_aio' || engine === 'bing_copilot'
           ? config.GEO_SERP_COLLECTOR
           : geoSurfaces[engine].collector;
+      const enabled = engine !== 'claude_web_search' || config.GEO_CLAUDE_ENABLED === 'true';
       const credentialReady =
         geoCollectorConfigured(env, collector) &&
         (collector !== 'serpapi' || config.GEO_SERPAPI_MONTHLY_REQUEST_CAP > 0);
@@ -40,23 +50,34 @@ export function geoCapabilities(env: CloudflareBindings) {
         perplexity_api: config.internalTestLimits.perplexity,
         serpapi: config.internalTestLimits.serpapi,
         dataforseo_standard: 0,
+        anthropic_messages: config.GEO_INTERNAL_TEST_ANTHROPIC_REQUEST_CAP,
       }[collector];
-      const reason = paused
-        ? 'Monitoring is paused by the operator.'
-        : noBudget
-          ? 'A positive monitoring budget is required.'
-          : config.DEPLOYMENT_ENV === 'staging' && requestLimit <= 0
-            ? 'This collector has no owner-test request allowance.'
-            : !credentialReady
-              ? 'This collector is not configured. Stored answers remain available.'
-              : null;
+      const reason = !enabled
+        ? 'This engine is not enabled. Saved answers remain available.'
+        : collector === 'anthropic_messages' && config.GEO_INTERNAL_TEST_ANTHROPIC_MAX_COST_USD <= 0
+          ? 'This engine has no request budget.'
+          : paused
+            ? 'Monitoring is paused by the operator.'
+            : noBudget
+              ? 'A positive monitoring budget is required.'
+              : config.DEPLOYMENT_ENV === 'staging' && requestLimit <= 0
+                ? 'This collector has no owner-test request allowance.'
+                : !credentialReady
+                  ? 'This collector is not configured. Stored answers remain available.'
+                  : null;
       return [
         engine,
         {
+          enabled,
           available: reason === null,
           reason,
           collector,
-          requestedModel: engine === 'openai_web_search' ? config.GEO_OPENAI_MODEL : null,
+          requestedModel:
+            engine === 'openai_web_search'
+              ? config.GEO_OPENAI_MODEL
+              : engine === 'claude_web_search'
+                ? config.GEO_CLAUDE_MODEL
+                : null,
           nextStep: reason
             ? paused
               ? 'Ask the operator to enable monitoring after setup.'
@@ -70,6 +91,7 @@ export function geoCapabilities(env: CloudflareBindings) {
   ) as Record<
     GeoEngine,
     {
+      enabled: boolean;
       available: boolean;
       reason: string | null;
       collector: GeoCollector;

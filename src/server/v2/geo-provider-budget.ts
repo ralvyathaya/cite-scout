@@ -1,4 +1,5 @@
 import { getConfig, internalTestUserId } from '../config';
+import { anthropicPricingVersion } from '../../integrations/anthropic/geo';
 import { utcDate } from '../../domain/normalization';
 
 interface RequestAdmission {
@@ -14,14 +15,37 @@ export async function reserveGeoProviderRequest(env: CloudflareBindings, input: 
   const at = input.at ?? new Date(),
     config = getConfig(env);
   const internal = config.DEPLOYMENT_ENV === 'staging';
+  if (
+    input.collector === 'anthropic_messages' &&
+    (!internal ||
+      config.GEO_CLAUDE_ENABLED !== 'true' ||
+      !config.ANTHROPIC_API_KEY?.trim() ||
+      !internalTestUserId(env, at) ||
+      config.GEO_INTERNAL_TEST_ANTHROPIC_REQUEST_CAP <= 0)
+  )
+    throw new Error('GEO_CLAUDE_DISABLED');
+  if (
+    ![
+      'anthropic_messages',
+      'openai_responses',
+      'perplexity_api',
+      'workers_ai',
+      'typesafe',
+      'serpapi',
+      'dataforseo_standard',
+    ].includes(input.collector)
+  )
+    throw new Error('GEO_COLLECTOR_NOT_ALLOWED');
   const ceiling =
-    input.collector === 'openai_responses'
-      ? config.GEO_INTERNAL_TEST_OPENAI_MAX_COST_USD
-      : input.collector === 'perplexity_api'
-        ? config.GEO_INTERNAL_TEST_PERPLEXITY_MAX_COST_USD
-        : input.collector === 'workers_ai' || input.collector === 'typesafe'
-          ? config.GEO_INTERNAL_TEST_PROCESSING_MAX_COST_USD
-          : 0;
+    input.collector === 'anthropic_messages'
+      ? config.GEO_INTERNAL_TEST_ANTHROPIC_MAX_COST_USD
+      : input.collector === 'openai_responses'
+        ? config.GEO_INTERNAL_TEST_OPENAI_MAX_COST_USD
+        : input.collector === 'perplexity_api'
+          ? config.GEO_INTERNAL_TEST_PERPLEXITY_MAX_COST_USD
+          : input.collector === 'workers_ai' || input.collector === 'typesafe'
+            ? config.GEO_INTERNAL_TEST_PROCESSING_MAX_COST_USD
+            : 0;
   if (
     internal &&
     (!internalTestUserId(env, at) ||
@@ -77,7 +101,11 @@ export async function reserveGeoProviderRequest(env: CloudflareBindings, input: 
           ? config.internalTestLimits.classifier
           : input.collector === 'openai_responses'
             ? config.internalTestLimits.openai
-            : config.internalTestLimits.perplexity,
+            : input.collector === 'anthropic_messages'
+              ? config.GEO_INTERNAL_TEST_ANTHROPIC_REQUEST_CAP
+              : input.collector === 'perplexity_api'
+                ? config.internalTestLimits.perplexity
+                : 0,
     )
     .run();
   if (!result.meta.changes) throw new Error('GEO_PROVIDER_BUDGET_BLOCKED');
@@ -96,7 +124,7 @@ export async function completeGeoProviderRequests(
   // SerpApi's free allowance is an estimate, never an invoice supplied by the response.
   await env.DB.prepare(
     `UPDATE geo_provider_requests SET state=?,reported_cost_usd=?,estimated_cost_usd=CASE WHEN collector='serpapi' AND ?='completed' THEN '0' ELSE ? END,
-    pricing_version=CASE WHEN collector='serpapi' THEN 'serpapi-free-250-2026-10-12' WHEN collector='openai_responses' THEN 'openai-gpt-6-luna-2026-10-12' ELSE NULL END
+    pricing_version=CASE WHEN collector='serpapi' THEN 'serpapi-free-250-2026-10-12' WHEN collector='openai_responses' THEN 'openai-gpt-6-luna-2026-10-12' WHEN collector='anthropic_messages' THEN '${anthropicPricingVersion}' ELSE NULL END
     WHERE reservation_id=? AND state='started'`,
   )
     .bind(

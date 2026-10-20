@@ -1,3 +1,4 @@
+import { captureAnthropicGeo, estimateAnthropicCost } from '../../integrations/anthropic/geo';
 import {
   DataForSeoError,
   pollDataForSeo,
@@ -21,6 +22,7 @@ const sql = (env: CloudflareBindings, query: string, ...values: unknown[]) =>
   env.DB.prepare(query).bind(...values);
 const clean = (env: CloudflareBindings, value: unknown) =>
   redactProviderData(value, [
+    env.ANTHROPIC_API_KEY,
     env.OPENAI_API_KEY,
     env.PERPLEXITY_API_KEY,
     env.SERPAPI_API_KEY,
@@ -157,7 +159,9 @@ async function saveCapture(
     estimatedCostUsd:
       item.engine === 'openai_web_search'
         ? estimateOpenAiCost(capture.model, capture.inputTokens, capture.outputTokens)
-        : null,
+        : item.engine === 'claude_web_search'
+          ? estimateAnthropicCost(capture)
+          : null,
     status: 'completed',
   });
   await env.DB.batch([
@@ -259,6 +263,9 @@ export async function processGeoCollectors(env: CloudflareBindings, limit = 5, a
           fetch,
           context.requestedModel,
         );
+      } else if (context.collector === 'anthropic_messages') {
+        await beforeRequest();
+        capture = await captureAnthropicGeo(env.ANTHROPIC_API_KEY, context);
       } else if (context.collector === 'serpapi') {
         capture = await captureSerpApiGeo(env.SERPAPI_API_KEY, context, beforeRequest);
       } else if (item.provider_task_id !== null) {

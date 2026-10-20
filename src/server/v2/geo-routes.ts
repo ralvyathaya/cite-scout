@@ -58,6 +58,8 @@ const errors: Record<string, string> = {
   PROMPT_SET_NOT_FOUND: 'This prompt set is unavailable.',
   GEO_RUN_NOT_FOUND: 'This monitoring run is unavailable.',
   GEO_OBSERVATION_NOT_FOUND: 'This observation is unavailable.',
+  GEO_CLAUDE_DISABLED:
+    'Claude monitoring is not enabled or has no request allowance. Saved answers remain available.',
   GEO_SCANS_DISABLED: 'New GEO checks are paused. Saved evidence remains available.',
   GEO_BUDGET_REQUIRED: 'The operator must configure a positive GEO budget before checks can start.',
   GEO_CONFIGURATION_REQUIRED: 'Save your engines, location and language before monitoring.',
@@ -237,6 +239,7 @@ geoRoutes.get('/runs/:id/attempts', async (c) => {
         row.raw === null
           ? null
           : redactProviderData(JSON.parse(row.raw), [
+              c.env.ANTHROPIC_API_KEY,
               c.env.OPENAI_API_KEY,
               c.env.SERPAPI_API_KEY,
               c.env.PERPLEXITY_API_KEY,
