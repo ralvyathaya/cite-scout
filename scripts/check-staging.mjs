@@ -142,7 +142,7 @@ export function validateAccess(application, policies, ownerEmail) {
   }
 }
 
-async function verifyAccess(env) {
+export async function verifyAccess(env) {
   const accountId = env.CLOUDFLARE_ACCOUNT_ID;
   const appId = env.STAGING_ACCESS_APPLICATION_ID;
   const token = env.STAGING_ACCESS_READ_TOKEN;
@@ -157,15 +157,31 @@ async function verifyAccess(env) {
   }
   const base = `https://api.cloudflare.com/client/v4/accounts/${accountId}/access/apps`;
   async function request(path) {
-    const response = await fetch(`${base}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) throw new Error('STAGING_ACCESS_API_UNAVAILABLE_OR_READ_PERMISSION_MISSING');
-    const text = await response.text();
+    let response, text;
+    try {
+      response = await fetch(`${base}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!response.ok) throw new Error(`STAGING_ACCESS_API_HTTP_${response.status}`);
+      text = await response.text();
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('STAGING_')) throw error;
+      throw new Error(
+        error?.name === 'TimeoutError'
+          ? 'STAGING_ACCESS_API_TIMEOUT'
+          : 'STAGING_ACCESS_API_UNAVAILABLE',
+        { cause: error },
+      );
+    }
     if (text.length > 1_000_000) throw new Error('STAGING_ACCESS_RESPONSE_TOO_LARGE');
-    const body = JSON.parse(text);
-    if (body.success !== true || (body.result_info?.total_pages ?? 1) > 1) {
+    let body;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error('STAGING_ACCESS_RESPONSE_INVALID');
+    }
+    if (body?.success !== true || (body.result_info?.total_pages ?? 1) > 1) {
       throw new Error('STAGING_ACCESS_VERIFICATION_INCOMPLETE');
     }
     return body.result;

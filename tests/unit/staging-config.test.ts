@@ -45,6 +45,18 @@ catch (error) { console.error(error.message); process.exitCode = 1; }`;
   return spawnSync(process.execPath, ['--input-type=module', '-e', program], { encoding: 'utf8' });
 }
 
+function checkRemoteAccess(response: string) {
+  const program = `import { verifyAccess } from './scripts/check-staging.mjs';
+globalThis.fetch = async () => { ${response} };
+try { await verifyAccess({
+  CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32),
+  STAGING_ACCESS_APPLICATION_ID: 'b'.repeat(36),
+  STAGING_ACCESS_READ_TOKEN: 'test-only-token',
+  STAGING_ACCESS_OWNER_EMAIL: 'owner@example.com',
+}); } catch (error) { console.error(error.message); process.exitCode = 1; }`;
+  return spawnSync(process.execPath, ['--input-type=module', '-e', program], { encoding: 'utf8' });
+}
+
 describe('staging deployment guard', () => {
   it('keeps the Worker, database, and hostname isolated with paid flows disabled', () => {
     const config = staging();
@@ -175,4 +187,30 @@ describe('staging deployment guard', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('STAGING_ACCESS_MUST_PROTECT_ENTIRE_HOSTNAME');
   });
+
+  it.each([
+    [
+      'return new Response("private upstream body", { status: 504 });',
+      'STAGING_ACCESS_API_HTTP_504',
+    ],
+    [
+      'throw new DOMException("private upstream body", "TimeoutError");',
+      'STAGING_ACCESS_API_TIMEOUT',
+    ],
+    ['throw new TypeError("private upstream body");', 'STAGING_ACCESS_API_UNAVAILABLE'],
+    ['return new Response("private upstream body");', 'STAGING_ACCESS_RESPONSE_INVALID'],
+    [
+      'return Response.json({ success: true, result: [], result_info: { total_pages: 2 } });',
+      'STAGING_ACCESS_VERIFICATION_INCOMPLETE',
+    ],
+  ])(
+    'blocks unverifiable Access responses with a redacted diagnostic: %s',
+    (response, diagnostic) => {
+      const result = checkRemoteAccess(response);
+      expect(result.status).toBe(1);
+      expect(result.stderr.trim()).toBe(diagnostic);
+      expect(result.stderr).not.toContain('private upstream body');
+      expect(result.stderr).not.toContain('test-only-token');
+    },
+  );
 });
