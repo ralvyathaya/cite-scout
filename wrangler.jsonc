@@ -28,6 +28,8 @@
     "traces": { "enabled": true, "head_sampling_rate": 0.05 },
   },
   "vars": {
+    "BILLING_PLANS_ENABLED": "false",
+    "BILLING_PLAN_VARIANTS": "{}",
     "APP_URL": "http://localhost:5173",
     "APP_ENV": "development",
     "DEPLOYMENT_ENV": "local",
