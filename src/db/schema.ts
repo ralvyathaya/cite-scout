@@ -559,7 +559,7 @@ export const geoObservations = sqliteTable(
       ],
     }).notNull(),
     model: text('model'),
-    status: text('status', { enum: ['complete', 'partial', 'no_feature'] }).notNull(),
+    status: text('status', { enum: ['captured'] }).notNull(),
     contextJson: text('context_json').notNull(),
     captureJson: text('capture_json').notNull(),
     answerText: text('answer_text').notNull(),

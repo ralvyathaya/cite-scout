@@ -57,6 +57,46 @@ const settings = {
   device: 'desktop' as const,
 };
 describe('public plan monitoring limits', () => {
+  it('does not let prompt replacement bypass a downgrade and retains the old prompt', async () => {
+    const { env, owner } = await subscriber(6, '21');
+    await env.DB.prepare("UPDATE subscriptions SET lemon_squeezy_variant_id='11' WHERE user_id=?")
+      .bind(owner.userId)
+      .run();
+    const app = new Hono<{ Bindings: CloudflareBindings }>().route('/api/v2', v2Routes);
+    const id = owner.promptIds[0];
+    assert(id);
+    const headers = { Cookie: await cookie(owner.userId), 'Content-Type': 'application/json' };
+    const replace = () =>
+      app.request(
+        `/api/v2/questions/${id}/replacement`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ text: 'Which service suits a replacement buyer question?' }),
+        },
+        env,
+      );
+    expect((await replace()).status).toBe(409);
+    await env.DB.prepare('UPDATE prompts SET enabled=0 WHERE id=?').bind(id).run();
+    const response = await replace();
+    expect(response.status).toBe(201);
+    const { data } = await response.json<{ data: { id: string } }>();
+    expect(
+      await env.DB.prepare('SELECT enabled FROM prompts WHERE id=?').bind(data.id).first('enabled'),
+    ).toBe(0);
+    expect(
+      await env.DB.prepare(
+        'SELECT count(*) AS n FROM prompts WHERE project_id=? AND enabled=1 AND archived_at IS NULL',
+      )
+        .bind(owner.projectId)
+        .first('n'),
+    ).toBe(5);
+    expect(
+      await env.DB.prepare('SELECT archived_at FROM prompts WHERE id=?')
+        .bind(id)
+        .first('archived_at'),
+    ).not.toBeNull();
+  });
   it('schedules untouched pairs after a manual subset without consuming used pairs twice', async () => {
     const { env, owner } = await subscriber(2);
     await saveGeoSettings(env, owner.userId, settings, at);

@@ -65,6 +65,50 @@ describe('verified plan billing', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it.each(['valid', 'id', 'store', 'product', 'variant', 'mode', 'host', 'protocol'] as const)(
+    'validates fresh authenticated portal identity: %s',
+    async (change) => {
+      const { userId } = await seed(0);
+      const id = crypto.randomUUID();
+      await syncSubscription(catalogEnv, id, userId, undefined, canonicalClient('101'));
+      const remote = subscription(id, 'active', '2026-09-20T00:00:00Z');
+      remote.attributes.variant_id = 101;
+      if (change === 'id') remote.id = crypto.randomUUID();
+      if (change === 'store') remote.attributes.store_id = 999;
+      if (change === 'product') remote.attributes.product_id = 999;
+      if (change === 'variant') remote.attributes.variant_id = 999;
+      if (change === 'mode') remote.attributes.test_mode = false;
+      if (change === 'host') remote.attributes.urls.customer_portal = 'https://example.test/portal';
+      if (change === 'protocol')
+        remote.attributes.urls.customer_portal = 'http://store.lemonsqueezy.com/portal';
+      const fetcher = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(Response.json({ data: remote }));
+      const response = await billingRoutes.fetch(
+        request('/portal', await cookie(userId), {}),
+        catalogEnv,
+      );
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      const requested = fetcher.mock.calls[0]?.[0];
+      expect(
+        requested instanceof Request
+          ? requested.url
+          : requested instanceof URL
+            ? requested.href
+            : requested,
+      ).toContain(`/subscriptions/${id}`);
+      if (change === 'valid') {
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({
+          data: { url: 'https://store.lemonsqueezy.com/portal' },
+        });
+      } else {
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(await response.text()).not.toContain('"url":');
+      }
+    },
+  );
+
   it('defaults new checkout off and rejects non-boolean activation', () => {
     const withoutCatalog = { ...billingEnv };
     Reflect.deleteProperty(withoutCatalog, 'BILLING_PLANS_ENABLED');
