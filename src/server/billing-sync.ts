@@ -3,6 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { billingWebhookReceipts, subscriptions, users } from '../db/schema';
 import { LemonSqueezyClient, type LemonSubscription } from '../integrations/lemonsqueezy/client';
+import { billingCatalogConfigured, subscriptionPlan } from './billing-plans';
 
 export function billingConfigured(env: CloudflareBindings): boolean {
   const config = getConfig(env);
@@ -13,7 +14,7 @@ export function billingConfigured(env: CloudflareBindings): boolean {
       env.LEMON_SQUEEZY_WEBHOOK_SECRET &&
       config.LEMON_SQUEEZY_STORE_ID &&
       config.LEMON_SQUEEZY_PRODUCT_ID &&
-      config.LEMON_SQUEEZY_VARIANT_ID &&
+      (config.LEMON_SQUEEZY_VARIANT_ID || billingCatalogConfigured(config)) &&
       config.LEMON_SQUEEZY_STORE_HOST,
     )
   );
@@ -33,10 +34,12 @@ export function validateSubscription(env: CloudflareBindings, remote: LemonSubsc
   const value = remote.attributes;
   const config = getConfig(env);
   if (
-    String(value.store_id) !== env.LEMON_SQUEEZY_STORE_ID ||
-    String(value.product_id) !== env.LEMON_SQUEEZY_PRODUCT_ID ||
-    String(value.variant_id) !== env.LEMON_SQUEEZY_VARIANT_ID ||
-    value.test_mode !== (config.LEMON_SQUEEZY_TEST_MODE === 'true')
+    !subscriptionPlan(config, {
+      lemonSqueezyStoreId: String(value.store_id),
+      lemonSqueezyProductId: String(value.product_id),
+      lemonSqueezyVariantId: String(value.variant_id),
+      testMode: value.test_mode,
+    })
   )
     throw new Error('BILLING_CONFIGURATION_MISMATCH');
 }

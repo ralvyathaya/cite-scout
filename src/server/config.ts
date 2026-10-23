@@ -45,6 +45,8 @@ const configSchema = z.object({
   LEMON_SQUEEZY_PRODUCT_ID: z.string(),
   LEMON_SQUEEZY_VARIANT_ID: z.string(),
   LEMON_SQUEEZY_STORE_HOST: z.string(),
+  BILLING_PLANS_ENABLED: z.enum(['true', 'false']).default('false'),
+  BILLING_PLAN_VARIANTS: z.string().default(''),
   TURNSTILE_SITE_KEY: z.string().min(1),
   RESEND_FROM_EMAIL: z.string().min(1),
   OPERATOR_SECRET: z.string().optional(),

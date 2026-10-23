@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { Hono } from 'hono';
+import { z } from 'zod';
+import { billingSelectionSchema, monthlyCheckLimit, publicPlans } from '../../shared/plans';
 import { recordPayment } from '../v2/payments';
 import { billingWebhookReceipts, subscriptions } from '../../db/schema';
 import { getEntitlement } from '../../domain/entitlements';
@@ -13,8 +15,14 @@ import {
 } from '../../integrations/lemonsqueezy/webhook';
 import { createAuth } from '../auth';
 import { getConfig } from '../config';
-import { billingConfigured, subscriptionEnded, syncSubscription } from '../billing-sync';
-import { requireSession } from '../http';
+import {
+  billingConfigured,
+  subscriptionEnded,
+  syncSubscription,
+  validateSubscription,
+} from '../billing-sync';
+import { billingCatalogConfigured, billingVariantId, subscriptionPlan } from '../billing-plans';
+import { readJson, requireSession } from '../http';
 
 export const billingRoutes = new Hono<{ Bindings: CloudflareBindings }>();
 
@@ -28,18 +36,42 @@ billingRoutes.get('/status', async (c) => {
     .from(subscriptions)
     .where(eq(subscriptions.userId, session.user.id))
     .get();
+  const config = getConfig(c.env);
+  const plan = subscriptionPlan(config, subscription ?? null);
+  const configured = billingConfigured(c.env);
+  const plansEnabled = config.BILLING_PLANS_ENABLED === 'true';
+  const ready =
+    configured &&
+    (plansEnabled ? billingCatalogConfigured(config) : Boolean(config.LEMON_SQUEEZY_VARIANT_ID));
+  const checkoutAvailable = ready && (!subscription || subscriptionEnded(subscription));
+  const now = new Date();
   return c.json({
     data: {
       subscription: subscription ?? null,
-      checkoutAvailable:
-        billingConfigured(c.env) && (!subscription || subscriptionEnded(subscription)),
-      portalAvailable: billingConfigured(c.env) && Boolean(subscription),
-      availabilityMessage: billingConfigured(c.env)
+      plan,
+      plansEnabled,
+      checkoutOptions: publicPlans.flatMap((value) =>
+        (['month', 'year'] as const).map((interval) => ({
+          planId: value.id,
+          interval,
+          available: plansEnabled && checkoutAvailable,
+        })),
+      ),
+      allowance: plan
+        ? {
+            promptLimit: plan.promptLimit,
+            dailyChecks: plan.dailyChecks,
+            monthlyChecks: monthlyCheckLimit(plan, now),
+          }
+        : null,
+      checkoutAvailable,
+      portalAvailable: configured && Boolean(plan),
+      availabilityMessage: ready
         ? null
         : 'Billing is not available yet. Contact support@cite-scout.com for help.',
       entitlement: getEntitlement(
-        subscription ? { status: subscription.status, endsAt: subscription.endsAt } : null,
-        new Date(),
+        subscription && plan ? { status: subscription.status, endsAt: subscription.endsAt } : null,
+        now,
       ),
     },
   });
@@ -50,7 +82,8 @@ billingRoutes.post('/checkout', async (c) => {
   const session = await requireSession(c, createAuth(c.env));
   if (!session)
     return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
-  if (!billingConfigured(c.env))
+  const plansEnabled = config.BILLING_PLANS_ENABLED === 'true';
+  if (!billingConfigured(c.env) || (plansEnabled && !billingCatalogConfigured(config)))
     return c.json(
       {
         error: {
@@ -58,6 +91,37 @@ billingRoutes.post('/checkout', async (c) => {
           message: 'Checkout is not configured yet. Contact support@cite-scout.com for help.',
         },
       },
+      503,
+    );
+  const payload = c.req.raw.body === null ? {} : await readJson(c.req.raw, 1024);
+  const selection = billingSelectionSchema.safeParse(payload);
+  if (!plansEnabled && selection.success)
+    return c.json(
+      {
+        error: {
+          code: 'INTEGRATION_DISABLED',
+          message: 'These plans are not available for checkout yet.',
+        },
+      },
+      503,
+    );
+  if (plansEnabled ? !selection.success : !z.object({}).strict().safeParse(payload).success)
+    return c.json(
+      {
+        error: {
+          code: 'INVALID_SELECTION',
+          message: 'Choose a plan and billing interval to continue.',
+        },
+      },
+      422,
+    );
+  const variantId =
+    plansEnabled && selection.success
+      ? billingVariantId(config, selection.data)
+      : config.LEMON_SQUEEZY_VARIANT_ID;
+  if (!variantId)
+    return c.json(
+      { error: { code: 'INTEGRATION_DISABLED', message: 'Checkout is not available yet.' } },
       503,
     );
   const db = drizzle(c.env.DB);
@@ -79,7 +143,7 @@ billingRoutes.post('/checkout', async (c) => {
   const client = new LemonSqueezyClient(c.env.LEMON_SQUEEZY_API_KEY);
   const url = await client.createCheckout({
     storeId: c.env.LEMON_SQUEEZY_STORE_ID,
-    variantId: c.env.LEMON_SQUEEZY_VARIANT_ID,
+    variantId,
     email: session.user.email,
     userId: session.user.id,
     testMode: config.LEMON_SQUEEZY_TEST_MODE === 'true',
@@ -112,6 +176,12 @@ billingRoutes.post('/portal', async (c) => {
   const fresh = await new LemonSqueezyClient(c.env.LEMON_SQUEEZY_API_KEY).getSubscription(
     owned.lemonSqueezySubscriptionId,
   );
+  if (fresh.id !== owned.lemonSqueezySubscriptionId)
+    return c.json(
+      { error: { code: 'BILLING_ID_MISMATCH', message: 'Billing portal validation failed.' } },
+      502,
+    );
+  validateSubscription(c.env, fresh);
   const portal = new URL(fresh.attributes.urls.customer_portal);
   if (
     portal.protocol !== 'https:' ||

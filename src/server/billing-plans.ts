@@ -41,7 +41,8 @@ export function billingPlanVariants(env: BillingPlanBindings) {
   const parsed = variantSchema.safeParse(
     (() => {
       try {
-        return JSON.parse(env.BILLING_PLAN_VARIANTS || '{}') as unknown;
+        const raw = env.BILLING_PLAN_VARIANTS ?? '';
+        return JSON.parse(raw === '' ? '{}' : raw) as unknown;
       } catch {
         return null;
       }
@@ -63,6 +64,15 @@ export function billingVariantId(
   return billingPlanVariants(env)[selection.planId]?.[selection.interval] ?? null;
 }
 
+export function billingCatalogConfigured(env: BillingPlanBindings): boolean {
+  try {
+    const variants = billingPlanVariants(env);
+    return publicPlans.every((plan) => variants[plan.id]?.month && variants[plan.id]?.year);
+  } catch {
+    return false;
+  }
+}
+
 export interface StoredPlanIdentity {
   lemonSqueezyStoreId: string;
   lemonSqueezyProductId: string;
@@ -74,15 +84,19 @@ export function subscriptionPlan(
   sub: StoredPlanIdentity | null,
 ): SubscriptionPlan | null {
   if (
-    !sub ||
-    sub.testMode !== (env.LEMON_SQUEEZY_TEST_MODE === 'true') ||
+    sub?.testMode !== (env.LEMON_SQUEEZY_TEST_MODE === 'true') ||
     sub.lemonSqueezyStoreId !== env.LEMON_SQUEEZY_STORE_ID ||
     sub.lemonSqueezyProductId !== env.LEMON_SQUEEZY_PRODUCT_ID
   )
     return null;
   if (sub.lemonSqueezyVariantId === env.LEMON_SQUEEZY_VARIANT_ID)
     return { ...legacyPlan, interval: 'month' };
-  const variants = billingPlanVariants(env);
+  let variants: ReturnType<typeof billingPlanVariants>;
+  try {
+    variants = billingPlanVariants(env);
+  } catch {
+    return null;
+  }
   for (const plan of publicPlans) {
     for (const interval of ['month', 'year'] as const) {
       if (variants[plan.id]?.[interval] === sub.lemonSqueezyVariantId) return { ...plan, interval };

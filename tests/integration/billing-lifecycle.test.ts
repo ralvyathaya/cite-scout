@@ -216,4 +216,62 @@ describe('verified subscription lifecycle', () => {
     ).toBeUndefined();
     expect(env.DB).toBeDefined();
   });
+  it('deduplicates annual-plan renewal invoices and preserves refund accounting', async () => {
+    const { userId } = await seed(0);
+    const id = '1234578';
+    const catalog = {
+      ...billingEnv,
+      BILLING_PLAN_VARIANTS: JSON.stringify({ test: { growth: { year: '104' } } }),
+    };
+    const remote = subscription(id, 'active', '2026-09-26T00:00:00Z');
+    remote.attributes.variant_id = 104;
+    await syncSubscription(catalog, id, userId, undefined, clientFor(new Map([[id, remote]])));
+    const payload = {
+      meta: { event_name: 'subscription_payment_success' },
+      data: {
+        type: 'subscription-invoices',
+        id: '98766',
+        attributes: {
+          store_id: 1,
+          test_mode: true,
+          subscription_id: Number(id),
+          status: 'paid',
+          refunded: false,
+          billing_reason: 'renewal',
+          total: 79000,
+          subtotal: 79000,
+          currency: 'USD',
+          created_at: '2026-09-26T00:00:00Z',
+        },
+      },
+    };
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(Response.json({ data: remote })));
+    expect((await handleLemonWebhook(await signedRequest(payload), catalog)).status).toBe(200);
+    expect((await handleLemonWebhook(await signedRequest(payload), catalog)).status).toBe(200);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        await env.DB.prepare(
+          "SELECT properties_json FROM product_events WHERE dedupe_key='invoice:98766'",
+        ).first<{ properties_json: string }>()
+      )?.properties_json,
+    ).toContain('"refunded":false');
+    payload.meta.event_name = 'subscription_payment_refunded';
+    payload.data.attributes.status = 'refunded';
+    payload.data.attributes.refunded = true;
+    expect((await handleLemonWebhook(await signedRequest(payload), catalog)).status).toBe(200);
+    expect(
+      (
+        await env.DB.prepare(
+          "SELECT properties_json FROM product_events WHERE dedupe_key='invoice:98766'",
+        ).first<{ properties_json: string }>()
+      )?.properties_json,
+    ).toContain('"refunded":true');
+    expect(
+      (await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).get())
+        ?.lemonSqueezyVariantId,
+    ).toBe('104');
+  });
 });
