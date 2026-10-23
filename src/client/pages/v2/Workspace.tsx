@@ -39,6 +39,12 @@ import { ApiError, api, emitEvent, useInspection, useResource } from './api';
 import { fixtureMode, leaveFixture } from './geo-fixture-mode';
 import { GeoSettingsPanel } from './GeoWorkspace';
 import { PromptWorkspace } from './Prompts';
+import {
+  subscriptionLabel,
+  type PlanBillingStatus,
+  billingSelection,
+  billingSelectionQuery,
+} from '../../lib/billing-selection';
 import { SourceIcon } from '../../components/SourceIdentity';
 import { WorkspaceBreadcrumb } from './WorkspaceBreadcrumb';
 import { MonitoringNavigation } from './MonitoringNavigation';
@@ -101,7 +107,7 @@ export function V2Shell() {
   const navigate = useNavigate();
   const action = useAction();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigation = [
     { label: 'Overview', path: '/app/overview', Icon: BarChart3, group: 'Workspace' },
     { label: 'Monitoring', path: '/app/questions', Icon: ListChecks },
@@ -207,7 +213,7 @@ export function V2Shell() {
     </>
   );
   if (resource.error instanceof ApiError && resource.error.status === 401)
-    return <Navigate to="/login" replace />;
+    return <Navigate to={`/login${billingSelectionQuery(new URLSearchParams(search))}`} replace />;
   return (
     <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
       <div className="workspace-theme flex min-h-svh bg-background text-foreground">
@@ -433,7 +439,11 @@ export function V2Onboarding() {
   const [reviewFinished, setReviewFinished] = useState(false);
   const completionHeading = useRef<HTMLHeadingElement>(null);
   const suggestionRequest = useRef<{ domain: string; id: string } | null>(null);
-  const saveOnly = reviewMode || data.internalTestAccess || (!data.enrolled && !data.canScan);
+  const saveOnly =
+    Boolean(billingSelection(searchParams)) ||
+    reviewMode ||
+    data.internalTestAccess ||
+    (!data.enrolled && !data.canScan);
   useEffect(() => {
     if (reviewFinished) completionHeading.current?.focus();
   }, [reviewFinished]);
@@ -447,7 +457,18 @@ export function V2Onboarding() {
       </Notice>
     );
   if (data.project && !reviewMode)
-    return <Navigate to={saveOnly ? '/app/overview' : '/app/questions'} replace />;
+    return (
+      <Navigate
+        to={
+          billingSelection(searchParams)
+            ? `/app/billing${billingSelectionQuery(searchParams)}`
+            : saveOnly
+              ? '/app/overview'
+              : '/app/questions'
+        }
+        replace
+      />
+    );
   if (reviewFinished)
     return (
       <section className="mx-auto max-w-3xl space-y-5">
@@ -523,7 +544,11 @@ export function V2Onboarding() {
       await api('/project', { ...identity, questions, idempotencyKey: key });
       if (saveOnly) {
         await reload();
-        await navigate('/app/overview');
+        await navigate(
+          billingSelection(searchParams)
+            ? `/app/billing${billingSelectionQuery(searchParams)}`
+            : '/app/overview',
+        );
         return;
       }
       const result = await api<{ runId: string }>('/scans', {
@@ -548,6 +573,12 @@ export function V2Onboarding() {
               : 'Define your company, competitors, and three buyer questions before running your first baseline.'
         }
       />
+      {billingSelection(searchParams) && !reviewMode && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Your plan choice is saved for Billing. Setup does not purchase a subscription or grant
+          monitoring access.
+        </p>
+      )}
       {reviewMode && (
         <div role="status" className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm">
           <p className="font-semibold">Staging onboarding review</p>
@@ -892,7 +923,13 @@ export function V2Questions() {
               ? 'Add an active prompt before monitoring.'
               : null;
   async function start() {
-    if (geoSettings.loading || geoSettings.error || geoSettings.data?.configured || reason) return;
+    if (
+      geoSettings.loading ||
+      geoSettings.error ||
+      (geoSettings.data?.configured && data.plan?.id !== 'legacy_perplexity') ||
+      reason
+    )
+      return;
     await action.run(async () => {
       const result = await api<{ runId: string }>('/scans', {
         mode: data.canScan ? 'today' : 'baseline',
@@ -1539,7 +1576,7 @@ function Answer({ observation: o, label }: { observation: V2Observation; label: 
     </article>
   );
 }
-export interface Billing {
+export interface Billing extends PlanBillingStatus {
   checkoutAvailable: boolean;
   portalAvailable: boolean;
   availabilityMessage: string | null;
@@ -1637,11 +1674,17 @@ export function V2Settings() {
       <section id="subscription" className={`${box} scroll-mt-20 space-y-4`}>
         <h2 className="text-lg font-medium">Monitoring and billing</h2>
         <p className="text-sm">
-          Perplexity monitoring · $19/month · One project · Up to 10 active questions · Daily checks
+          {billing.loading
+            ? 'Loading plan…'
+            : billing.error
+              ? 'Subscription status unavailable.'
+              : billing.data?.subscription
+                ? subscriptionLabel(billing.data.plan)
+                : 'No subscription. Review available plans in Billing & usage.'}
         </p>
         <p className="text-xs text-muted-foreground">
-          This subscription covers Perplexity monitoring. Other engines have separate access and
-          monitoring limits.
+          Your verified subscription determines monitoring engines and limits. Saved evidence stays
+          available when monitoring stops.
         </p>
         <p className="text-sm text-muted-foreground">
           {data.usage.today}/{data.usage.dailyLimit} attempts today · {data.usage.month}/
@@ -1660,15 +1703,9 @@ export function V2Settings() {
         </p>
         {billing.data?.availabilityMessage && <Notice>{billing.data.availabilityMessage}</Notice>}
         <div className="flex flex-wrap gap-3">
-          {billing.data?.checkoutAvailable && (
-            <Button
-              className="h-auto min-h-9 max-w-full whitespace-normal"
-              disabled={action.busy || fixture.requested}
-              onClick={() => void billingAction('checkout')}
-            >
-              Continue daily monitoring — $19/month
-            </Button>
-          )}
+          <Button asChild variant="outline">
+            <Link to="/app/billing">View plans & usage</Link>
+          </Button>
           {billing.data?.portalAvailable && (
             <Button
               variant="outline"

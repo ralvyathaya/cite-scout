@@ -1,5 +1,5 @@
 import { GeoSources } from './pages/v2/Sources';
-import { ArrowRight, Check, ChevronDown, FileText, ListChecks, Menu, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, FileText, ListChecks, Menu, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, Navigate, NavLink, Route, Routes } from 'react-router';
 import { Badge } from '@/client/components/ui/badge';
@@ -7,6 +7,8 @@ import { Button } from '@/client/components/ui/button';
 import { Card, CardContent } from '@/client/components/ui/card';
 import { Separator } from '@/client/components/ui/separator';
 import { brand } from '@/shared/brand';
+import { publicPlans } from '@/shared/plans';
+import { PricingPlans } from '@/client/components/PricingPlans';
 import { BrandLogo } from '@/client/components/BrandLogo';
 import { ErrorBoundary } from '@/client/ErrorBoundary';
 import { OfflineBanner } from '@/client/OfflineBanner';
@@ -239,8 +241,8 @@ function PilotOffer() {
   return (
     <div className="space-y-2 text-xs leading-relaxed text-muted-foreground">
       <p>
-        Try 3 buyer questions with an initial check and one follow-up. After the pilot, Perplexity
-        monitoring is $19/month for up to 10 questions checked daily.
+        Try 3 buyer questions with an initial check and one follow-up. New monitoring plans start at
+        ${publicPlans[0].monthlyPriceUsd}/month and are being prepared for public availability.
       </p>
       <p>
         The follow-up is scheduled 72 hours after the initial checks end. No card required.
@@ -276,7 +278,7 @@ function Hero() {
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <Link to="/pricing">View Perplexity plan</Link>
+              <Link to="/pricing">View monitoring plans</Link>
             </Button>
           </div>
           <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
@@ -420,40 +422,23 @@ function Honesty() {
 function PricingCta() {
   return (
     <section className="border-b">
-      <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 py-14 sm:px-6 lg:grid-cols-2">
-        <div>
+      <div className="mx-auto max-w-6xl space-y-7 px-4 py-14 sm:px-6">
+        <div className="max-w-2xl">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Perplexity monitoring
+            Monitoring plans
           </p>
           <h2 className="font-display mt-3 text-3xl lg:text-4xl">
-            Need a record of your Perplexity checks?
+            A plan for the questions that matter.
           </h2>
-          <p className="mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground">
-            Keep your buyer questions, saved Perplexity answers and comparisons together for
-            $19/month. Other engines and action playbooks are in preview and are not included.
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            Start with a focused set of buyer prompts. Add capacity as your monitoring grows, with
+            the same evidence and action tools in every plan.
           </p>
         </div>
-        <Card>
-          <CardContent className="px-6">
-            <h3 className="mb-3 text-lg font-semibold">Perplexity monitoring</h3>
-            <div className="mb-4 flex items-baseline gap-2">
-              <span className="text-4xl font-bold tabular-nums tracking-tight">$19</span>
-              <span className="text-sm text-muted-foreground">/ month after the pilot</span>
-            </div>
-            <PilotOffer />
-            <Button asChild className="mt-5 w-full">
-              <Link to="/app/onboarding">
-                Run my baseline <ArrowRight className="size-4" />
-              </Link>
-            </Button>
-            <Link
-              to="/pricing"
-              className="mt-3 block text-center text-xs text-muted-foreground underline underline-offset-4"
-            >
-              View plan details
-            </Link>
-          </CardContent>
-        </Card>
+        <PricingPlans />
+        <Link to="/pricing" className="block text-center text-sm underline underline-offset-4">
+          Compare plans and read the FAQ
+        </Link>
       </div>
     </section>
   );
@@ -636,8 +621,8 @@ function Demo() {
         </section>
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-accent p-5">
           <p className="max-w-xl text-sm leading-relaxed">
-            The full workflow is in preview. The $19/month plan covers Perplexity monitoring; other
-            engines and action playbooks are not included.
+            Explore the workflow with fictional data. Monitoring plans are being prepared; reviewing
+            this demo does not start monitoring or purchase a subscription.
           </p>
           <Button asChild variant="outline">
             <Link to="/pricing">
@@ -653,14 +638,13 @@ function Demo() {
 
 const pricingFaq = [
   {
-    question: 'Does the $19 plan include the full workflow?',
-    answer:
-      'No. The $19/month plan covers Perplexity monitoring. Multi-engine monitoring, suggested diagnoses and action playbooks are in preview and are not included. Access and pricing for these features have not been announced. The demo uses fictional data.',
+    question: 'What does every plan include?',
+    answer: `Starter, Growth and Pro include one brand workspace, Answers, Sources, Competitors, Diagnoses, Action Playbook and comparable follow-up measurements. The difference is capacity: ${publicPlans.map((plan) => `${plan.name} has ${String(plan.promptLimit)} active prompts and ${String(plan.dailyChecks)} daily checks`).join('; ')}. New plan sales remain closed until release checks are complete.`,
   },
   {
     question: 'What does CiteScout observe?',
     answer:
-      'CiteScout saves answers to your buyer questions from the Perplexity Agent API. These can differ from the Perplexity app. Each saved answer is a sample; a brand mention is not a ranking or evidence of increased revenue.',
+      'The new plans cover Perplexity, OpenAI Web Search API and Google AI Overviews. API results can differ from consumer apps. A saved answer is a sample; a brand mention is not a ranking, recommendation or evidence of increased revenue.',
   },
   {
     question: 'What is included in the pilot?',
@@ -668,24 +652,28 @@ const pricingFaq = [
       'Three fixed questions, an initial check, and one follow-up scheduled 72 hours after the initial checks end. No card required. The trial expires 14 days after it starts. Availability and usage limits can delay checks or prevent a retry. Contact us to start the pilot.',
   },
   {
-    question: 'Can I change my questions and competitors later?',
+    question: 'How are checks counted?',
     answer:
-      'The trial question set and brand configuration stay fixed while it runs. You can stop the trial or subscribe to change them. On the paid plan, you can monitor up to ten active questions and three competitors. Replacing a captured question keeps its history and starts a new comparison baseline.',
+      'One check means one prompt on one engine. Manual and scheduled checks share the daily allowance, with at most one new check for the same prompt and engine per UTC day. Reading or refreshing saved evidence does not use checks. Unused capacity does not roll over. An attempted check may return a partial answer or no AI answer.',
+  },
+  {
+    question: 'How does annual billing work?',
+    answer: `Annual subscriptions are billed upfront: ${publicPlans.map((plan) => `${plan.name} $${plan.annualPriceUsd.toLocaleString('en-US')}/year`).join(', ')}. This saves 16.7% compared with twelve monthly payments. Daily allowances stay the same throughout the year; annual billing does not provide a year of checks at once. Prices exclude applicable taxes.`,
+  },
+  {
+    question: 'Can I change my prompts and competitors later?',
+    answer:
+      'The trial question set and brand configuration stay fixed while it runs. Paid plans allow prompt changes within the selected plan limit and up to three tracked competitors. Replacing a captured prompt keeps its history and starts a new comparison baseline. A downgrade preserves saved prompts and asks you to choose which remain active if you exceed the new limit.',
   },
   {
     question: 'Can I cancel anytime?',
     answer:
-      'Yes, from the self-serve billing portal. Daily monitoring continues until the end of your paid period. Saved answers remain available to read and compare after your subscription or trial ends.',
-  },
-  {
-    question: 'Does the price guarantee daily results?',
-    answer:
-      'No. The $19/month plan covers one SaaS project and up to ten buyer questions. Daily checks depend on availability and usage limits. You can see when a check fails or is delayed; a failed check does not mean your brand was absent.',
+      'Yes, from the self-serve billing portal. Cancelling stops renewal; monitoring remains available until the end of the paid period, subject to usage and availability. Saved answers remain available to read after monitoring access ends.',
   },
   {
     question: 'What if my brand is missing or nothing changes?',
     answer:
-      'You can inspect the answer and see which tracked names matched. A follow-up with no detected change is a valid result. You decide whether the evidence suggests anything worth investigating; CiteScout does not promise improved visibility.',
+      'Inspect the original answer and its supporting sources. A follow-up with no detected change is a valid result. CiteScout does not promise visibility gains, rankings or revenue.',
   },
 ] as const;
 
@@ -753,93 +741,17 @@ function Pricing() {
               Keep checking the questions buyers ask.
             </h1>
             <p className="mt-4 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Monitor Perplexity answers with the $19/month plan. The demo shows the full AI
-              visibility workflow using fictional data.
+              One brand, three AI search engines, and the same evidence tools in every plan. Choose
+              the number of buyer prompts you need to monitor.
             </p>
           </div>
 
-          <div className="mx-auto mt-10 grid max-w-5xl items-start gap-5 lg:grid-cols-[1.25fr_1fr]">
-            <Card className="min-w-0 gap-0 shadow-sm">
-              <CardContent className="px-5 sm:px-6">
-                <Badge variant="secondary" className="mb-4">
-                  Monthly plan · Perplexity
-                </Badge>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-xl font-semibold tracking-tight">Perplexity monitoring</h2>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      For B2B SaaS founders and first marketers already checking Perplexity
-                      manually.
-                    </p>
-                  </div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-4xl font-bold tabular-nums tracking-tight">$19</span>
-                    <span className="text-sm text-muted-foreground">USD / month</span>
-                  </div>
-                </div>
-                <Separator className="my-6" />
-                <ul className="grid gap-2.5 text-sm">
-                  {[
-                    'One active project',
-                    'Up to 10 active buyer questions',
-                    '1–3 tracked competitors',
-                    'Answers from the Perplexity Agent API',
-                    'Daily checks, subject to availability and usage limits',
-                    'Saved answers, sources and comparable changes',
-                    'Secure self-serve billing',
-                    'Cancel anytime, keep your history',
-                  ].map((item) => (
-                    <li key={item} className="flex items-start gap-2.5">
-                      <Check
-                        className="mt-0.5 size-4 shrink-0 text-emerald-600"
-                        aria-hidden="true"
-                      />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
-                  Results can differ from the Perplexity app. Other engines, suggested diagnoses and
-                  action playbooks are separate from this subscription.
-                </p>
-                <Button asChild size="lg" className="mt-6 w-full">
-                  <Link to="/app/onboarding">
-                    Run my baseline <ArrowRight className="size-4" />
-                  </Link>
-                </Button>
-                <div className="mt-4 border-t pt-4">
-                  <PilotOffer />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="min-w-0 gap-0 border-primary/25 shadow-sm">
-              <CardContent className="px-5 sm:px-6">
-                <Badge variant="outline" className="mb-4 text-primary">
-                  In preview
-                </Badge>
-                <h2 className="text-xl font-semibold tracking-tight">AI visibility preview</h2>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  Group buyer questions, review original answers and suggested findings, plan work
-                  for your website or external sources, and compare follow-up checks.
-                </p>
-                <p className="mt-5 font-medium">
-                  The full workflow is not included in the $19 plan.
-                </p>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  Access and pricing for these features have not been announced. Explore the demo to
-                  see how the workflow fits together.
-                </p>
-                <Button asChild variant="outline" className="mt-6 w-full">
-                  <Link to="/demo">
-                    Explore the demo <ArrowRight className="size-4" />
-                  </Link>
-                </Button>
-                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  The demo uses fictional data. It does not create a project, start monitoring or
-                  grant access to preview features.
-                </p>
-              </CardContent>
-            </Card>
+          <div className="mt-9">
+            <PricingPlans />
+          </div>
+          <div className="mx-auto mt-8 max-w-2xl rounded-xl border bg-card p-5">
+            <h2 className="mb-3 font-semibold">Start with a small pilot</h2>
+            <PilotOffer />
           </div>
         </div>
         <Faq />
@@ -924,11 +836,12 @@ function Terms() {
         responsible for their prompts, domains, and use of the resulting research.
       </p>
       <p>
-        Billing, refunds, and cancellation: subscriptions renew monthly and can be cancelled at any
-        time from the self-serve billing portal. Cancelling stops future charges immediately and
-        preserves access until the end of the paid period. Because each observation is a live
-        third-party API call, completed scans are not refundable, but if something is clearly broken
-        on our side, email support@cite-scout.com and we will make it right.
+        Billing, refunds, and cancellation: subscriptions renew monthly or annually according to the
+        selected billing interval and can be cancelled at any time from the self-serve billing
+        portal. Cancelling stops future charges immediately and preserves access until the end of
+        the paid period. Because each observation is a live third-party API call, completed scans
+        are not refundable, but if something is clearly broken on our side, email
+        support@cite-scout.com and we will make it right.
       </p>
       <p>
         Contact:{' '}

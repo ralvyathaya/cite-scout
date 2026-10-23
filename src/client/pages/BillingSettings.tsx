@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
 } from '@/client/components/ui/alert-dialog';
 import { Badge } from '@/client/components/ui/badge';
+import { subscriptionLabel, type PlanBillingStatus } from '@/client/lib/billing-selection';
 import { Button } from '@/client/components/ui/button';
 import {
   Card,
@@ -29,7 +30,7 @@ import { PageState } from './AppShell';
 import { useDashboardContext } from './dashboard-context';
 import { fmtPercent } from './dashboard-view';
 
-interface BillingStatus {
+interface BillingStatus extends PlanBillingStatus {
   checkoutAvailable: boolean;
   portalAvailable: boolean;
   availabilityMessage: string | null;
@@ -266,7 +267,7 @@ export function BillingPage() {
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-base">CiteScout Monitor</CardTitle>
             <Badge variant="secondary" className="tabular-nums">
-              $19 USD / month
+              {load.status === 'ready' && load.data.plan ? load.data.plan.name : 'Plan & usage'}
             </Badge>
           </div>
           <CardDescription>
@@ -278,6 +279,9 @@ export function BillingPage() {
 
           <Separator />
 
+          {load.status === 'ready' && load.data.subscription && (
+            <p className="text-sm">{subscriptionLabel(load.data.plan)}</p>
+          )}
           <ul className="grid gap-2 text-sm sm:grid-cols-2">
             <li className="flex items-center gap-2">
               <span className="size-1 rounded-full bg-foreground" aria-hidden="true" />
@@ -285,7 +289,9 @@ export function BillingPage() {
             </li>
             <li className="flex items-center gap-2">
               <span className="size-1 rounded-full bg-foreground" aria-hidden="true" />
-              10 enabled prompts
+              {load.status === 'ready' && load.data.plan
+                ? `${String(load.data.plan.promptLimit)} active prompts`
+                : 'Prompt limit shown after plan verification'}
             </li>
             <li className="flex items-center gap-2">
               <span className="size-1 rounded-full bg-foreground" aria-hidden="true" />3 tracked
@@ -293,7 +299,7 @@ export function BillingPage() {
             </li>
             <li className="flex items-center gap-2">
               <span className="size-1 rounded-full bg-foreground" aria-hidden="true" />
-              One observation per prompt per UTC day
+              Plan-specific engine checks per UTC day
             </li>
             <li className="flex items-center gap-2">
               <span className="size-1 rounded-full bg-foreground" aria-hidden="true" />
@@ -306,7 +312,7 @@ export function BillingPage() {
           </ul>
 
           <div className="flex flex-wrap items-center gap-3">
-            {hasSubscription && !load.data.checkoutAvailable ? (
+            {hasSubscription ? (
               <Button
                 disabled={busy || !load.data.portalAvailable}
                 aria-busy={busy}
@@ -332,29 +338,8 @@ export function BillingPage() {
                 {busy ? 'Opening…' : 'Manage billing'}
               </Button>
             ) : (
-              <Button
-                disabled={busy || load.status !== 'ready' || !load.data.checkoutAvailable}
-                aria-busy={busy}
-                onClick={() => {
-                  setBusy(true);
-                  void fetch('/api/billing/checkout', { method: 'POST' })
-                    .then(async (response) => {
-                      const body = (await response.json()) as {
-                        data?: { url: string };
-                        error?: { message: string };
-                      };
-                      if (response.ok && body.data) window.location.assign(body.data.url);
-                      else toast.error(body.error?.message ?? 'Could not start checkout.');
-                    })
-                    .catch(() => {
-                      toast.error('Network error while starting checkout.');
-                    })
-                    .finally(() => {
-                      setBusy(false);
-                    });
-                }}
-              >
-                {busy ? 'Opening checkout…' : 'Open secure checkout'}
+              <Button asChild>
+                <Link to="/app/billing">View monitoring plans</Link>
               </Button>
             )}
             <Link

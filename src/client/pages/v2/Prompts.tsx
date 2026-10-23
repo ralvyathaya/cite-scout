@@ -136,6 +136,9 @@ export function PromptWorkspace({
   const [promptIds, setPromptIds] = useState<string[]>([]);
   const prompts = data.project?.questions ?? [];
   const active = prompts.filter((prompt) => prompt.enabled && !prompt.archivedAt);
+  const promptLimit = data.promptLimit ?? data.plan?.promptLimit;
+  const atLimit = promptLimit !== undefined && active.length >= promptLimit;
+  const overLimit = promptLimit !== undefined && active.length > promptLimit;
   const captures = [...(observations.data?.observations ?? []), ...(older?.observations ?? [])];
   const nextCursor = older ? older.nextCursor : observations.data?.nextCursor;
   const selectedSet = groups.data?.find((group) => group.id === monitorSet);
@@ -208,7 +211,11 @@ export function PromptWorkspace({
       <Dialog open={promptOpen} onOpenChange={setPromptOpen}>
         {data.canScan && (
           <DialogTrigger asChild>
-            <Button variant="outline">
+            <Button
+              variant="outline"
+              disabled={atLimit}
+              aria-describedby={atLimit ? 'prompt-limit-note' : undefined}
+            >
               <Plus aria-hidden="true" className="size-4" />
               Add prompt
             </Button>
@@ -217,7 +224,10 @@ export function PromptWorkspace({
         <DialogContent className="workspace-theme max-h-[85dvh] overflow-y-auto">
           <DialogTitle>Add prompt</DialogTitle>
           <DialogDescription>
-            Up to ten active prompts. New prompts join the next UTC day's checks.
+            {promptLimit === undefined
+              ? 'Your verified plan determines the active prompt limit.'
+              : `Your plan allows ${String(promptLimit)} active prompts.`}{' '}
+            New prompts join the next UTC day's checks.
           </DialogDescription>
           <form
             className="space-y-4"
@@ -350,7 +360,12 @@ export function PromptWorkspace({
               </p>
             )}
             <Button
-              disabled={busy || !promptIds.length || retired.length > 0 || promptIds.length > 10}
+              disabled={
+                busy ||
+                !promptIds.length ||
+                retired.length > 0 ||
+                promptIds.length > (promptLimit ?? 30)
+              }
             >
               Save group
             </Button>
@@ -395,6 +410,11 @@ export function PromptWorkspace({
   const content = (
     <div className="space-y-2">
       {notice}
+      {atLimit && !overLimit && (
+        <p id="prompt-limit-note" className="text-xs text-muted-foreground">
+          All {promptLimit} active prompt slots are in use. Pause a prompt to add another.
+        </p>
+      )}
       {settings.error && (
         <p role="alert" className="text-sm text-destructive">
           Monitoring configuration unavailable: {settings.error.message}
@@ -524,6 +544,12 @@ export function PromptWorkspace({
       {(observations.error ?? captureError) && (
         <p role="alert" className="text-sm text-destructive">
           Saved captures unavailable. {observations.error?.message ?? captureError?.message}
+        </p>
+      )}
+      {overLimit && (
+        <p role="alert" className="mb-3 rounded-lg border p-3 text-sm">
+          Your plan allows {promptLimit} active prompts. Pause prompts to choose which remain active
+          before starting another check. Your prompts and saved answers are preserved.
         </p>
       )}
       <div className="monitoring-table overflow-hidden rounded-b-xl border bg-card">
@@ -679,7 +705,9 @@ export function PromptWorkspace({
                                 ].map((label) => (
                                   <DropdownMenu.Item
                                     key={label}
-                                    disabled={busy || (label === 'Resume' && !data.canScan)}
+                                    disabled={
+                                      busy || (label === 'Resume' && (!data.canScan || atLimit))
+                                    }
                                     className="cursor-default rounded px-3 py-2 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-muted"
                                     onSelect={() =>
                                       void mutate(() =>
@@ -852,7 +880,7 @@ export function PromptWorkspace({
   );
   return (
     <section className="space-y-3">
-      {settings.data?.configured ? (
+      {settings.data?.configured && data.plan?.id !== 'legacy_perplexity' ? (
         <GeoMonitor
           compact
           heading={<WorkspaceHeading title="Prompts">{actions}</WorkspaceHeading>}

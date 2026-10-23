@@ -29,6 +29,8 @@ import {
   YAxis,
 } from 'recharts';
 import { Button } from '../../components/ui/button';
+import { PricingPlans } from '../../components/PricingPlans';
+import { billingSelection, subscriptionLabel } from '../../lib/billing-selection';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { Badge } from '../../components/ui/badge';
@@ -374,6 +376,8 @@ export function GeoMonitor({
   const unavailable = scopeEngines.find((engine) => !capabilities.data?.engines[engine]?.available);
   const unselected = scopeEngines.find((engine) => !settings.data?.engines.includes(engine));
   const active = data.project?.questions.filter((q) => q.enabled && !q.archivedAt) ?? [];
+  const promptLimit = data.promptLimit ?? data.plan?.promptLimit;
+  const overLimit = promptLimit !== undefined && active.length > promptLimit;
   const inactivePrompt = Boolean(
     promptIds?.some((id) => !active.some((prompt) => prompt.id === id)),
   );
@@ -385,19 +389,21 @@ export function GeoMonitor({
         capabilities.error?.message ??
         (!settings.data?.configured
           ? 'Save monitoring engines and configuration in Settings.'
-          : !allowance.data?.enabled
-            ? allowanceReason(allowance.data?.reason)
-            : !scopeEngines.length
-              ? 'Choose at least one configured engine.'
-              : unselected
-                ? `${geoSurfaces[unselected].label} is not selected in current monitoring settings.`
-                : unavailable
-                  ? `${geoSurfaces[unavailable].label} is currently unavailable. Review your selected engines in Settings.`
-                  : inactivePrompt
-                    ? 'This scope includes an inactive or historical prompt. Choose active prompts for a fresh check.'
-                    : !(promptIds?.length ?? active.length)
-                      ? 'Add an active prompt before monitoring.'
-                      : null));
+          : overLimit
+            ? `Your plan allows ${String(promptLimit)} active prompts. Pause prompts before starting another check.`
+            : !allowance.data?.enabled
+              ? allowanceReason(allowance.data?.reason)
+              : !scopeEngines.length
+                ? 'Choose at least one configured engine.'
+                : unselected
+                  ? `${geoSurfaces[unselected].label} is not selected in current monitoring settings.`
+                  : unavailable
+                    ? `${geoSurfaces[unavailable].label} is currently unavailable. Review your selected engines in Settings.`
+                    : inactivePrompt
+                      ? 'This scope includes an inactive or historical prompt. Choose active prompts for a fresh check.'
+                      : !(promptIds?.length ?? active.length)
+                        ? 'Add an active prompt before monitoring.'
+                        : null));
   const allowanceBlocked = settings.data?.configured && allowance.data?.enabled === false;
   const supportRequired = allowanceBlocked && supportReasons.has(allowance.data?.reason ?? '');
   const promptBlocked =
@@ -406,7 +412,7 @@ export function GeoMonitor({
     scopeEngines.length > 0 &&
     !unselected &&
     !unavailable &&
-    (inactivePrompt || !(promptIds?.length ?? active.length));
+    (overLimit || inactivePrompt || !(promptIds?.length ?? active.length));
   const runId = params.get('geoRun') ?? history.data?.runs[0]?.id;
   const selectedRun = history.data?.runs.find((run) => run.id === runId);
   const showRun =
@@ -472,9 +478,11 @@ export function GeoMonitor({
         <div className="min-w-0 flex-1 basis-72">
           <p id="geo-monitor-status" className={small}>
             {reason ??
-              (compact
-                ? `${String(scopeEngines.length)} engines · 5 min cooldown per prompt and engine`
-                : `Fresh check · ${String(scopeEngines.length)} selected engines · five-minute prompt/engine cooldown`)}
+              (data.plan
+                ? `${String(scopeEngines.length)} engines · one check per prompt and engine per UTC day`
+                : compact
+                  ? `${String(scopeEngines.length)} engines · 5 min cooldown per prompt and engine`
+                  : `Fresh check · ${String(scopeEngines.length)} selected engines · five-minute prompt/engine cooldown`)}
           </p>
           {reason && (
             <Link
@@ -3361,6 +3369,8 @@ export function GeoCompetitors() {
 export function GeoBilling() {
   const { data } = useOutletContext<WorkspaceContext>();
   const billing = useResource<Billing>('/api/billing/status');
+  const [params] = useSearchParams();
+  const mutation = useMutation();
   const allowance = useResource<GeoAllowance>('/geo/allowance');
   const supportRequired = supportReasons.has(allowance.data?.reason ?? '');
   return (
@@ -3373,7 +3383,7 @@ export function GeoBilling() {
           <Link to="/app/settings#subscription">Manage subscription</Link>
         </Button>
       </WorkspaceHeading>
-      <ErrorNotice error={billing.error ?? allowance.error} />
+      <ErrorNotice error={billing.error ?? allowance.error ?? mutation.error} />
       <div className="grid items-start gap-5 lg:grid-cols-[1fr_1.5fr]">
         <section className={box} aria-label="Current subscription">
           <p className={small}>Current subscription</p>
@@ -3390,7 +3400,7 @@ export function GeoBilling() {
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
                 {billing.data.subscription
-                  ? 'Perplexity monitoring · $19 / month'
+                  ? subscriptionLabel(billing.data.plan)
                   : 'Review subscription options in Settings. Saved answers remain available.'}
               </p>
               {billing.data.subscription?.endsAt && (
@@ -3442,8 +3452,10 @@ export function GeoBilling() {
                   How usage is counted
                 </summary>
                 <p className={`mt-2 ${small}`}>
-                  Usage counts reserved attempts for each prompt and engine, including pending,
-                  failed and canceled checks.
+                  One check is one prompt on one engine. Manual and scheduled checks share your
+                  daily allowance. Requests that were sent or have an uncertain result still count;
+                  a failure before dispatch releases its reservation. Reading saved evidence does
+                  not use checks.
                 </p>
               </details>
               <div className="mt-4 rounded-lg border bg-muted/30 p-3 text-sm" role="status">
@@ -3465,27 +3477,54 @@ export function GeoBilling() {
           )}
         </section>
       </div>
-      <details className={`${box} space-y-3`} aria-label="Perplexity plan usage">
-        <summary className="cursor-pointer font-semibold">Perplexity plan usage</summary>
-        <p className={small}>
-          This allowance is separate from the multi-engine monitoring limits above.
+      {billing.data?.availabilityMessage && (
+        <p role="status" className={small}>
+          {billing.data.availabilityMessage}
         </p>
-        <p className="text-sm tabular-nums">
-          {data.usage.today} / {data.usage.dailyLimit} attempts today · {data.usage.month} /{' '}
-          {data.usage.monthlyLimit} this month
-        </p>
-        <p className={small}>
-          Daily allowance resets {time(data.usage.resetAt)}. Monthly allowance resets{' '}
-          {time(data.usage.monthlyResetAt)} (UTC boundaries).
-        </p>
-        <Button asChild variant="outline" size="sm">
-          <Link to="/app/settings#subscription">Review plan & account</Link>
-        </Button>
-      </details>
+      )}
+      {!billing.loading &&
+        !billing.error &&
+        billing.data &&
+        (!billing.data.subscription ||
+          billing.data.checkoutOptions?.some((option) => option.available)) && (
+          <PricingPlans
+            initialInterval={billingSelection(params)?.interval}
+            billing={billing.data}
+            busy={mutation.busy}
+            onCheckout={(selection) => {
+              void mutation.run(async () => {
+                const result = await api<{ url: string }>('/api/billing/checkout', selection);
+                const url = new URL(result.url);
+                if (url.protocol !== 'https:') throw new Error('Invalid billing URL.');
+                window.location.assign(url.href);
+              });
+            }}
+          />
+        )}
+      {billing.data?.plan?.id === 'legacy_perplexity' && (
+        <details className={`${box} space-y-3`} aria-label="Perplexity plan usage">
+          <summary className="cursor-pointer font-semibold">Perplexity plan usage</summary>
+          <p className={small}>
+            This allowance is separate from the multi-engine monitoring limits above.
+          </p>
+          <p className="text-sm tabular-nums">
+            {data.usage.today} / {data.usage.dailyLimit} attempts today · {data.usage.month} /{' '}
+            {data.usage.monthlyLimit} this month
+          </p>
+          <p className={small}>
+            Daily allowance resets {time(data.usage.resetAt)}. Monthly allowance resets{' '}
+            {time(data.usage.monthlyResetAt)} (UTC boundaries).
+          </p>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/app/settings#subscription">Review plan & account</Link>
+          </Button>
+        </details>
+      )}
     </section>
   );
 }
 export function GeoSettingsPanel({ onReady }: { onReady: (ready: boolean) => void }) {
+  const { data: workspace } = useOutletContext<WorkspaceContext>();
   const settings = useResource<GeoSettings>('/geo/settings');
   const capabilities = useResource<GeoCapabilities>('/geo/capabilities');
   useEffect(() => {
@@ -3554,7 +3593,9 @@ export function GeoSettingsPanel({ onReady }: { onReady: (ready: boolean) => voi
                           checked={value.engines.includes(engine)}
                           disabled={
                             !value.engines.includes(engine) &&
-                            (!capability?.available || value.engines.length >= 4)
+                            (!capability?.available ||
+                              value.engines.length >= 4 ||
+                              Boolean(workspace.plan && !workspace.plan.engines.includes(engine)))
                           }
                           onChange={(event) => {
                             setSaved(false);
@@ -3572,7 +3613,9 @@ export function GeoSettingsPanel({ onReady }: { onReady: (ready: boolean) => voi
                           </span>
                           <span className={`block ${small}`}>
                             {capability?.available
-                              ? 'Available for monitoring'
+                              ? workspace.plan && !workspace.plan.engines.includes(engine)
+                                ? 'Outside your current plan'
+                                : 'Available for monitoring'
                               : 'Currently unavailable'}
                           </span>
                         </span>

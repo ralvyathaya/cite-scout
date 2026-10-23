@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
+import { billingSelectionQuery } from '@/client/lib/billing-selection';
 import { GoogleColorIcon } from '@/client/components/brand-icons';
 import { BrandLogo } from '@/client/components/BrandLogo';
 import { Button } from '@/client/components/ui/button';
@@ -21,6 +22,9 @@ interface LoginResponse {
 
 export function Login() {
   usePageTitle('Sign in');
+  const [params] = useSearchParams();
+  const selectionQuery = billingSelectionQuery(params);
+  const callbackURL = selectionQuery ? `/app/onboarding${selectionQuery}` : '/app/overview';
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -39,7 +43,7 @@ export function Login() {
         signal: AbortSignal.timeout(10_000),
         body: JSON.stringify({
           provider: 'google',
-          callbackURL: '/app/overview',
+          callbackURL,
           disableRedirect: true,
         }),
       });
@@ -122,7 +126,7 @@ export function Login() {
         body: JSON.stringify({
           email,
           turnstileToken,
-          callbackURL: '/app/overview',
+          callbackURL,
         }),
       });
       const body = (await response.json()) as LoginResponse;

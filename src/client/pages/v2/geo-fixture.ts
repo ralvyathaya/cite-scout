@@ -99,6 +99,8 @@ export class GeoFixtureWorkspace {
       },
       enrolled: true,
       canScan: true,
+      plan: null,
+      promptLimit: 10,
       internalTestAccess: false,
       trial: null,
       scansEnabled: true,
@@ -495,6 +497,10 @@ export class GeoFixtureWorkspace {
     if (route === '/api/billing/status' && method === 'GET')
       return {
         subscription: null,
+        plan: null,
+        plansEnabled: false,
+        checkoutOptions: [],
+        allowance: null,
         checkoutAvailable: false,
         portalAvailable: false,
         availabilityMessage:
@@ -510,7 +516,10 @@ export class GeoFixtureWorkspace {
         updatedAt: this.at.toISOString(),
         replacesQuestionId: null,
       };
-      if ((this.project.project?.questions.filter((q) => !q.archivedAt).length ?? 0) >= 10)
+      if (
+        (this.project.project?.questions.filter((q) => q.enabled && !q.archivedAt).length ?? 0) >=
+        (this.project.promptLimit ?? 10)
+      )
         throw new Error('Fixture prompt limit reached');
       this.project.project?.questions.push(question);
       return question;

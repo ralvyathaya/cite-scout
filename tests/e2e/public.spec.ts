@@ -16,8 +16,8 @@ test.describe('public visitor', () => {
       expect(copy).not.toMatch(
         /owner preview|legacy|synthetic|fixture|collector|provider calls|bounded recovery|baseline phase closes|founder-assisted/i,
       );
-      await expect(page.getByText(/in preview/i).first()).toBeVisible();
       if (path === '/') {
+        await expect(page.getByText('AI visibility · In preview', { exact: true })).toBeVisible();
         await expect(
           page.getByRole('main').getByRole('link', { name: 'Explore the demo', exact: true }),
         ).toHaveAttribute('href', '/demo');
@@ -25,18 +25,20 @@ test.describe('public visitor', () => {
         await page.screenshot({ path: testInfo.outputPath('landing-copy.png') });
       }
       if (path === '/demo') {
+        await expect(
+          page.getByText('AI visibility · Example workflow', { exact: true }),
+        ).toBeVisible();
         await expect(page.getByText(/does not run checks or show customer results/)).toBeVisible();
+        await expect(
+          page.getByText(
+            /reviewing this demo does not start monitoring or purchase a subscription/,
+          ),
+        ).toBeVisible();
       }
       if (path === '/pricing') {
+        await expect(page.getByRole('article', { name: 'Starter plan' })).toBeVisible();
         await expect(
-          page.getByText('The full workflow is not included in the $19 plan.', { exact: true }),
-        ).toBeVisible();
-        await expect(
-          page
-            .getByText('Access and pricing for these features have not been announced.', {
-              exact: false,
-            })
-            .first(),
+          page.getByText('New plans are being prepared.', { exact: false }),
         ).toBeVisible();
         await page.screenshot({ path: testInfo.outputPath('pricing-copy.png') });
       }
@@ -125,33 +127,55 @@ test.describe('public visitor', () => {
     expect(providerCalls).toEqual([]);
   });
 
-  test('pricing exposes one $19 plan with an honest FAQ', async ({ page }) => {
+  test('pricing exposes three plans and clear annual totals without claiming availability', async ({
+    page,
+  }, testInfo) => {
     await page.goto('/pricing');
-
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      'Keep checking the questions buyers ask.',
-    );
-    await expect(page.getByText('$19').first()).toBeVisible();
-    await expect(
-      page.getByRole('heading', { name: 'Perplexity monitoring', exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole('heading', { name: 'AI visibility preview', exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByText('The full workflow is not included in the $19 plan.'),
-    ).toBeVisible();
-    await expect(page.getByText(/No card required/).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Can I cancel anytime?' })).toBeVisible();
-
-    await expect(page.getByText('Frequently asked questions')).toBeVisible();
-    await expect(page.getByText('What does CiteScout observe?')).toBeVisible();
-    await expect(page.getByText('What is included in the pilot?')).toBeVisible();
-
-    const body = await page.locator('body').innerText();
-    for (const forbidden of ['trusted by', 'testimonial', '99.9%', 'rated']) {
-      expect(body.toLowerCase()).not.toContain(forbidden);
+    for (const [name, price, prompts] of [
+      ['Starter', '$29', '5 active buyer prompts'],
+      ['Growth', '$79', '15 active buyer prompts'],
+      ['Pro', '$149', '30 active buyer prompts'],
+    ] as const) {
+      const card = page.getByRole('article', { name: `${name} plan` });
+      await expect(card.getByText(price, { exact: true })).toBeVisible();
+      await expect(card.getByText(prompts, { exact: true })).toBeVisible();
     }
+    await expect(page.getByText('Recommended', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Monthly', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await page.getByRole('button', { name: 'Annual', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    for (const [name, total, equivalent] of [
+      ['Starter', '$290', '$24.17/month'],
+      ['Growth', '$790', '$65.83/month'],
+      ['Pro', '$1,490', '$124.17/month'],
+    ] as const) {
+      const card = page.getByRole('article', { name: `${name} plan` });
+      await expect(card.getByText(total, { exact: true })).toBeVisible();
+      await expect(
+        card.getByText(`Billed ${total} annually · equivalent to ${equivalent}`, { exact: true }),
+      ).toBeVisible();
+      await expect(card.getByRole('link', { name: `Set up ${name}` })).toHaveAttribute(
+        'href',
+        `/app/onboarding?planId=${name.toLowerCase()}&interval=year`,
+      );
+    }
+    await expect(
+      page
+        .getByRole('region', { name: 'Monitoring plans' })
+        .getByText(/Prices exclude applicable taxes/),
+    ).toBeVisible();
+    await expect(page.getByRole('status')).toContainText('Setup does not purchase a subscription');
+    const body = await page.locator('body').innerText();
+    expect(body).not.toMatch(
+      /\$19|most popular|Claude|Gemini|AI agent|multi-brand|ChatGPT Search/i,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath('pricing-plans-annual.png'),
+      fullPage: true,
+    });
   });
 
   test('FAQ answers expand and collapse', async ({ page }) => {
@@ -167,16 +191,10 @@ test.describe('public visitor', () => {
     await expect(page.getByText(/from the self-serve billing portal/)).toBeHidden();
   });
 
-  test('the existing Perplexity plan still leads visitors into sign-in for onboarding', async ({
-    page,
-  }) => {
+  test('plan setup preserves a bounded selection through sign-in', async ({ page }) => {
     await page.goto('/pricing');
-    const baseline = page
-      .getByRole('main')
-      .getByRole('link', { name: 'Run my baseline', exact: true });
-    await expect(baseline).toHaveAttribute('href', '/app/onboarding');
-    await baseline.click();
-    await expect(page).toHaveURL(/\/login$/);
+    await page.getByRole('link', { name: 'Set up Growth', exact: true }).click();
+    await expect(page).toHaveURL(/\/login\?planId=growth&interval=month$/);
     await expect(page.getByLabel('Work email', { exact: true })).toBeVisible();
   });
 
