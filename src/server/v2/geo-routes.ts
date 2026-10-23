@@ -67,7 +67,12 @@ const errors: Record<string, string> = {
   PAID_ACCESS_REQUIRED: 'A paid subscription is required for GEO checks.',
   PAID_STARTS_NEXT_UTC_DAY:
     'Paid monitoring starts on the next UTC day; your frozen trial follow-up remains available.',
-  INVALID_PROMPT_SELECTION: 'Select one to ten active prompts from this project.',
+  INVALID_PROMPT_SELECTION: 'Select active prompts from this project within your plan limit.',
+  QUESTION_LIMIT:
+    'Your active prompts exceed this plan’s limit. Pause prompts or choose a larger plan.',
+  ENGINE_NOT_IN_PLAN: 'Choose an engine included in your current plan.',
+  GEO_DAILY_PAIR_LIMIT:
+    'These prompts and engines already have a check today. New checks reset at midnight UTC.',
   ENGINE_NOT_SELECTED: 'Choose engines enabled in monitoring settings.',
   GEO_QUOTA_EXCEEDED: 'This check exceeds the available budget. Review Usage or wait for reset.',
   GEO_COOLDOWN_OR_IN_FLIGHT:

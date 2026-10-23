@@ -10,7 +10,10 @@ import {
   subscriptions,
 } from '../../db/schema';
 import { getEntitlement } from '../../domain/entitlements';
+import { subscriptionPlan } from '../billing-plans';
+import { monthlyCheckLimit } from '../../shared/plans';
 import { internalTestUserId } from '../config';
+import { customerSlotReservationSql } from '../scan-policy';
 import { canonicalSourceUrl, compareEvidence } from '../../domain/evidence';
 import type { EvidenceCapture, RequestContext, ComparableObservation } from '../../shared/evidence';
 import type {
@@ -42,24 +45,39 @@ export async function paidAccess(env: CloudflareBindings, userId: string) {
     .from(subscriptions)
     .where(eq(subscriptions.userId, userId))
     .get();
-  return getEntitlement(sub ?? null, new Date()).canScan;
+  return (
+    Boolean(subscriptionPlan(env, sub ?? null)) && getEntitlement(sub ?? null, new Date()).canScan
+  );
+}
+export async function userPlan(env: CloudflareBindings, userId: string) {
+  const sub = await drizzle(env.DB)
+    .select()
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId))
+    .get();
+  return subscriptionPlan(env, sub ?? null);
+}
+export async function activePromptLimit(env: CloudflareBindings, userId: string) {
+  return (await userPlan(env, userId))?.promptLimit ?? 10;
 }
 export async function projectPayload(
   env: CloudflareBindings,
   userId: string,
 ): Promise<V2ProjectPayload> {
   const db = drizzle(env.DB);
-  const [project, enrollment, paid] = await Promise.all([
+  const [project, enrollment, subscription] = await Promise.all([
     ownedProject(env, userId),
     db.select().from(pilotEnrollments).where(eq(pilotEnrollments.userId, userId)).get(),
-    paidAccess(env, userId),
+    db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).get(),
   ]);
   const now = new Date();
+  const plan = subscriptionPlan(env, subscription ?? null);
+  const paid = Boolean(plan) && getEntitlement(subscription ?? null, now).canScan;
   const date = now.toISOString().slice(0, 10);
   const month = date.slice(0, 7);
   const counts = await env.DB.prepare(
     `SELECT sum(CASE WHEN usage_date = ? THEN 1 ELSE 0 END) AS today,
-    count(*) AS month FROM provider_call_reservations WHERE user_id = ? AND usage_date LIKE ?`,
+    count(*) AS month FROM provider_call_reservations v WHERE user_id = ? AND usage_date LIKE ? ${plan && plan.id !== 'legacy_perplexity' ? `AND ${customerSlotReservationSql()}` : ''}`,
   )
     .bind(date, userId, `${month}%`)
     .first<{ today: number; month: number }>();
@@ -89,6 +107,8 @@ export async function projectPayload(
       : null,
     enrolled: Boolean(enrollment),
     canScan: paid,
+    plan,
+    promptLimit: plan?.promptLimit ?? 10,
     internalTestAccess: env.DEPLOYMENT_ENV === 'staging' && internalTestUserId(env) === userId,
     trial: enrollment
       ? {
@@ -101,8 +121,18 @@ export async function projectPayload(
     usage: {
       today: counts?.today ?? 0,
       month: counts?.month ?? 0,
-      dailyLimit: 10,
-      monthlyLimit: Math.min(350, Number(env.PER_USER_MONTHLY_PROVIDER_CALL_CAP)),
+      dailyLimit:
+        plan && plan.id !== 'legacy_perplexity'
+          ? Math.min(plan.dailyChecks, Number(env.GEO_PROJECT_DAILY_CALL_CAP) || 0)
+          : 10,
+      monthlyLimit: Math.min(
+        plan && plan.id !== 'legacy_perplexity' ? monthlyCheckLimit(plan, now) : 350,
+        Number(
+          plan && plan.id !== 'legacy_perplexity'
+            ? env.GEO_PROJECT_MONTHLY_CALL_CAP
+            : env.PER_USER_MONTHLY_PROVIDER_CALL_CAP,
+        ),
+      ),
       resetAt: nextDay(now).toISOString(),
       monthlyResetAt: new Date(
         Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),

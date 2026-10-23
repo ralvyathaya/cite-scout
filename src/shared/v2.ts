@@ -1,4 +1,5 @@
 import type { EvidenceCapture, EvidenceDelta, RequestContext } from './evidence';
+import type { SubscriptionPlan } from './plans';
 
 export interface V2Question {
   id: string;
@@ -20,6 +21,8 @@ export interface V2ProjectPayload {
   project: V2Project | null;
   enrolled: boolean;
   canScan: boolean;
+  plan?: SubscriptionPlan | null;
+  promptLimit?: number;
   internalTestAccess: boolean;
   trial: {
     state: string;

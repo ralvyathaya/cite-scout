@@ -104,6 +104,10 @@ const adapter = {
 };
 const env = {
   DB: adapter,
+  LEMON_SQUEEZY_STORE_ID: '1',
+  LEMON_SQUEEZY_PRODUCT_ID: '1',
+  LEMON_SQUEEZY_VARIANT_ID: '1',
+  LEMON_SQUEEZY_TEST_MODE: 'false',
   EXTERNAL_INTEGRATIONS_ENABLED: 'true',
   V2_SCANS_ENABLED: 'true',
   PERPLEXITY_API_KEY: 'synthetic',

@@ -1,8 +1,9 @@
+import { seedGeoSubscriber as seed, geoBindings as withBindings } from './geo-fixtures';
 import { Hono } from 'hono';
 import { env } from 'cloudflare:workers';
 import { expect, it } from 'vitest';
 import { v2Routes } from '../../src/server/v2/routes';
-import { cookie, seed, withBindings } from './fixtures';
+import { cookie } from './fixtures';
 import { processDueScans } from '../../src/server/v2/scans';
 import { saveGeoSettings } from '../../src/server/v2/geo-store';
 

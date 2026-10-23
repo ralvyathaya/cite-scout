@@ -1,7 +1,8 @@
+import { seedGeoSubscriber as seed, geoBindings as withBindings } from './geo-fixtures';
 import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createExecutionContext } from 'cloudflare:test';
-import { seed, withBindings, cookie } from './fixtures';
+import { cookie } from './fixtures';
 import { seedGeoEvidence } from './geo-fixtures';
 import {
   syncGeoActions,
@@ -32,7 +33,7 @@ describe('action ownership, lifecycle and deduplicated proof', () => {
     const env = bindings(),
       at = new Date(),
       owner = await seed(1, true, at),
-      engines = ['perplexity', 'google_aio', 'bing_copilot'] as const,
+      engines = ['perplexity', 'google_aio', 'openai_web_search'] as const,
       proofs = [];
     for (const engine of engines) {
       const proof = await seedGeoEvidence(env, owner, engine, at);

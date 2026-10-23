@@ -1,7 +1,8 @@
+import { seedGeoSubscriber as seed, geoBindings as withBindings } from './geo-fixtures';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { v2Routes } from '../../src/server/v2/routes';
-import { cookie, seed, withBindings } from './fixtures';
+import { cookie } from './fixtures';
 import { seedGeoEvidence } from './geo-fixtures';
 
 describe('private GEO evidence downloads', () => {

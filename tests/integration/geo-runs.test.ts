@@ -1,5 +1,6 @@
+import { seedGeoSubscriber as seed, geoBindings as withBindings } from './geo-fixtures';
 import { describe, expect, it, vi } from 'vitest';
-import { seed, withBindings } from './fixtures';
+
 import {
   readGeoRun,
   readGeoSettings,
@@ -148,7 +149,7 @@ describe('GEO accepted work and ownership', () => {
     ).toBe(2);
   });
 
-  it('starts a fresh manual run after a completed daily run without replacing frozen context', async () => {
+  it('does not spend another daily slot on a completed scheduled prompt and engine', async () => {
     const env = bindings(),
       owner = await seed(1, true, at);
     await saveGeoSettings(env, owner.userId, settings, at);
@@ -162,17 +163,16 @@ describe('GEO accepted work and ownership', () => {
     await env.DB.prepare("UPDATE geo_run_items SET status='succeeded' WHERE run_id=?")
       .bind(daily.id)
       .run();
-    const manual = await startGeoRun(
-      env,
-      owner.userId,
-      { requestId: crypto.randomUUID() },
-      new Date(at.getTime() + 300_001),
-    );
-    expect(manual.id).not.toBe(daily.id);
-    expect(manual.items[0]?.context.promptText).toBe('Best scheduling tool number 0');
-    expect(manual.items[0]?.context.brand.name).toBe('OrbitCal');
-    expect(manual.items[0]?.context.promptText).not.toContain('OrbitCal');
-    expect(manual.items[0]?.context.promptVersionId).toBe(daily.items[0]?.context.promptVersionId);
+    await expect(
+      startGeoRun(
+        env,
+        owner.userId,
+        { requestId: crypto.randomUUID() },
+        new Date(at.getTime() + 300_001),
+      ),
+    ).rejects.toThrow('GEO_DAILY_PAIR_LIMIT');
+    expect(daily.items[0]?.context.promptText).toBe('Best scheduling tool number 0');
+    expect(daily.items[0]?.context.brand.name).toBe('OrbitCal');
   });
 
   it('enforces project budget using the same sticky ledger as existing calls', async () => {
@@ -202,13 +202,17 @@ describe('GEO accepted work and ownership', () => {
     ).toBe(0);
   });
 
-  it('accepts ten prompts across four engines within D1 query and bound-parameter limits', async () => {
-    const env = bindings(),
-      owner = await seed(10, true, at);
+  it('accepts thirty Pro prompts across its three engines within D1 query and bound-parameter limits', async () => {
+    const env = {
+        ...bindings(),
+        GEO_PROJECT_DAILY_CALL_CAP: '100',
+        GEO_PROJECT_MONTHLY_CALL_CAP: '200',
+      },
+      owner = await seed(30, true, at);
     await saveGeoSettings(
       env,
       owner.userId,
-      { ...settings, engines: ['perplexity', 'google_aio', 'chatgpt_search', 'bing_copilot'] },
+      { ...settings, engines: ['perplexity', 'google_aio', 'openai_web_search'] },
       at,
     );
     const prepared = vi.spyOn(env.DB, 'prepare');
@@ -220,9 +224,9 @@ describe('GEO accepted work and ownership', () => {
     } finally {
       prepared.mockRestore();
     }
-    expect(run.items).toHaveLength(40);
+    expect(run.items).toHaveLength(90);
     expect(queries).toBeLessThanOrEqual(50);
-    expect((await geoAllowance(env, owner.userId, at)).today).toBe(40);
+    expect((await geoAllowance(env, owner.userId, at)).today).toBe(90);
   });
 
   it('keeps the frozen trial paid-start date and does not expose executor leases', async () => {

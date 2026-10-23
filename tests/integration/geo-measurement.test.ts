@@ -1,5 +1,6 @@
+import { seedGeoSubscriber as seed, geoBindings as withBindings } from './geo-fixtures';
 import { expect, it, vi } from 'vitest';
-import { seed, withBindings } from './fixtures';
+
 import { seedGeoEvidence } from './geo-fixtures';
 import { syncGeoActions, readGeoActions, readGeoAction } from '../../src/server/v2/actions';
 import {

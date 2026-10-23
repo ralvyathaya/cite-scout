@@ -23,7 +23,9 @@ import {
   type GeoSettingsInput,
 } from '../../shared/geo';
 import { getConfig, globalCollectorCallCap, internalTestUserId } from '../config';
-import { paidProjectSql } from '../scan-policy';
+import { paidProjectSql, planLimitSql, customerSlotReservationSql } from '../scan-policy';
+import { monthlyCheckLimit, publicPlans } from '../../shared/plans';
+import { userPlan } from './read-model';
 import { utcDate } from '../../domain/normalization';
 import { geoCollectorConfigured } from './geo-readiness';
 import { redactProviderData } from '../../integrations/provider-redaction';
@@ -31,11 +33,15 @@ import { redactProviderData } from '../../integrations/provider-redaction';
 const COOLDOWN = 300_000;
 export function geoAccessSql(env: CloudflareBindings, at: Date): string {
   const owner = internalTestUserId(env, at);
+  const paid = `(${paidProjectSql(env, 'geo')} AND (SELECT count(*) FROM prompts q WHERE q.project_id=p.id AND q.enabled=1 AND q.archived_at IS NULL)<=${planLimitSql(env, 'promptLimit')})`;
   if (getConfig(env).DEPLOYMENT_ENV === 'staging')
-    return `(${paidProjectSql} AND 0=1${owner ? ` OR p.user_id='${owner}'` : ''})`;
+    return `(${paid} AND 0=1${owner ? ` OR p.user_id='${owner}'` : ''})`;
   // Owner IDs are restricted to alphanumeric, underscore and hyphen by getConfig.
-  return owner ? `(${paidProjectSql} OR p.user_id='${owner}')` : paidProjectSql;
+  return owner ? `(${paid} OR p.user_id='${owner}')` : paid;
 }
+const publicEngines = publicPlans[0].engines.map((engine) => `'${engine}'`).join(',');
+const ownerTest = (env: CloudflareBindings, userId: string, at: Date) =>
+  internalTestUserId(env, at) === userId;
 const paidGate = (env: CloudflareBindings, at: Date) =>
   `${geoAccessSql(env, at)} AND NOT EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.paid_starts_at>?)`;
 const sql = (env: CloudflareBindings, query: string, ...params: unknown[]) =>
@@ -155,6 +161,13 @@ export async function saveGeoSettings(
 ) {
   const input = geoSettingsSchema.parse(value),
     project = await projectFor(env, userId);
+  const plan = await userPlan(env, userId);
+  if (
+    !ownerTest(env, userId, at) &&
+    plan &&
+    input.engines.some((engine) => !plan.engines.includes(engine))
+  )
+    throw new Error('ENGINE_NOT_IN_PLAN');
   if (
     input.engines.includes('claude_web_search') &&
     !geoCollectorConfigured(env, 'anthropic_messages')
@@ -221,7 +234,7 @@ async function selectedPrompts(env: CloudflareBindings, projectId: string, promp
     : rows.results;
   if (
     !selected.length ||
-    selected.length > 10 ||
+    selected.length > 30 ||
     (promptIds && selected.length !== promptIds.length)
   )
     throw new Error('INVALID_PROMPT_SELECTION');
@@ -315,13 +328,15 @@ export async function geoAllowance(
 ): Promise<GeoAllowance> {
   const project = await projectFor(env, userId),
     config = getConfig(env);
+  const plan = await userPlan(env, userId),
+    internal = ownerTest(env, userId, at);
   const date = utcDate(at),
     month = `${date.slice(0, 7)}%`;
   const counts = await sql(
     env,
     `SELECT
-    (SELECT count(*) FROM provider_call_reservations WHERE project_id=? AND usage_date=?) AS today,
-    (SELECT count(*) FROM provider_call_reservations WHERE project_id=? AND usage_date LIKE ?) AS month,
+    (SELECT count(*) FROM provider_call_reservations v WHERE project_id=? AND usage_date=? AND ${internal ? '1=1' : customerSlotReservationSql()}) AS today,
+    (SELECT count(*) FROM provider_call_reservations v WHERE project_id=? AND usage_date LIKE ? AND ${internal ? '1=1' : customerSlotReservationSql()}) AS month,
     (SELECT count(*) FROM provider_call_reservations WHERE usage_date=?) AS globalToday,
     (SELECT count(*) FROM provider_call_reservations) AS testTotal`,
     project.id,
@@ -331,8 +346,14 @@ export async function geoAllowance(
     date,
   ).first<{ today: number; month: number; globalToday: number; testTotal: number }>();
   const limits = {
-    projectDaily: config.GEO_PROJECT_DAILY_CALL_CAP,
-    projectMonthly: config.GEO_PROJECT_MONTHLY_CALL_CAP,
+    projectDaily: Math.min(
+      config.GEO_PROJECT_DAILY_CALL_CAP,
+      !internal && plan ? plan.dailyChecks : Infinity,
+    ),
+    projectMonthly: Math.min(
+      config.GEO_PROJECT_MONTHLY_CALL_CAP,
+      !internal && plan ? monthlyCheckLimit(plan, at) : Infinity,
+    ),
     globalDaily: globalCollectorCallCap(env),
   };
   const count = {
@@ -341,12 +362,24 @@ export async function geoAllowance(
     globalToday: counts?.globalToday ?? 0,
   };
   let reason: string | null = null;
+  const active = await sql(
+    env,
+    'SELECT count(*) AS n FROM prompts WHERE project_id=? AND enabled=1 AND archived_at IS NULL',
+    project.id,
+  ).first<number>('n');
   if (
     config.GEO_SCANS_ENABLED !== 'true' ||
     config.EXTERNAL_INTEGRATIONS_ENABLED !== 'true' ||
     config.V2_SCANS_ENABLED !== 'true'
   )
     reason = 'GEO_SCANS_DISABLED';
+  else if (
+    !internal &&
+    plan &&
+    plan.id !== 'legacy_perplexity' &&
+    Number(active) > plan.promptLimit
+  )
+    reason = 'QUESTION_LIMIT';
   else if (!(await hasPaidAccess(env, userId, at))) reason = 'PAID_ACCESS_REQUIRED';
   else if (await paidStartPending(env, userId, at)) reason = 'PAID_STARTS_NEXT_UTC_DAY';
   else if (Object.values(limits).some((limit) => limit <= 0)) reason = 'GEO_BUDGET_REQUIRED';
@@ -569,6 +602,10 @@ export async function startGeoRun(
   if (trigger === 'scheduled' && !settings.dailyEnabled) throw new Error('GEO_DAILY_DISABLED');
   const prompts = await selectedPrompts(env, project.id, input.promptIds);
   const engines = [...(input.engines ?? settings.engines)].sort();
+  const plan = await userPlan(env, userId),
+    internal = ownerTest(env, userId, at);
+  if (!internal && (!plan || engines.some((engine) => !plan.engines.includes(engine))))
+    throw new Error('ENGINE_NOT_IN_PLAN');
   if (engines.some((engine) => !settings.engines.includes(engine)))
     throw new Error('ENGINE_NOT_SELECTED');
   if (
@@ -578,18 +615,41 @@ export async function startGeoRun(
       config.GEO_INTERNAL_TEST_ANTHROPIC_MAX_COST_USD <= 0)
   )
     throw new Error('GEO_CLAUDE_DISABLED');
-  const { versioned, contexts } = await currentContexts(env, project, settings, prompts, engines);
-  const snapshotHash = await geoHash(contexts);
+  const { versioned, contexts: selectedContexts } = await currentContexts(
+    env,
+    project,
+    settings,
+    prompts,
+    engines,
+  );
+  let contexts = selectedContexts;
+  const scopeHash = await geoHash(contexts);
   const intent =
     trigger === 'scheduled'
-      ? `geo:daily:${project.id}:${utcDate(at)}:${snapshotHash}`
+      ? `geo:daily:${project.id}:${utcDate(at)}:${scopeHash}`
       : `geo:manual:${project.id}:${input.requestId}`;
   if (trigger === 'scheduled') {
     const daily = await sql(env, 'SELECT id FROM scan_runs WHERE intent_key=?', intent).first<{
       id: string;
     }>();
     if (daily) return readGeoRun(env, userId, daily.id);
+    if (!internal) {
+      const used = await sql(
+        env,
+        `SELECT v.prompt_id,v.provider FROM provider_call_reservations v WHERE v.project_id=? AND v.usage_date=? AND ${customerSlotReservationSql()}`,
+        project.id,
+        utcDate(at),
+      ).all<{ prompt_id: string; provider: string }>();
+      contexts = contexts.filter(
+        (context) =>
+          !used.results.some(
+            (pair) => pair.prompt_id === context.promptId && pair.provider === context.engine,
+          ),
+      );
+      if (!contexts.length) throw new Error('GEO_DAILY_PAIR_LIMIT');
+    }
   }
+  const snapshotHash = contexts === selectedContexts ? scopeHash : await geoHash(contexts);
   const runId = crypto.randomUUID(),
     date = utcDate(at),
     month = `${date.slice(0, 7)}%`,
@@ -642,8 +702,8 @@ export async function startGeoRun(
     AND NOT EXISTS(SELECT 1 FROM json_each(?) selected WHERE NOT EXISTS(SELECT 1 FROM prompts q
       WHERE q.project_id=? AND q.id=json_extract(selected.value,'$.id') AND q.text=json_extract(selected.value,'$.text')
       AND q.updated_at=json_extract(selected.value,'$.updated_at') AND q.enabled=1 AND q.archived_at IS NULL))
-    AND (SELECT count(*) FROM provider_call_reservations WHERE project_id=? AND usage_date=?) + ? <= ?
-    AND (SELECT count(*) FROM provider_call_reservations WHERE project_id=? AND usage_date LIKE ?) + ? <= ?
+    AND (SELECT count(*) FROM provider_call_reservations v WHERE project_id=? AND usage_date=? AND ${internal ? '1=1' : customerSlotReservationSql()}) + ? <= ?
+    AND (SELECT count(*) FROM provider_call_reservations v WHERE project_id=? AND usage_date LIKE ? AND ${internal ? '1=1' : customerSlotReservationSql()}) + ? <= ?
     AND (SELECT count(*) FROM provider_call_reservations WHERE usage_date=?) + ? <= ?
     AND (?=0 OR (SELECT count(*) FROM provider_call_reservations) + ? <= ?)
     AND NOT EXISTS(SELECT 1 FROM json_each(?) selected JOIN geo_run_items i
@@ -651,8 +711,17 @@ export async function startGeoRun(
       WHERE i.status IN ('pending','submitting','submitted','submission_uncertain'))
     AND NOT EXISTS(SELECT 1 FROM json_each(?) selected JOIN provider_call_reservations v
       ON v.project_id=p.id AND v.prompt_id=json_extract(selected.value,'$.promptId') AND v.provider=json_extract(selected.value,'$.engine')
-      WHERE v.reserved_at>? OR (v.status='reserved' AND v.lease_until>?))`,
+      WHERE (v.reserved_at>? OR (v.status='reserved' AND v.lease_until>?)) AND ${internal ? '1=1' : customerSlotReservationSql()})
+    ${
+      internal
+        ? ''
+        : `AND (SELECT count(*) FROM provider_call_reservations v WHERE v.project_id=p.id AND v.usage_date='${date}' AND ${customerSlotReservationSql()})+${String(contexts.length)}<=${planLimitSql(env, 'dailyChecks')}
+    AND NOT EXISTS(SELECT 1 FROM json_each(?) selected JOIN provider_call_reservations v
+      ON v.project_id=p.id AND v.prompt_id=json_extract(selected.value,'$.promptId') AND v.provider=json_extract(selected.value,'$.engine')
+      WHERE v.usage_date='${date}' AND ${customerSlotReservationSql()})`
+    }`,
     ...params,
+    ...(!internal ? [contextsJson] : []),
   );
   const items = contexts.map((context) => ({
     context,
@@ -751,6 +820,17 @@ export async function startGeoRun(
     throw new Error('GEO_QUOTA_EXCEEDED');
   if (!(await hasPaidAccess(env, userId, at))) throw new Error('PAID_ACCESS_REQUIRED');
   if (await paidStartPending(env, userId, at)) throw new Error('PAID_STARTS_NEXT_UTC_DAY');
+  if (
+    !internal &&
+    (await sql(
+      env,
+      `SELECT v.id FROM provider_call_reservations v JOIN json_each(?) selected ON v.prompt_id=json_extract(selected.value,'$.promptId') AND v.provider=json_extract(selected.value,'$.engine') WHERE v.project_id=? AND v.usage_date=? AND ${customerSlotReservationSql()} LIMIT 1`,
+      contextsJson,
+      project.id,
+      date,
+    ).first())
+  )
+    throw new Error('GEO_DAILY_PAIR_LIMIT');
   throw new Error('GEO_COOLDOWN_OR_IN_FLIGHT');
 }
 
@@ -790,6 +870,9 @@ export async function createDailyGeoRuns(env: CloudflareBindings, at = new Date(
           'CONFIGURATION_CHANGED',
           'PROJECT_NOT_FOUND',
           'GEO_DAILY_DISABLED',
+          'GEO_DAILY_PAIR_LIMIT',
+          'QUESTION_LIMIT',
+          'ENGINE_NOT_IN_PLAN',
         ].includes(code)
       )
         throw error;
@@ -856,23 +939,35 @@ export async function claimGeoItem(
   const config = getConfig(env),
     now = at.getTime(),
     token = crypto.randomUUID();
+  const itemOwner = await sql(
+    env,
+    'SELECT p.user_id FROM geo_run_items i JOIN projects p ON p.id=i.project_id WHERE i.id=?',
+    itemId,
+  ).first<{ user_id: string }>();
+  if (!itemOwner) return null;
+  const internal = ownerTest(env, itemOwner.user_id, at),
+    plan = await userPlan(env, itemOwner.user_id);
   const pendingAllowed =
     config.GEO_SCANS_ENABLED === 'true' &&
     config.EXTERNAL_INTEGRATIONS_ENABLED === 'true' &&
     config.V2_SCANS_ENABLED === 'true' &&
     config.GEO_GLOBAL_DAILY_CALL_CAP > 0 &&
     config.GEO_PROJECT_DAILY_CALL_CAP > 0 &&
-    config.GEO_PROJECT_MONTHLY_CALL_CAP > 0;
+    config.GEO_PROJECT_MONTHLY_CALL_CAP > 0 &&
+    (internal || (plan !== null && plan.id !== 'legacy_perplexity'));
   const date = utcDate(at);
   const budgetGate = `
-    (SELECT count(*) FROM provider_call_reservations WHERE project_id=geo_run_items.project_id AND usage_date=? AND id<>geo_run_items.reservation_id) < ?
-    AND (SELECT count(*) FROM provider_call_reservations WHERE project_id=geo_run_items.project_id AND usage_date LIKE ? AND id<>geo_run_items.reservation_id) < ?
+    (SELECT count(*) FROM provider_call_reservations v WHERE project_id=geo_run_items.project_id AND usage_date=? AND id<>geo_run_items.reservation_id AND ${internal ? '1=1' : customerSlotReservationSql()}) < ?
+    AND (SELECT count(*) FROM provider_call_reservations v WHERE project_id=geo_run_items.project_id AND usage_date LIKE ? AND id<>geo_run_items.reservation_id AND ${internal ? '1=1' : customerSlotReservationSql()}) < ?
     AND (SELECT count(*) FROM provider_call_reservations WHERE usage_date=? AND id<>geo_run_items.reservation_id) < ?`;
   const budgetParams = [
     date,
-    config.GEO_PROJECT_DAILY_CALL_CAP,
+    Math.min(config.GEO_PROJECT_DAILY_CALL_CAP, !internal && plan ? plan.dailyChecks : Infinity),
     `${date.slice(0, 7)}%`,
-    config.GEO_PROJECT_MONTHLY_CALL_CAP,
+    Math.min(
+      config.GEO_PROJECT_MONTHLY_CALL_CAP,
+      !internal && plan ? monthlyCheckLimit(plan, at) : Infinity,
+    ),
     date,
     globalCollectorCallCap(env),
   ];
@@ -887,7 +982,14 @@ export async function claimGeoItem(
         WHERE p.id=geo_run_items.project_id AND p.context_version=json_extract(geo_run_items.context_json,'$.contextVersion')
         AND g.revision=json_extract(geo_run_items.context_json,'$.settingsRevision')
         AND q.id=geo_run_items.prompt_id AND q.text=json_extract(geo_run_items.context_json,'$.promptText')
-        AND q.enabled=1 AND q.archived_at IS NULL AND ${paidGate(env, at)})))
+        AND q.enabled=1 AND q.archived_at IS NULL AND ${paidGate(env, at)}
+        ${
+          internal
+            ? ''
+            : `AND geo_run_items.engine IN (${publicEngines})
+          AND (SELECT count(*) FROM provider_call_reservations v WHERE v.project_id=p.id AND v.usage_date='${date}' AND v.id<>geo_run_items.reservation_id AND ${customerSlotReservationSql()})<${planLimitSql(env, 'dailyChecks')}
+          AND NOT EXISTS(SELECT 1 FROM provider_call_reservations v WHERE v.project_id=p.id AND v.prompt_id=geo_run_items.prompt_id AND v.provider=geo_run_items.engine AND v.usage_date='${date}' AND v.id<>geo_run_items.reservation_id AND ${customerSlotReservationSql()})`
+        })))
     AND EXISTS(SELECT 1 FROM projects p JOIN provider_call_reservations v ON v.project_id=p.id
       WHERE p.id=geo_run_items.project_id AND v.id=geo_run_items.reservation_id AND v.user_id=p.user_id AND v.status='reserved')`,
       token,

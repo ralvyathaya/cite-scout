@@ -82,7 +82,7 @@ const unique = (items: unknown[]) => new Set(items).size === items.length;
 export const geoRunRequestSchema = z
   .object({
     requestId: z.uuid(),
-    promptIds: z.array(z.string().min(1).max(100)).min(1).max(10).refine(unique).optional(),
+    promptIds: z.array(z.string().min(1).max(100)).min(1).max(30).refine(unique).optional(),
     engines: z.array(geoEngineSchema).min(1).max(4).refine(unique).optional(),
   })
   .strict();
@@ -105,7 +105,7 @@ export interface GeoSettings extends GeoSettingsInput {
 export const geoPromptSetSchema = z.object({
   id: z.string().min(1).max(100).optional(),
   name: z.string().trim().min(1).max(100),
-  promptIds: z.array(z.string().min(1).max(100)).min(1).max(10).refine(unique),
+  promptIds: z.array(z.string().min(1).max(100)).min(1).max(30).refine(unique),
 });
 export type GeoPromptSetInput = z.infer<typeof geoPromptSetSchema>;
 export interface GeoPromptSet {

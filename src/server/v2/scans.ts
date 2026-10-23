@@ -142,7 +142,7 @@ export async function startScan(
   await reconcileEligibility(env, now);
   const paid = await statement(
     env,
-    `SELECT p.id FROM projects p WHERE p.id=? AND ${paidSql}`,
+    `SELECT p.id FROM projects p WHERE p.id=? AND ${paidSql(env, mode === 'baseline' ? 'all' : 'legacy')}`,
     project.id,
     now.getTime(),
   ).first();
@@ -176,7 +176,7 @@ export async function startScan(
     trial_started_at=?,expires_at=?,frozen_question_ids_json=?,frozen_context_json=?
     WHERE user_id=? AND trial_state='eligible' AND trial_started_at IS NULL AND policy_version='pilot-v2-1'
     AND authority_confirmed=1 AND example_verified=1
-    AND EXISTS(SELECT 1 FROM projects p WHERE p.id=? AND p.context_version=? AND p.updated_at=? AND NOT ${paidSql})`,
+    AND EXISTS(SELECT 1 FROM projects p WHERE p.id=? AND p.context_version=? AND p.updated_at=? AND NOT ${paidSql(env, 'all')})`,
         now.getTime(),
         now.getTime() + 14 * DAY,
         JSON.stringify(context.questions.map((q) => q.id)),
@@ -198,7 +198,7 @@ export async function startScan(
       mode === 'baseline'
         ? `EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.trial_state='baseline'
       AND e.trial_started_at=? AND e.frozen_context_json=?)`
-        : `${paidSql} AND NOT EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.paid_starts_at>?)`
+        : `${paidSql(env, 'legacy')} AND NOT EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.paid_starts_at>?)`
     }`,
       runId,
       mode === 'baseline' ? 'trial' : 'manual',
@@ -249,12 +249,14 @@ async function reconcileEligibility(env: CloudflareBindings, now: Date) {
       env,
       `UPDATE scan_run_items SET status='cancelled',terminal_reason='geo_schedule_active'
       WHERE phase='paid' AND status='pending'
-      AND run_id IN(SELECT r.id FROM scan_runs r JOIN geo_settings g ON g.project_id=r.project_id)`,
+      AND run_id IN(SELECT r.id FROM scan_runs r JOIN geo_settings g ON g.project_id=r.project_id
+      JOIN projects p ON p.id=r.project_id WHERE ${paidSql(env, 'geo')})`,
+      now.getTime(),
     ),
     statement(
       env,
       `UPDATE pilot_enrollments SET paid_starts_at=?,trial_state='cancelled'
-      WHERE paid_starts_at IS NULL AND EXISTS(SELECT 1 FROM projects p WHERE p.user_id=pilot_enrollments.user_id AND ${paidSql})`,
+      WHERE paid_starts_at IS NULL AND EXISTS(SELECT 1 FROM projects p WHERE p.user_id=pilot_enrollments.user_id AND ${paidSql(env, 'all')})`,
       nextDay(now),
       now.getTime(),
     ),
@@ -283,7 +285,7 @@ async function reconcileEligibility(env: CloudflareBindings, now: Date) {
     statement(
       env,
       `UPDATE scan_run_items SET status='cancelled',terminal_reason='entitlement_ended'
-      WHERE status='pending' AND phase='paid' AND run_id IN(SELECT r.id FROM scan_runs r JOIN projects p ON p.id=r.project_id WHERE NOT ${paidSql})`,
+      WHERE status='pending' AND phase='paid' AND run_id IN(SELECT r.id FROM scan_runs r JOIN projects p ON p.id=r.project_id WHERE NOT ${paidSql(env, 'legacy')})`,
       now.getTime(),
     ),
     statement(
@@ -450,8 +452,7 @@ async function createDueRuns(env: CloudflareBindings, now: Date) {
   }
   const paid = await statement(
     env,
-    `SELECT p.user_id FROM projects p WHERE p.v2_enabled_at IS NOT NULL AND ${paidSql}
-    AND NOT EXISTS(SELECT 1 FROM geo_settings g WHERE g.project_id=p.id)
+    `SELECT p.user_id FROM projects p WHERE p.v2_enabled_at IS NOT NULL AND ${paidSql(env, 'legacy')}
     AND NOT EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.paid_starts_at>?)`,
     now.getTime(),
     now.getTime(),
@@ -503,7 +504,7 @@ async function claimItem(env: CloudflareBindings, item: DueItem, now: Date) {
   const date = dateOf(now);
   const gate =
     item.phase === 'paid'
-      ? `${paidSql} AND r.observation_date=?
+      ? `${paidSql(env, 'legacy')} AND r.observation_date=?
     AND NOT EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.paid_starts_at>?)`
       : `EXISTS(SELECT 1 FROM pilot_enrollments e WHERE e.user_id=p.user_id AND e.trial_state=? AND e.expires_at>?)`;
   const result = await env.DB.batch([

@@ -16,7 +16,7 @@ export async function runScheduledScans(
     `
     SELECT p.id AS projectId, p.user_id AS userId, pr.id AS promptId
     FROM projects p JOIN prompts pr ON pr.project_id = p.id AND pr.enabled = 1
-    WHERE ${paidProjectSql}
+    WHERE ${paidProjectSql(env, 'legacy')}
       AND NOT EXISTS (SELECT 1 FROM provider_call_reservations r
         WHERE r.idempotency_key = 'perplexity:' || p.id || ':' || pr.id || ':' || ?)
       AND (SELECT count(*) FROM provider_call_reservations WHERE usage_date = ?) < ?

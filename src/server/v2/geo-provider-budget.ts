@@ -1,6 +1,7 @@
 import { getConfig, internalTestUserId } from '../config';
 import { anthropicPricingVersion } from '../../integrations/anthropic/geo';
 import { utcDate } from '../../domain/normalization';
+import { geoAccessSql } from './geo-store';
 
 interface RequestAdmission {
   operationKey: string;
@@ -67,7 +68,7 @@ export async function reserveGeoProviderRequest(env: CloudflareBindings, input: 
   const result = await env.DB.prepare(
     `INSERT OR IGNORE INTO geo_provider_requests
     (operation_key,reservation_id,processing_id,project_id,collector,usage_date,reserved_cost_usd,state,created_at)
-    SELECT ?,?,?,s.project_id,?,?,?,'started',? FROM (${source} AND (?='' OR p.user_id=?)) s
+    SELECT ?,?,?,s.project_id,?,?,?,'started',? FROM (${source} AND (?='' OR p.user_id=?) AND ${geoAccessSql(env, at)}) s
     WHERE (?<>'serpapi' OR (SELECT count(*) FROM geo_provider_requests WHERE collector='serpapi' AND usage_date LIKE ?)< ?)
     AND (?=0 OR (
       NOT EXISTS(SELECT 1 FROM geo_provider_requests WHERE state='uncertain' OR (state='started' AND created_at<?) OR (state='completed' AND reported_cost_usd IS NULL AND estimated_cost_usd IS NULL))
@@ -86,6 +87,7 @@ export async function reserveGeoProviderRequest(env: CloudflareBindings, input: 
       at.getTime(),
       config.GEO_INTERNAL_TEST_USER_ID,
       config.GEO_INTERNAL_TEST_USER_ID,
+      at.getTime(),
       input.collector,
       `${utcDate(at).slice(0, 7)}%`,
       config.GEO_SERPAPI_MONTHLY_REQUEST_CAP,

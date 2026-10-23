@@ -13,7 +13,7 @@ import {
 } from '../../shared/geo-analysis';
 import { getConfig, internalTestUserId } from '../config';
 import { utcDate } from '../../domain/normalization';
-import { readGeoObservation } from './geo-store';
+import { geoAccessSql, readGeoObservation } from './geo-store';
 import { syncGeoActions } from './actions';
 import { reserveGeoProviderRequest, completeGeoProcessingRequest } from './geo-provider-budget';
 
@@ -89,8 +89,6 @@ async function reserveProcessing(
       rubric: geoVersions.rubric,
       policy: geoVersions.policy,
     });
-  if (config.DEPLOYMENT_ENV === 'staging' && internalTestUserId(env, at) !== userId)
-    throw new Error('PAID_ACCESS_REQUIRED');
   const replay = await sql(
     env,
     'SELECT * FROM geo_processing_attempts WHERE project_id=? AND request_id=?',
@@ -111,6 +109,16 @@ async function reserveProcessing(
   ).first<ProcessingRow>();
   if (cached) return cached;
   if (
+    !(await sql(
+      env,
+      `SELECT p.id FROM projects p WHERE p.id=? AND p.user_id=? AND ${geoAccessSql(env, at)}`,
+      observation.projectId,
+      userId,
+      at.getTime(),
+    ).first())
+  )
+    throw new Error('PAID_ACCESS_REQUIRED');
+  if (
     config.EXTERNAL_INTEGRATIONS_ENABLED !== 'true' ||
     (kind === 'analysis'
       ? config.GEO_ANALYSIS_ENABLED !== 'true'
@@ -125,7 +133,7 @@ async function reserveProcessing(
     env,
     `INSERT OR IGNORE INTO geo_processing_attempts(id,project_id,observation_id,request_id,kind,provider,model,rubric_version,policy_version,input_hash,input_json,state,created_at,due_at,usage_date)
     SELECT ?,p.id,?,?,?,?,?,?,?,?,?,'queued',?,?,? FROM projects p WHERE p.id=? AND p.user_id=?
-    AND EXISTS(SELECT 1 FROM geo_observations WHERE id=? AND project_id=p.id)
+    AND EXISTS(SELECT 1 FROM geo_observations WHERE id=? AND project_id=p.id) AND ${geoAccessSql(env, at)}
     AND (SELECT count(*) FROM geo_processing_attempts WHERE project_id=p.id AND usage_date=?)<?
     AND (SELECT count(*) FROM geo_processing_attempts WHERE usage_date=?)<?
     AND NOT EXISTS(SELECT 1 FROM geo_processing_attempts WHERE project_id=p.id AND kind=? AND input_hash=? AND state IN ('queued','running','completed') AND (kind<>'page' OR created_at>?))`,
@@ -145,6 +153,7 @@ async function reserveProcessing(
     observation.projectId,
     userId,
     observationId,
+    at.getTime(),
     date,
     config.GEO_PROCESSING_PROJECT_DAILY_CAP,
     date,
@@ -263,9 +272,11 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
     const captures = await sql(
       env,
       `SELECT o.id,p.user_id FROM geo_observations o JOIN projects p ON p.id=o.project_id
-      WHERE NOT EXISTS(SELECT 1 FROM geo_processing_attempts a WHERE a.observation_id=o.id AND a.kind='analysis')
+      WHERE ${geoAccessSql(env, new Date(clock()))}
+      AND NOT EXISTS(SELECT 1 FROM geo_processing_attempts a WHERE a.observation_id=o.id AND a.kind='analysis')
       AND (SELECT count(*) FROM geo_processing_attempts a WHERE a.project_id=p.id AND a.usage_date=?)<?
       ORDER BY o.captured_at,o.id LIMIT ?`,
+      clock(),
       utcDate(new Date(clock())),
       config.GEO_PROCESSING_PROJECT_DAILY_CAP,
       Math.max(0, Math.min(5, limit)),
@@ -316,12 +327,29 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
         : config.GEO_PAGE_CHECKS_ENABLED !== 'true')
     )
       continue;
+    if (
+      !(await sql(
+        env,
+        `SELECT p.id FROM projects p WHERE p.id=? AND p.user_id=? AND ${geoAccessSql(env, new Date(clock()))}`,
+        row.project_id,
+        row.user_id,
+        clock(),
+      ).first())
+    ) {
+      await sql(
+        env,
+        "UPDATE geo_processing_attempts SET failure_code='PAID_ACCESS_REQUIRED',due_at=? WHERE id=? AND state='queued'",
+        clock() + 300_000,
+        row.id,
+      ).run();
+      continue;
+    }
     const callDate = utcDate(new Date(clock())),
       token = crypto.randomUUID(),
       claim = await sql(
         env,
         `UPDATE geo_processing_attempts SET state='running',lease_token=?,lease_until=?,usage_date=?,failure_code=NULL WHERE id=? AND state='queued'
-        AND EXISTS(SELECT 1 FROM projects p WHERE p.id=geo_processing_attempts.project_id AND p.user_id=?)
+        AND EXISTS(SELECT 1 FROM projects p WHERE p.id=geo_processing_attempts.project_id AND p.user_id=? AND ${geoAccessSql(env, new Date(clock()))})
         AND (SELECT count(*) FROM geo_processing_attempts WHERE project_id=? AND usage_date=? AND id<>?)<?
         AND (SELECT count(*) FROM geo_processing_attempts WHERE usage_date=? AND id<>?)<?`,
         token,
@@ -329,6 +357,7 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
         callDate,
         row.id,
         row.user_id,
+        clock(),
         row.project_id,
         callDate,
         row.id,

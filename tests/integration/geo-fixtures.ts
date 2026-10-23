@@ -1,9 +1,110 @@
-import { saveGeoSettings, startGeoRun } from '../../src/server/v2/geo-store';
+import { readCurrentGeoContexts, readGeoRun, saveGeoSettings } from '../../src/server/v2/geo-store';
+import { env as testEnv } from 'cloudflare:workers';
+import { seed, withBindings } from './fixtures';
 import { buildGeoEvaluation, projectGeoClassification } from '../../src/domain/geo-classification';
 import { diagnoseGeo } from '../../src/domain/geo-diagnosis';
 import { validateDecision } from '../../src/integrations/decision/client';
 import type { GeoEngine, GeoObservation } from '../../src/shared/geo';
 import type { NativeDecision, GeoClassification } from '../../src/shared/geo-analysis';
+
+export function geoBindings(overrides: Record<string, string> = {}) {
+  return withBindings({
+    BILLING_PLAN_VARIANTS: JSON.stringify({
+      test: { pro: { month: '900001' } },
+      live: { pro: { month: '900002' } },
+    }),
+    ...overrides,
+  });
+}
+export async function seedGeoSubscriber(count = 3, paid = false, at = new Date()) {
+  const owner = await seed(count, paid, at);
+  if (paid)
+    await testEnv.DB.prepare(
+      "UPDATE subscriptions SET lemon_squeezy_variant_id='900001' WHERE user_id=?",
+    )
+      .bind(owner.userId)
+      .run();
+  return owner;
+}
+
+// Read-model fixtures include older same-day captures, independently of today's admission policy.
+async function savedRun(
+  env: CloudflareBindings,
+  owner: { userId: string; projectId: string },
+  engine: GeoEngine,
+  at: Date,
+) {
+  const promptId = await env.DB.prepare(
+    'SELECT id FROM prompts WHERE project_id=? AND enabled=1 AND archived_at IS NULL ORDER BY id LIMIT 1',
+  )
+    .bind(owner.projectId)
+    .first<string>('id');
+  if (!promptId) throw new Error('fixture prompt');
+  const context = (await readCurrentGeoContexts(env, owner.userId, [{ promptId, engine }]))[0];
+  if (!context) throw new Error('fixture context');
+  const id = crypto.randomUUID(),
+    itemId = crypto.randomUUID(),
+    reservationId = crypto.randomUUID(),
+    json = JSON.stringify(context),
+    now = at.getTime();
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO scan_runs(id,project_id,trigger_type,provider,status,observation_date,intent_key,context_version,due_at,created_at) VALUES(?,?,'manual','geo','completed',?,?,?,?,?)",
+    ).bind(
+      id,
+      owner.projectId,
+      at.toISOString().slice(0, 10),
+      `fixture:${id}`,
+      context.contextVersion,
+      now,
+      now,
+    ),
+    env.DB.prepare(
+      'INSERT OR IGNORE INTO geo_prompt_versions(id,project_id,prompt_id,text,created_at) VALUES(?,?,?,?,?)',
+    ).bind(context.promptVersionId, owner.projectId, promptId, context.promptText, now),
+    env.DB.prepare(
+      "INSERT INTO provider_call_reservations(id,idempotency_key,user_id,project_id,prompt_id,scan_run_id,provider,usage_date,status,reserved_at,item_id,request_context_json) VALUES(?,?,?,?,?,?,?,?,'succeeded',?,?,?)",
+    ).bind(
+      reservationId,
+      `fixture:${itemId}`,
+      owner.userId,
+      owner.projectId,
+      promptId,
+      id,
+      engine,
+      at.toISOString().slice(0, 10),
+      now,
+      itemId,
+      json,
+    ),
+    env.DB.prepare(
+      "INSERT INTO geo_run_items(id,run_id,project_id,prompt_id,prompt_version_id,engine,status,context_json,reservation_id,due_at,created_at) VALUES(?,?,?,?,?,?,'succeeded',?,?,?,?)",
+    ).bind(
+      itemId,
+      id,
+      owner.projectId,
+      promptId,
+      context.promptVersionId,
+      engine,
+      json,
+      reservationId,
+      now,
+      now,
+    ),
+    env.DB.prepare(
+      'INSERT INTO geo_run_snapshots(run_id,project_id,request_id,payload_hash,snapshot_hash,context_json,settings_revision) VALUES(?,?,?,?,?,?,?)',
+    ).bind(
+      id,
+      owner.projectId,
+      crypto.randomUUID(),
+      `fixture:${id}`,
+      `fixture:${id}`,
+      JSON.stringify([context]),
+      context.settingsRevision,
+    ),
+  ]);
+  return readGeoRun(env, owner.userId, id);
+}
 
 // Synthetic transport and inference data, confined to Vitest's isolated Worker/D1 database.
 export async function seedGeoEvidence(
@@ -42,7 +143,7 @@ export async function seedGeoEvidence(
     },
     at,
   );
-  const run = await startGeoRun(env, owner.userId, { requestId: crypto.randomUUID() }, at),
+  const run = await savedRun(env, owner, engine, at),
     item = run.items[0];
   if (!item) throw new Error('fixture item');
   const id = crypto.randomUUID(),
@@ -59,8 +160,8 @@ export async function seedGeoEvidence(
         schemaVersion: 'geo-capture-1',
         answerText: text,
         raw: { fixture: true },
-        model: engine === 'perplexity' ? 'fixture-model' : null,
-        modelReported: engine === 'perplexity',
+        model: engine === 'perplexity' ? 'fixture-model' : (item.context.requestedModel ?? null),
+        modelReported: engine === 'perplexity' || Boolean(item.context.requestedModel),
         sources: [
           {
             id: 'source-1',

@@ -92,8 +92,8 @@ export async function runScan(env: CloudflareBindings, input: ScanRequest): Prom
     .toSQL();
   const gate =
     input.trigger === 'trial'
-      ? `NOT ${paidProjectSql} AND p.trial_scan_reserved_at IS NULL`
-      : `${paidProjectSql}${input.trigger === 'manual' ? ' AND (p.manual_scan_last_used_on IS NULL OR p.manual_scan_last_used_on <> ?)' : ''}`;
+      ? `NOT ${paidProjectSql(env, 'all')} AND p.trial_scan_reserved_at IS NULL`
+      : `${paidProjectSql(env, 'legacy')}${input.trigger === 'manual' ? ' AND (p.manual_scan_last_used_on IS NULL OR p.manual_scan_last_used_on <> ?)' : ''}`;
   const claimStatements = allowed.map((prompt) =>
     env.DB.prepare(
       `

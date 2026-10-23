@@ -1,6 +1,7 @@
+import { seedGeoSubscriber as seed, geoBindings as withBindings } from './geo-fixtures';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deleteAccountData } from '../../src/server/account-deletion';
-import { seed, withBindings } from './fixtures';
+
 import { saveGeoSettings, startGeoRun } from '../../src/server/v2/geo-store';
 import {
   queueGeoAnalysis,
@@ -332,7 +333,7 @@ describe('independent analysis budget and stored capture recovery', () => {
         env,
         owner.userId,
         { requestId: crypto.randomUUID() },
-        new Date(at.getTime() + 301_000),
+        new Date(at.getTime() + 86400_000),
       ),
       item = run.items[0];
     if (!item) throw new Error('fixture item');
@@ -340,14 +341,14 @@ describe('independent analysis budget and stored capture recovery', () => {
     await env.DB.prepare(
       'INSERT INTO geo_observations(id,project_id,run_id,item_id,prompt_version_id,engine,model,status,context_json,capture_json,answer_text,captured_at) SELECT ?,project_id,?,?,prompt_version_id,engine,model,status,context_json,capture_json,answer_text,? FROM geo_observations WHERE id=?',
     )
-      .bind(secondId, run.id, item.id, at.getTime() + 301_000, id)
+      .bind(secondId, run.id, item.id, at.getTime() + 86400_000, id)
       .run();
     const second = await queueGeoAnalysis(
       env,
       owner.userId,
       secondId,
       crypto.randomUUID(),
-      new Date(at.getTime() + 301_000),
+      new Date(at.getTime() + 86400_000),
     );
     expect(second.id).not.toBe(first.id);
     expect(second.observationId).toBe(secondId);

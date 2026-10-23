@@ -747,6 +747,11 @@ describe('four-engine staging observation loop', () => {
 
   it('honors frozen historical DataForSEO collector after the current default changes to SerpApi', async () => {
     const { env, owner, run, at } = await accepted(['google_aio'], 'dataforseo_standard', true);
+    await env.DB.prepare(
+      "UPDATE subscriptions SET lemon_squeezy_variant_id='900001' WHERE user_id=?",
+    )
+      .bind(owner.userId)
+      .run();
     expect(run.items[0]?.context.collector).toBe('dataforseo_standard');
     const replies = [
       dfsReply(20100),
@@ -771,6 +776,7 @@ describe('four-engine staging observation loop', () => {
       DEPLOYMENT_ENV: 'production',
       GEO_INTERNAL_TEST_USER_ID: '',
       GEO_INTERNAL_TEST_EXPIRES_AT: '',
+      BILLING_PLAN_VARIANTS: JSON.stringify({ test: { pro: { month: '900001' } } }),
     };
     await processGeoCollectors(changed, 1, at);
     await processGeoCollectors(changed, 1, new Date(at.getTime() + 301_000));
