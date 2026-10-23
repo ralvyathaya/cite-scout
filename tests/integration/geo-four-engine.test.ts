@@ -818,6 +818,14 @@ describe('four-engine staging observation loop', () => {
       GEO_INTERNAL_TEST_USER_ID: '',
       GEO_INTERNAL_TEST_EXPIRES_AT: '',
       BILLING_PLAN_VARIANTS: JSON.stringify({ test: { pro: { month: '900001' } } }),
+      GEO_PRODUCTION_COST_POLICY: JSON.stringify({
+        version: 'synthetic-historical-collector',
+        globalMonthlyUsd: 10,
+        projectMonthlyUsd: 1,
+        globalMonthlyRequests: 100,
+        projectMonthlyRequests: 10,
+        requestCeilingsUsd: { dataforseo_standard: 0.1 },
+      }),
     };
     await processGeoCollectors(changed, 1, at);
     await processGeoCollectors(changed, 1, new Date(at.getTime() + 301_000));

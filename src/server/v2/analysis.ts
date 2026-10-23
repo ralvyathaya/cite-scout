@@ -14,6 +14,7 @@ import {
 import { getConfig, internalTestUserId } from '../config';
 import { utcDate } from '../../domain/normalization';
 import { geoAccessSql, readGeoObservation } from './geo-store';
+import { readProductionCostPolicy } from '../../shared/geo-cost-policy';
 import { syncGeoActions } from './actions';
 import { reserveGeoProviderRequest, completeGeoProcessingRequest } from './geo-provider-budget';
 
@@ -127,6 +128,12 @@ async function reserveProcessing(
     throw new Error('GEO_PROCESSING_DISABLED');
   if (config.GEO_PROCESSING_PROJECT_DAILY_CAP <= 0 || config.GEO_PROCESSING_GLOBAL_DAILY_CAP <= 0)
     throw new Error('GEO_PROCESSING_BUDGET_REQUIRED');
+  if (
+    kind === 'analysis' &&
+    config.DEPLOYMENT_ENV === 'production' &&
+    !readProductionCostPolicy(config.GEO_PRODUCTION_COST_POLICY)
+  )
+    throw new Error('GEO_PRODUCTION_COST_POLICY_REQUIRED');
   const date = utcDate(at),
     id = crypto.randomUUID();
   await sql(
@@ -298,6 +305,7 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
             'GEO_OBSERVATION_NOT_FOUND',
             'GEO_PROCESSING_DISABLED',
             'GEO_PROCESSING_BUDGET_REQUIRED',
+            'GEO_PRODUCTION_COST_POLICY_REQUIRED',
             'PAID_ACCESS_REQUIRED',
           ].includes(error.message)
         )
@@ -449,6 +457,7 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
         [
           'GEO_PROVIDER_BUDGET_BLOCKED',
           'GEO_TEST_BUDGET_REQUIRED',
+          'GEO_PRODUCTION_COST_POLICY_REQUIRED',
           'GEO_PROVIDER_QUOTA_EXCEEDED',
           'PAID_ACCESS_REQUIRED',
         ].includes(code)

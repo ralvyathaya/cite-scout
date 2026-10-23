@@ -25,6 +25,7 @@ import {
 import { getConfig, globalCollectorCallCap, internalTestUserId } from '../config';
 import { paidProjectSql, planLimitSql, customerSlotReservationSql } from '../scan-policy';
 import { monthlyCheckLimit, publicPlans } from '../../shared/plans';
+import { readProductionCostPolicy } from '../../shared/geo-cost-policy';
 import { userPlan } from './read-model';
 import { utcDate } from '../../domain/normalization';
 import { geoCollectorConfigured } from './geo-readiness';
@@ -383,6 +384,11 @@ export async function geoAllowance(
   else if (!(await hasPaidAccess(env, userId, at))) reason = 'PAID_ACCESS_REQUIRED';
   else if (await paidStartPending(env, userId, at)) reason = 'PAID_STARTS_NEXT_UTC_DAY';
   else if (Object.values(limits).some((limit) => limit <= 0)) reason = 'GEO_BUDGET_REQUIRED';
+  else if (
+    config.DEPLOYMENT_ENV === 'production' &&
+    !readProductionCostPolicy(config.GEO_PRODUCTION_COST_POLICY)
+  )
+    reason = 'GEO_PRODUCTION_COST_POLICY_REQUIRED';
   else if (
     count.today >= limits.projectDaily ||
     count.month >= limits.projectMonthly ||
@@ -862,6 +868,7 @@ export async function createDailyGeoRuns(env: CloudflareBindings, at = new Date(
         ![
           'GEO_QUOTA_EXCEEDED',
           'GEO_BUDGET_REQUIRED',
+          'GEO_PRODUCTION_COST_POLICY_REQUIRED',
           'GEO_COOLDOWN_OR_IN_FLIGHT',
           'GEO_CONFIGURATION_REQUIRED',
           'INVALID_PROMPT_SELECTION',

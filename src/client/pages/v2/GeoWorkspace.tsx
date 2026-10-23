@@ -108,12 +108,15 @@ const allowanceReasons: Record<string, string> = {
     'New checks are temporarily unavailable. Contact support to enable monitoring.',
   GEO_QUOTA_EXCEEDED: 'Monitoring allowance reached. Review Usage or wait for the UTC reset.',
   GEO_COST_UNKNOWN: 'New checks are temporarily unavailable. Contact support before trying again.',
+  GEO_PRODUCTION_COST_POLICY_REQUIRED:
+    'New checks are temporarily unavailable. Contact support before trying again.',
   GEO_SPEND_CAP_EXCEEDED:
     'New checks are temporarily unavailable. Contact support before trying again.',
 };
 const supportReasons = new Set([
   'GEO_BUDGET_REQUIRED',
   'GEO_COST_UNKNOWN',
+  'GEO_PRODUCTION_COST_POLICY_REQUIRED',
   'GEO_SPEND_CAP_EXCEEDED',
 ]);
 const allowanceReason = (reason: string | null | undefined) =>

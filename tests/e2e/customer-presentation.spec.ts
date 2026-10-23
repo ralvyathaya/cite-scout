@@ -299,6 +299,22 @@ test('accounting block keeps checks disabled and directs the customer to support
   expect(mutations).toEqual([]);
 });
 
+test('missing production cost policy offers support without exposing internal configuration', async ({
+  page,
+}) => {
+  const mutations = await customerWorkspace(page, false, 'GEO_PRODUCTION_COST_POLICY_REQUIRED');
+  await page.goto('/app/overview');
+  await expect(page.getByRole('button', { name: 'Monitor Prompts' })).toBeDisabled();
+  await expect(page.locator('#geo-monitor-status')).toContainText('Contact support');
+  await expect(
+    page.getByRole('link', { name: 'Contact support about monitoring' }),
+  ).toHaveAttribute('href', /^mailto:/);
+  await expect(page.getByText('GEO_PRODUCTION_COST_POLICY_REQUIRED', { exact: true })).toHaveCount(
+    0,
+  );
+  expect(mutations).toEqual([]);
+});
+
 test('workspace and public pages keep consistent local fonts, including portals', async ({
   page,
 }) => {

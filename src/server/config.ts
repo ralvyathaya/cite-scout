@@ -25,6 +25,7 @@ const configSchema = z.object({
     .default(''),
   GEO_INTERNAL_TEST_EXPIRES_AT: z.string().default(''),
   GEO_SERPAPI_MONTHLY_REQUEST_CAP: z.coerce.number().int().nonnegative().default(0),
+  GEO_PRODUCTION_COST_POLICY: z.string().default(''),
   GEO_INTERNAL_TEST_LIMITS: z.string().default(''),
   GEO_INTERNAL_TEST_SPEND_CAP_USD: z.coerce.number().nonnegative().default(0),
   GEO_INTERNAL_TEST_PERPLEXITY_MAX_COST_USD: z.coerce.number().nonnegative().default(0),

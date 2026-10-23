@@ -62,6 +62,8 @@ const errors: Record<string, string> = {
     'Claude monitoring is not enabled or has no request allowance. Saved answers remain available.',
   GEO_SCANS_DISABLED: 'New GEO checks are paused. Saved evidence remains available.',
   GEO_BUDGET_REQUIRED: 'The operator must configure a positive GEO budget before checks can start.',
+  GEO_PRODUCTION_COST_POLICY_REQUIRED:
+    'Monitoring is temporarily unavailable. Contact support; your saved answers remain available.',
   GEO_CONFIGURATION_REQUIRED: 'Save your engines, location and language before monitoring.',
   GEO_DAILY_DISABLED: 'Daily checks are disabled for this project.',
   PAID_ACCESS_REQUIRED: 'A paid subscription is required for GEO checks.',

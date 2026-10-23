@@ -310,6 +310,7 @@ export async function processGeoCollectors(env: CloudflareBindings, limit = 5, a
         [
           'GEO_PROVIDER_BUDGET_BLOCKED',
           'GEO_TEST_BUDGET_REQUIRED',
+          'GEO_PRODUCTION_COST_POLICY_REQUIRED',
           'GEO_PROVIDER_QUOTA_EXCEEDED',
         ].includes(code) &&
         !(await sql(

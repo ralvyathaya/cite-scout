@@ -18,6 +18,20 @@ const at = new Date('2026-10-23T12:00:00Z');
 const bindings = () =>
   withBindings({
     DEPLOYMENT_ENV: 'production',
+    GEO_PRODUCTION_COST_POLICY: JSON.stringify({
+      version: 'synthetic-plan-tests',
+      globalMonthlyUsd: 100,
+      projectMonthlyUsd: 10,
+      globalMonthlyRequests: 1000,
+      projectMonthlyRequests: 100,
+      requestCeilingsUsd: {
+        perplexity_api: 0.1,
+        openai_responses: 0.1,
+        serpapi: 0.01,
+        workers_ai: 0.01,
+        typesafe: 0.01,
+      },
+    }),
     LEMON_SQUEEZY_TEST_MODE: 'false',
     LEMON_SQUEEZY_STORE_ID: '1',
     LEMON_SQUEEZY_PRODUCT_ID: '2',
