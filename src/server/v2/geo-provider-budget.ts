@@ -123,17 +123,20 @@ export async function completeGeoProviderRequests(
     status: 'completed' | 'uncertain';
   },
 ) {
-  // SerpApi's free allowance is an estimate, never an invoice supplied by the response.
+  const stagingFreeSearch = getConfig(env).DEPLOYMENT_ENV === 'staging';
+  // Preserve staging's bounded free-search assumption; production has no verified search tariff.
   await env.DB.prepare(
-    `UPDATE geo_provider_requests SET state=?,reported_cost_usd=?,estimated_cost_usd=CASE WHEN collector='serpapi' AND ?='completed' THEN '0' ELSE ? END,
-    pricing_version=CASE WHEN collector='serpapi' THEN 'serpapi-free-250-2026-10-12' WHEN collector='openai_responses' THEN 'openai-gpt-6-luna-2026-10-12' WHEN collector='anthropic_messages' THEN '${anthropicPricingVersion}' ELSE NULL END
+    `UPDATE geo_provider_requests SET state=?,reported_cost_usd=CASE WHEN collector='serpapi' THEN NULL ELSE ? END,estimated_cost_usd=CASE WHEN collector='serpapi' THEN CASE WHEN ?=1 AND ?='completed' THEN '0' ELSE NULL END ELSE ? END,
+    pricing_version=CASE WHEN collector='serpapi' THEN ? WHEN collector='openai_responses' THEN 'openai-gpt-6-luna-2026-10-12' WHEN collector='anthropic_messages' THEN '${anthropicPricingVersion}' ELSE NULL END
     WHERE reservation_id=? AND state='started'`,
   )
     .bind(
       result.status,
       result.reportedCostUsd === null ? null : String(result.reportedCostUsd),
+      stagingFreeSearch ? 1 : 0,
       result.status,
       result.estimatedCostUsd === null ? null : String(result.estimatedCostUsd),
+      stagingFreeSearch ? 'serpapi-free-250-2026-10-12' : 'serpapi-unpriced',
       reservationId,
     )
     .run();

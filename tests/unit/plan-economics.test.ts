@@ -26,6 +26,30 @@ const input = {
   },
 };
 describe('package economics release gate', () => {
+  it('reports the maximum service cost and required savings without changing prices', () => {
+    const report = evaluatePlanEconomics(input);
+    for (const plan of report.plans) {
+      expect(plan.maximumServiceCostUsd).toBeCloseTo(
+        plan.monthlyRevenueUsd * 0.4 - plan.monthlyPaymentFeeUsd,
+      );
+      expect(plan.costReductionRequiredUsd).toBeCloseTo(
+        Math.max(0, (plan.serviceCostUsd ?? 0) - plan.maximumServiceCostUsd),
+      );
+    }
+    const unknown = evaluatePlanEconomics({
+      ...input,
+      costs: { ...input.costs, openaiPerCheckUsd: null },
+    });
+    expect(unknown.plans[0]?.costReductionRequiredUsd).toBeNull();
+  });
+  it('can model one customer tier without inventing accounts in other tiers', () => {
+    const report = evaluatePlanEconomics({ ...input, accounts: { starter: 1, growth: 0, pro: 0 } });
+    expect(report.searchRequests).toBe(310);
+    expect(report.plans.find((p) => p.planId === 'starter')?.searchAllocationUsd).toBe(150);
+    expect(() =>
+      evaluatePlanEconomics({ ...input, accounts: { starter: 0, growth: 0, pro: 0 } }),
+    ).toThrow();
+  });
   it.each([
     'providerRatesVerified',
     'completeCapturesVerified',

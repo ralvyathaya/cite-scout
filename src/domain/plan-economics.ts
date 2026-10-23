@@ -8,11 +8,15 @@ const economicsSchema = z
     monthDays: z.number().int().min(28).max(31),
     accounts: z
       .object({
-        starter: z.number().int().positive(),
-        growth: z.number().int().positive(),
-        pro: z.number().int().positive(),
+        starter: z.number().int().nonnegative(),
+        growth: z.number().int().nonnegative(),
+        pro: z.number().int().nonnegative(),
       })
-      .strict(),
+      .strict()
+      .refine(
+        (accounts) => accounts.starter + accounts.growth + accounts.pro > 0,
+        'At least one account is required.',
+      ),
     googleRequestsPerCheck: z.number().int().min(1).max(2),
     searchPlan: z
       .object({
@@ -80,6 +84,7 @@ export function evaluatePlanEconomics(value: unknown) {
       const monthlyPaymentFeeUsd =
         (planPrice(plan, interval) * input.payment.rate + input.payment.perTransactionUsd) /
         divisor;
+      const maximumServiceCostUsd = monthlyRevenueUsd * 0.4 - monthlyPaymentFeeUsd;
       return {
         planId: plan.id,
         interval,
@@ -87,6 +92,9 @@ export function evaluatePlanEconomics(value: unknown) {
         monthlyPaymentFeeUsd,
         searchAllocationUsd,
         serviceCostUsd,
+        maximumServiceCostUsd,
+        costReductionRequiredUsd:
+          serviceCostUsd === null ? null : Math.max(0, serviceCostUsd - maximumServiceCostUsd),
         contribution:
           serviceCostUsd === null
             ? null

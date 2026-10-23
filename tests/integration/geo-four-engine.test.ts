@@ -174,6 +174,47 @@ afterEach(async () => {
 });
 
 describe('four-engine staging observation loop', () => {
+  it('keeps unpriced production search usage unknown instead of borrowing another engine cost', async () => {
+    const { env, owner, run, at } = await accepted(['google_aio']);
+    const reservationId = run.items[0]?.reservationId;
+    if (!reservationId) throw new Error('Missing reservation');
+    await env.DB.prepare(
+      `INSERT INTO geo_provider_requests(operation_key,reservation_id,project_id,collector,usage_date,reserved_cost_usd,state,created_at) VALUES(?,?,?,'serpapi',?,'0','started',?)`,
+    )
+      .bind(
+        crypto.randomUUID(),
+        reservationId,
+        owner.projectId,
+        at.toISOString().slice(0, 10),
+        at.getTime(),
+      )
+      .run();
+    await completeGeoProviderRequests(
+      {
+        ...env,
+        DEPLOYMENT_ENV: 'production',
+        GEO_INTERNAL_TEST_USER_ID: '',
+        GEO_INTERNAL_TEST_EXPIRES_AT: '',
+      },
+      reservationId,
+      {
+        status: 'completed',
+        reportedCostUsd: 0.5,
+        estimatedCostUsd: 0.25,
+      },
+    );
+    expect(
+      await env.DB.prepare(
+        'SELECT reported_cost_usd,estimated_cost_usd,pricing_version FROM geo_provider_requests WHERE reservation_id=?',
+      )
+        .bind(reservationId)
+        .first(),
+    ).toEqual({
+      reported_cost_usd: null,
+      estimated_cost_usd: null,
+      pricing_version: 'serpapi-unpriced',
+    });
+  });
   it('uses the same prospective context for follow-up validation and fresh runs without changing history', async () => {
     const { env, owner, run } = await accepted([
       'perplexity',
