@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CiteScout · Blind review lokal</title>
+    <style nonce="__NONCE__">
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #f7f8fa;
+        color: #202329;
+        font:
+          15px/1.6 system-ui,
+          sans-serif;
+      }
+      header,
+      main {
+        max-width: 1300px;
+        margin: auto;
+        padding: 20px;
+      }
+      header {
+        border-bottom: 1px solid #dde1e6;
+      }
+      h1 {
+        font-size: 24px;
+        margin: 0;
+      }
+      h2 {
+        font-size: 19px;
+      }
+      h3 {
+        font-size: 16px;
+      }
+      p {
+        margin: 8px 0;
+      }
+      button,
+      input,
+      select {
+        max-width: 100%;
+        font: inherit;
+        border: 1px solid #bbc1ca;
+        background: white;
+        border-radius: 7px;
+        padding: 8px 12px;
+        min-height: 42px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid #245ae2;
+        outline-offset: 3px;
+      }
+      .bar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+        gap: 20px;
+      }
+      .panel {
+        min-width: 0;
+        background: white;
+        border: 1px solid #dde1e6;
+        border-radius: 10px;
+        padding: 20px;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font: inherit;
+      }
+      label.field {
+        overflow-wrap: anywhere;
+        display: block;
+        margin: 12px 0;
+      }
+      label.field select {
+        display: block;
+        width: 100%;
+        margin-top: 4px;
+      }
+      details {
+        border-top: 1px solid #e1e4e8;
+        padding: 12px 0;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .muted {
+        color: #58616e;
+      }
+      .save {
+        background: #202329;
+        color: white;
+        border-color: #202329;
+      }
+      .status {
+        min-height: 28px;
+        font-weight: 600;
+      }
+      .context {
+        overflow-wrap: anywhere;
+      }
+      .raw {
+        font-size: 13px;
+        color: #58616e;
+      }
+      #fields {
+        max-height: 75vh;
+        overflow: auto;
+        padding-right: 8px;
+      }
+      #reviewer {
+        max-width: 220px;
+      }
+      a {
+        color: #184ba8;
+      }
+      small {
+        display: block;
+      }
+      @media (max-width: 760px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        header,
+        main {
+          padding: 14px;
+        }
+        #fields {
+          max-height: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Review 20 jawaban AI</h1>
+      <p class="muted">
+        Lokal dan privat · Hanya bukti asli · Tidak ada hasil classifier atau panggilan AI
+      </p>
+      <div class="bar">
+        <label
+          >Nama reviewer
+          <input id="reviewer" autocomplete="name" placeholder="Isi nama lo" /></label
+        ><button id="previous">← Sebelumnya</button
+        ><select id="records" aria-label="Pilih jawaban"></select
+        ><button id="next">Berikutnya →</button>
+      </div>
+      <p id="progress" class="muted"></p>
+      <p id="status" class="status" role="status" aria-live="polite">Memuat packet lokal…</p>
+    </header>
+    <main>
+      <details open>
+        <summary>Mulai di sini</summary>
+        <ol>
+          <li>Isi nama reviewer, lalu baca prompt, konteks brand, jawaban asli, dan sumber.</li>
+          <li>
+            Pilih label berdasarkan bukti yang tersedia. Semua pilihan dimulai kosong; simpan draft
+            bila perlu.
+          </li>
+          <li>
+            Selesaikan kelompok Jawaban, Sumber, Bukti, lalu Temuan &amp; Tindakan. Klik Simpan
+            sebelum pindah jawaban.
+          </li>
+        </ol>
+        <p>
+          Nama disebut ≠ direkomendasikan. Sumber ditemukan ≠ dirujuk dalam jawaban. Tidak muncul ≠
+          situs diblokir crawler. Jika bukti tidak cukup, gunakan pilihan
+          unknown/unclear/unavailable yang tersedia; jangan menebak.
+        </p>
+        <p>
+          Temuan <strong>supported</strong> perlu bukti yang benar-benar mendukung;
+          <strong>suspected</strong> masih dugaan; <strong>none</strong> berarti temuan itu tidak
+          berlaku. Tugas “yes” harus berguna dan berdasar pada bukti jawaban ini.
+        </p>
+      </details>
+      <div class="layout">
+        <article class="panel">
+          <h2 id="prompt"></h2>
+          <p id="context" class="context muted"></p>
+          <h3>Jawaban asli</h3>
+          <p class="raw">Teks asli, termasuk Markdown; tidak dipotong atau dinormalisasi.</p>
+          <pre id="answer"></pre>
+          <details open>
+            <summary>Sumber asli</summary>
+            <div id="sources"></div>
+          </details>
+          <details>
+            <summary>Fakta produk &amp; pemeriksaan yang tersedia</summary>
+            <pre id="facts"></pre>
+          </details>
+          <details>
+            <summary>Kandidat bukti dari teks asli</summary>
+            <pre id="candidates"></pre>
+          </details>
+        </article>
+        <section class="panel">
+          <h2 id="heading" tabindex="-1">Label manusia</h2>
+          <p class="muted">Pilih sendiri; tidak ada label otomatis.</p>
+          <div id="fields"></div>
+          <div class="bar">
+            <button id="save" class="save">Simpan jawaban ini</button
+            ><button id="complete">Konfirmasi seluruh review selesai</button>
+          </div>
+          <p class="muted">
+            Penyimpanan hanya memperbarui human-labels.json lokal. Freeze dan scoring dilakukan
+            setelah review manusia selesai.
+          </p>
+        </section>
+      </div>
+    </main>
+    <script nonce="__NONCE__">
+      const token = location.hash.slice(1) || sessionStorage.getItem('geo-review-token');
+      if (location.hash) {
+        sessionStorage.setItem('geo-review-token', token);
+        history.replaceState(null, '', '/');
+      }
+      const el = (id) => document.getElementById(id);
+      let state,
+        index = 0,
+        dirty = false,
+        busy = false;
+      const labels = {
+        captureQuality: 'Kelengkapan tangkapan',
+        answerQuality: 'Kualitas jawaban',
+        brandPresence: 'Apakah brand disebut?',
+        brandStance: 'Sikap terhadap brand',
+        evidenceSupport: 'Dukungan bukti',
+      };
+      const request = async (path, body) => {
+        const response = await fetch(path, {
+          method: body ? 'POST' : 'GET',
+          headers: {
+            'X-Review-Token': token,
+            ...(body ? { 'Content-Type': 'application/json' } : {}),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error);
+        return data;
+      };
+      const remaining = () =>
+        state.labels.records.reduce(
+          (n, row) => n + Object.values(row.values).filter((v) => v === null).length,
+          0,
+        );
+      function render() {
+        const row = state.review[index],
+          saved = state.labels.records.find((r) => r.id === row.id);
+        dirty = false;
+        el('records').replaceChildren(
+          ...state.review.map((r, i) => {
+            const o = document.createElement('option');
+            o.value = i;
+            o.textContent = `${i + 1}/${state.review.length} · ${r.context.engine || 'engine'} · ${r.context.promptText.slice(0, 48)}`;
+            return o;
+          }),
+        );
+        el('records').value = index;
+        el('reviewer').value = state.labels.reviewedBy;
+        el('prompt').textContent = row.context.promptText;
+        el('context').textContent =
+          `Brand: ${row.context.brand.name} · ${row.context.brand.domain || ''} · ${row.context.engine} · ${row.capturedAt}`;
+        el('answer').textContent = row.answerText || 'Tidak ada teks jawaban pada tangkapan ini.';
+        el('sources').replaceChildren(
+          ...row.sources.map((s) => {
+            const p = document.createElement('p');
+            p.textContent = `${s.id} · ${s.title || s.url} · ${s.referenceLevel}`;
+            const a = document.createElement('a');
+            try {
+              const u = new URL(s.url);
+              if (['http:', 'https:'].includes(u.protocol) && !u.username && !u.password) {
+                a.href = u.href;
+                a.textContent = ' Buka sumber';
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                p.append(a);
+              }
+            } catch {}
+            return p;
+          }),
+        );
+        el('facts').textContent = JSON.stringify(
+          { criteria: row.criteria, checks: row.checks, competitors: row.context.competitors },
+          null,
+          2,
+        );
+        el('candidates').textContent = JSON.stringify(row.candidates, null, 2);
+        const groups = new Map([
+          ['Jawaban', []],
+          ['Sumber', []],
+          ['Bukti & kesesuaian', []],
+          ['Temuan & tindakan', []],
+        ]);
+        for (const [field, options] of Object.entries(row.options)) {
+          const group = field.startsWith('source.')
+            ? 'Sumber'
+            : /^(evidence|fit|competitor)\./.test(field)
+              ? 'Bukti & kesesuaian'
+              : /^(diagnosis|task)\./.test(field)
+                ? 'Temuan & tindakan'
+                : 'Jawaban';
+          const label = document.createElement('label');
+          label.className = 'field';
+          label.textContent = labels[field] || field.replaceAll('_', ' ');
+          const select = document.createElement('select');
+          select.dataset.field = field;
+          select.setAttribute('aria-label', labels[field] || field);
+          const empty = document.createElement('option');
+          empty.value = '';
+          empty.textContent = '— Belum dinilai —';
+          select.append(empty);
+          for (const value of options) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value.replaceAll('_', ' ');
+            select.append(option);
+          }
+          select.value = saved.values[field] || '';
+          select.disabled = state.locked;
+          select.onchange = () => {
+            dirty = true;
+            el('status').textContent = 'Perubahan belum disimpan.';
+          };
+          label.append(select);
+          groups.get(group).push(label);
+        }
+        el('fields').replaceChildren(
+          ...[...groups].map(([name, fields]) => {
+            const d = document.createElement('details');
+            d.open = name === 'Jawaban';
+            const s = document.createElement('summary');
+            s.textContent = `${name} · ${fields.length} label`;
+            d.append(s, ...fields);
+            return d;
+          }),
+        );
+        el('progress').textContent =
+          `Jawaban ${index + 1} dari ${state.review.length} · ${remaining()} label belum dinilai`;
+        el('previous').disabled = index === 0;
+        el('next').disabled = index === state.review.length - 1;
+        el('save').disabled = state.locked;
+        el('complete').disabled = state.locked || remaining() > 0;
+        el('status').textContent = state.locked
+          ? 'Label sudah dikunci; hanya dapat dibaca.'
+          : state.labels.reviewedAt
+            ? 'Review dikonfirmasi selesai. Kabari Codex untuk freeze dan scoring.'
+            : 'Baca jawaban, lalu pilih label manusia.';
+      }
+      async function save(complete = false) {
+        if (!state || busy || state.locked) return;
+        busy = true;
+        const controls = [...document.querySelectorAll('input,select,button')].map((control) => [
+          control,
+          control.disabled,
+        ]);
+        for (const [control] of controls) control.disabled = true;
+        let saved = false,
+          message;
+        try {
+          const values = Object.fromEntries(
+            [...el('fields').querySelectorAll('select')].map((s) => [
+              s.dataset.field,
+              s.value || null,
+            ]),
+          );
+          const data = await request('/save', {
+            version: state.version,
+            reviewedBy: el('reviewer').value,
+            recordId: state.review[index].id,
+            values,
+            complete,
+          });
+          state = { ...state, ...data };
+          saved = true;
+          message = complete
+            ? 'Review selesai. Kabari Codex untuk freeze dan scoring.'
+            : 'Tersimpan. Lo bisa lanjut ke jawaban berikutnya.';
+        } catch (error) {
+          message = error.message;
+        } finally {
+          busy = false;
+          for (const [control, disabled] of controls) control.disabled = disabled;
+          if (saved) render();
+          el('status').textContent = message;
+        }
+      }
+      function move(to) {
+        if (!state || busy) return;
+        if (dirty) {
+          el('status').textContent = 'Simpan perubahan sebelum pindah jawaban.';
+          el('records').value = index;
+          return;
+        }
+        index = to;
+        render();
+        el('heading').focus();
+      }
+      el('reviewer').oninput = () => {
+        dirty = true;
+      };
+      el('save').onclick = () => void save();
+      el('complete').onclick = () => {
+        if (confirm('Semua label sudah dinilai sendiri berdasarkan bukti?')) void save(true);
+      };
+      el('previous').onclick = () => move(index - 1);
+      el('next').onclick = () => move(index + 1);
+      el('records').onchange = (e) => move(Number(e.target.value));
+      addEventListener('beforeunload', (e) => {
+        if (dirty) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      });
+      void request('/state')
+        .then((data) => {
+          state = data;
+          render();
+        })
+        .catch((error) => {
+          el('status').textContent = error.message;
+        });
+    </script>
+  </body>
+</html>

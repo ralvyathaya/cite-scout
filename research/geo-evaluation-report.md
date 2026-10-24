@@ -1,5 +1,7 @@
 # GEO classification evaluation
 
+Checkpoint on 24 October 2026: the owner has saved the five primary Answer labels for two records (10 of 1,249 fields). No record has all required detail labels yet; no completion timestamp, label lock or scored report exists. These are partial human-review drafts, not a G3 pass. The historical counts below describe the original export.
+
 Status on 2026-10-16: offline evaluation tooling is ready; **G3 is pending human labels**. Twenty stored owner-staging observations and classifier outputs were exported read-only. No capture, inference, deployment or paid request was made. Synthetic tests and JSON validation do not establish real model accuracy.
 
 | Evidence                                           | Current result                      |
@@ -34,6 +36,16 @@ Input is `{dataset, expectedObservationIds, records}`. Dataset is `real` or `syn
 Preparation freezes SHA-256 hashes of the corpus, original inputs, rubric/policy versions, groups and partitions. Shared prompt IDs/families, near-duplicate prompts and sufficiently long near-duplicate answers are joined transitively across dates. Inspect grouping before labeling; incorrect grouping needs a new packet. The deterministic split assigns roughly one-third of groups to held-out review.
 
 The reviewer opens **only `packet.json` and `human-labels.json`** while labeling. The packet contains the original answer, context, sources, supplied checks/facts, exact UTF-16 candidate quotes and allowed labels. It withholds classifier decisions, probabilities, diagnoses and task predictions. Do not inspect the source export or model results while creating blind labels.
+
+For the existing owner packet, an optional local form avoids editing JSON by hand:
+
+```sh
+npx tsx scripts/review-geo.ts
+```
+
+Open the printed loopback link on this laptop. The form reads only the blind packet and human labels, starts all unreviewed fields blank, and never calls an AI provider. Enter the reviewer name; review one answer at a time through Answer, Sources, Evidence, and Findings/Tasks sections. Save each draft before moving. Saving five answer labels is a first step, not a completed record: all 1,249 fields across 20 records still require human review. The complete-review button requires all labels and records the review time only after explicit confirmation.
+
+Draft saves retain a one-time `.backup`, reject stale versions, and refuse edits after a label lock exists. This is a single-reviewer local helper: stop its process before manually editing labels or running freeze/score. It is not deployed to staging, and the private packet must never enter public build assets. Reloading the form discards unsaved selections; save first.
 
 Fill every label in `human-labels.json`, plus `reviewedBy` and ISO `reviewedAt`. Review capture/answer quality, entity presence/stance, criterion fit, competitors, evidence, sources, diagnosis status and task usefulness. Missing checked content stays unavailable; missing verified product facts stay unclear. Brand absence permits suspected retrieval, not proof of indexing failure. Use unknown when supplied evidence cannot resolve a question.
 
