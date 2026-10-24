@@ -17,6 +17,7 @@ import { highlight } from '../../src/client/lib/highlight';
 const db = new DatabaseSync(':memory:');
 const backupPath = join(tmpdir(), `citescout-synthetic-upgrade-${crypto.randomUUID()}.sqlite`);
 let legacyAnswer: Record<string, unknown> | undefined;
+let legacySubscription: Record<string, unknown> | undefined;
 db.exec('PRAGMA foreign_keys=ON');
 for (const name of [
   '0000_careless_selene',
@@ -35,6 +36,8 @@ for (const name of [
   if (name === '0002_citescout_v2')
     db.exec(`
     INSERT INTO users(id,name,email,created_at,updated_at) VALUES('legacy','Legacy','legacy@example.test',1,1);
+    INSERT INTO subscriptions(id,user_id,lemon_squeezy_subscription_id,lemon_squeezy_customer_id,lemon_squeezy_store_id,lemon_squeezy_product_id,lemon_squeezy_variant_id,status,test_mode,created_at,updated_at)
+    VALUES('legacy-test','legacy','legacy-test','legacy-test','1','1','1','active',1,1,1);
     INSERT INTO projects(id,user_id,name,brand_name,canonical_domain,created_at,updated_at) VALUES('legacy','legacy','Legacy','Legacy','legacy.example',1,1);
     INSERT INTO prompts(id,project_id,text,normalized_text,created_at,updated_at) VALUES('legacy','legacy','Legacy question','legacy question',1,1);
     INSERT INTO scan_runs(id,project_id,trigger_type,provider,status,observation_date,created_at) VALUES('legacy','legacy','trial','perplexity','completed','2026-01-01',1);
@@ -43,6 +46,7 @@ for (const name of [
   `);
   if (name === '0002_citescout_v2') {
     legacyAnswer = db.prepare("SELECT * FROM scan_results WHERE id='legacy'").get();
+    legacySubscription = db.prepare("SELECT * FROM subscriptions WHERE id='legacy-test'").get();
     await backup(db, backupPath);
   }
   if (name === '0007_geo_processing_usage')
@@ -51,6 +55,10 @@ for (const name of [
   db.exec(readFileSync(`migrations/${name}.sql`, 'utf8'));
 }
 assert.ok(legacyAnswer);
+assert.deepEqual(
+  db.prepare("SELECT * FROM subscriptions WHERE id='legacy-test'").get(),
+  legacySubscription,
+);
 const upgradedAnswer = db.prepare("SELECT * FROM scan_results WHERE id='legacy'").get();
 assert.ok(upgradedAnswer);
 for (const [column, value] of Object.entries(legacyAnswer))
@@ -59,6 +67,10 @@ assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
 assert.equal(db.prepare('PRAGMA integrity_check').get()?.integrity_check, 'ok');
 const restored = new DatabaseSync(backupPath, { readOnly: true });
 try {
+  assert.deepEqual(
+    restored.prepare("SELECT * FROM subscriptions WHERE id='legacy-test'").get(),
+    legacySubscription,
+  );
   assert.deepEqual(
     restored.prepare("SELECT * FROM scan_results WHERE id='legacy'").get(),
     legacyAnswer,
@@ -153,6 +165,14 @@ const legacyWorkspace = await projectPayload(env, 'legacy');
 assert.equal(legacyWorkspace.project?.id, 'legacy');
 assert.equal(legacyWorkspace.project.questions[0]?.id, 'legacy');
 assert.equal(legacyWorkspace.enrolled, false);
+assert.equal(legacyWorkspace.canScan, false);
+assert.equal(legacyWorkspace.plan, null);
+const retainedTestWorkspace = await projectPayload(
+  { ...env, LEMON_SQUEEZY_TEST_MODE: 'true' },
+  'legacy',
+);
+assert.equal(retainedTestWorkspace.canScan, true);
+assert.ok(retainedTestWorkspace.plan);
 const newWorkspace = await projectPayload(env, 'new-account');
 assert.equal(newWorkspace.project, null);
 assert.equal(newWorkspace.trial, null);
