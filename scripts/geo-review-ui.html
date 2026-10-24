@@ -183,6 +183,15 @@
           </li>
         </ol>
         <p>
+          Lima label di bagian Jawaban adalah tahap pertama. Ringkasan utama 20/20 belum berarti
+          seluruh review selesai: label sumber, bukti, temuan, dan tindakan dinilai terpisah.
+        </p>
+        <p>
+          Kelengkapan tangkapan menilai hasil teknis provider, bukan apakah teks terasa utuh. Status
+          <strong>incomplete</strong> atau pencarian yang belum selesai tetap perlu diperiksa
+          meskipun paragrafnya terbaca. Kualitas jawaban menilai isi yang tersedia.
+        </p>
+        <p>
           Nama disebut ≠ direkomendasikan. Sumber ditemukan ≠ dirujuk dalam jawaban. Tidak muncul ≠
           situs diblokir crawler. Jika bukti tidak cukup, gunakan pilihan
           unknown/unclear/unavailable yang tersedia; jangan menebak.
@@ -355,8 +364,11 @@
             return d;
           }),
         );
+        const primaryDone = state.labels.records.filter((record) =>
+          Object.keys(labels).every((field) => typeof record.values[field] === 'string'),
+        ).length;
         el('progress').textContent =
-          `Jawaban ${index + 1} dari ${state.review.length} · ${remaining()} label belum dinilai`;
+          `Jawaban ${index + 1} dari ${state.review.length} · Ringkasan utama ${primaryDone}/${state.review.length} · ${remaining()} label belum dinilai di seluruh review`;
         el('previous').disabled = index === 0;
         el('next').disabled = index === state.review.length - 1;
         el('save').disabled = state.locked;

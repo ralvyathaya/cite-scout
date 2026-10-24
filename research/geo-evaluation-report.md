@@ -1,6 +1,6 @@
 # GEO classification evaluation
 
-Checkpoint on 24 October 2026: the owner has saved the five primary Answer labels for two records (10 of 1,249 fields). No record has all required detail labels yet; no completion timestamp, label lock or scored report exists. These are partial human-review drafts, not a G3 pass. The historical counts below describe the original export.
+Checkpoint on 24 October 2026: the owner has saved the five primary Answer labels for all 20 records (100 of 1,249 fields). A private byte-preserved draft checkpoint was retained before reviewing capture-envelope discrepancies. The remaining 1,149 detail fields are unreviewed; no full completion timestamp, label lock or classifier score exists. The human primary labels contain 14 absent and six unknown brand-presence judgments, with no positive brand-presence examples. These are partial human-review drafts, not a G3 pass. [Checkpoint and parser replay](../docs/validation/2026-10-24-primary-review-checkpoint.md) record the limits. The historical counts below describe the original export.
 
 Status on 2026-10-16: offline evaluation tooling is ready; **G3 is pending human labels**. Twenty stored owner-staging observations and classifier outputs were exported read-only. No capture, inference, deployment or paid request was made. Synthetic tests and JSON validation do not establish real model accuracy.
 
@@ -15,7 +15,7 @@ Status on 2026-10-16: offline evaluation tooling is ready; **G3 is pending human
 | Held-out precision/recall and safety counts        | not measurable                      |
 | Real classifier latency or invoice-reconciled cost | not measured here                   |
 
-The private packet contains 1,249 unreviewed field slots, including source/evidence labels. Counts follow frozen groups; empty Bing and partial OpenAI records remain included. Classification does not turn these into successful AI-answer captures.
+The private packet contains 1,249 field slots, including source/evidence labels. Counts follow frozen groups; empty Bing and partial OpenAI records remain included. Classification does not turn these into successful AI-answer captures.
 
 The classifier remains Workers AI `@cf/cloudflare/clef-flash`, rubric `geo-rubric-1`, policy `geo-policy-1`. This work changes no model, rubric or diagnosis policy. Every diagnosis still requires review. Native probabilities are model outputs, not measured accuracy.
 
