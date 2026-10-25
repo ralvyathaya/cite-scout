@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import type { prepareEvaluation } from './evaluate-geo';
+import { isEvaluationReviewField } from './evaluate-geo';
 
 type Packet = ReturnType<typeof prepareEvaluation>;
 const digest = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -65,7 +66,18 @@ export async function startGeoReview(directory: string) {
       if (req.method === 'GET' && req.url === '/state') {
         const text = await readFile(labelsPath, 'utf8');
         send(200, {
-          review: packet.review,
+          review: packet.review.map((row) => ({
+            ...row,
+            options: Object.fromEntries(
+              Object.entries(row.options).filter(([field]) => isEvaluationReviewField(field)),
+            ),
+          })),
+          ignoredLabelCount: packet.review.reduce(
+            (count, row) =>
+              count +
+              Object.keys(row.options).filter((field) => !isEvaluationReviewField(field)).length,
+            0,
+          ),
           labels: JSON.parse(text) as unknown,
           version: digest(text),
           locked: await locked(),
@@ -120,12 +132,18 @@ export async function startGeoReview(directory: string) {
         const labels = JSON.parse(text) as Packet['labels'];
         const record = packet.review.find((row) => row.id === input.recordId);
         const target = labels.records.find((row) => row.id === input.recordId);
+        const activeOptions = Object.entries(record?.options ?? {}).filter(([field]) =>
+          isEvaluationReviewField(field),
+        );
         if (
           !record ||
           !target ||
           Object.keys(input.values).sort().join('\n') !==
-            Object.keys(record.options).sort().join('\n') ||
-          Object.entries(record.options).some(
+            activeOptions
+              .map(([field]) => field)
+              .sort()
+              .join('\n') ||
+          activeOptions.some(
             ([field, choices]) =>
               input.values[field] !== null &&
               !choices.some((choice) => choice === input.values[field]),
@@ -134,7 +152,7 @@ export async function startGeoReview(directory: string) {
           send(422, { error: 'Only the supplied choices for this answer are allowed.' });
           return;
         }
-        target.values = input.values;
+        target.values = { ...target.values, ...input.values };
         labels.reviewedBy = input.reviewedBy;
         labels.reviewedAt = null;
         if (input.complete) {
@@ -144,9 +162,9 @@ export async function startGeoReview(directory: string) {
               const values = labels.records.find((label) => label.id === row.id)?.values;
               return (
                 !values ||
-                Object.entries(row.options).some(
-                  ([field, choices]) => !choices.some((choice) => choice === values[field]),
-                )
+                Object.entries(row.options)
+                  .filter(([field]) => isEvaluationReviewField(field))
+                  .some(([field, choices]) => !choices.some((choice) => choice === values[field]))
               );
             })
           ) {

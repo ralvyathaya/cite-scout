@@ -25,12 +25,15 @@ it('keeps blind review private, validates human saves, retains drafts and refuse
   const rows = ['first', 'second'].map((id) => ({
     id,
     answerText: 'Synthetic evidence',
-    options: { brandPresence: ['present', 'absent'] },
+    options: { brandPresence: ['present', 'absent'], 'evidence.support': ['yes', 'no', 'unknown'] },
   }));
   const labels = {
     reviewedBy: '',
     reviewedAt: null,
-    records: rows.map((row) => ({ id: row.id, values: { brandPresence: null } })),
+    records: rows.map((row) => ({
+      id: row.id,
+      values: { brandPresence: null, 'evidence.support': null },
+    })),
   };
   const original = JSON.stringify(labels);
   await writeFile(join(directory, 'packet.json'), JSON.stringify({ review: rows }));
@@ -51,7 +54,9 @@ it('keeps blind review private, validates human saves, retains drafts and refuse
   expect((await fetch(`${origin}/state`)).status).toBe(403);
   const first = await state();
   expect(first.labels).toEqual(labels);
-  expect(first.review).toEqual(rows);
+  expect(first.review).toEqual(
+    rows.map((row) => ({ ...row, options: { brandPresence: ['present', 'absent'] } })),
+  );
   const input = {
     version: first.version,
     reviewedBy: 'Human é',
@@ -65,6 +70,10 @@ it('keeps blind review private, validates human saves, retains drafts and refuse
   expect(
     (await save({ ...input, values: { brandPresence: 'present', extra: 'present' } })).status,
   ).toBe(422);
+  expect(
+    (await save({ ...input, values: { brandPresence: 'present', 'evidence.support': 'yes' } }))
+      .status,
+  ).toBe(422);
   expect((await save({ ...input, complete: true })).status).toBe(422);
   expect(await readFile(join(directory, 'human-labels.json'), 'utf8')).toBe(original);
   expect((await save(input)).status).toBe(200);
@@ -72,6 +81,7 @@ it('keeps blind review private, validates human saves, retains drafts and refuse
   expect(draft.labels.reviewedBy).toBe('Human é');
   expect(draft.labels.reviewedAt).toBeNull();
   expect(draft.labels.records[1]?.values.brandPresence).toBeNull();
+  expect(draft.labels.records[0]?.values['evidence.support']).toBeNull();
   expect(await readFile(join(directory, 'human-labels.json.backup'), 'utf8')).toBe(original);
   expect((await save(input)).status).toBe(409);
   expect(

@@ -48,6 +48,7 @@ const templates = [
   'inspect_earned_source',
 ];
 const abstentions = new Set(['unknown', 'unclear', 'ambiguous', 'unavailable', 'not_applicable']);
+export const isEvaluationReviewField = (field: string) => field !== 'evidence.support';
 function fieldOptions(row: EvaluationRecord) {
   const fields: Record<string, readonly string[]> = {
     captureQuality: ['complete', 'partial', 'no_feature'],
@@ -61,7 +62,8 @@ function fieldOptions(row: EvaluationRecord) {
   )) {
     if (id.startsWith('fit_') && question.type === 'choice')
       fields[`fit.${id.slice(4)}`] = Object.keys(question.criteria);
-    if (id.startsWith('evidence_')) fields[`evidence.${id.slice(9)}`] = ['yes', 'no', 'unknown'];
+    if (id.startsWith('evidence_') && question.type === 'noul')
+      fields[`evidence.${id.slice(9)}`] = ['yes', 'no', 'unknown'];
   }
   for (const competitor of row.observation.context.competitors.slice(0, 5))
     fields[`competitor.${competitor.id}`] = geoClassificationSchema.shape.brandStance.options;
@@ -182,6 +184,24 @@ export function prepareEvaluation(input: EvaluationInput) {
 }
 type Packet = ReturnType<typeof prepareEvaluation>;
 type HumanLabels = Packet['labels'];
+function preparedPacketHash(packet: Packet) {
+  // Legacy packets included a duplicate choice question with no corresponding prediction.
+  const normalized = structuredClone(packet);
+  for (const row of normalized.review) {
+    if (
+      Object.hasOwn(row.options, 'evidence.support') &&
+      hash(row.options['evidence.support']) !== hash(['yes', 'no', 'unknown'])
+    )
+      throw new Error('Prepared legacy field changed');
+    delete row.options['evidence.support'];
+  }
+  for (const row of normalized.labels.records) {
+    if (Object.hasOwn(row.values, 'evidence.support') && row.values['evidence.support'] !== null)
+      throw new Error('Prepared legacy placeholder changed');
+    delete row.values['evidence.support'];
+  }
+  return hash(normalized);
+}
 export function freezeHumanLabels(packet: Packet, labels: HumanLabels) {
   if (
     !labels.reviewedBy.trim() ||
@@ -200,6 +220,7 @@ export function freezeHumanLabels(packet: Packet, labels: HumanLabels) {
       throw new Error('Human label fields must match the blinded packet');
     for (const [field, options] of Object.entries(row.options)) {
       const value = label.values[field] ?? null;
+      if (value === null && !isEvaluationReviewField(field)) continue;
       if (value === null || !options.includes(value))
         throw new Error(`Missing or invalid human label for ${field}`);
     }
@@ -339,7 +360,7 @@ export function scoreEvaluation(
   if (
     hash(lock) !== hash(freezeHumanLabels(packet, labels)) ||
     packet.manifest.inputHash !== hash(input) ||
-    hash(packet) !== hash(prepareEvaluation(input))
+    preparedPacketHash(packet) !== hash(prepareEvaluation(input))
   )
     throw new Error('Frozen input, labels or split changed');
   const safety = {
@@ -397,7 +418,9 @@ export function scoreEvaluation(
       id: row.observation.id,
       engine: row.observation.engine,
       split: packet.manifest.records.find((item) => item.id === row.observation.id)?.split,
-      expected,
+      expected: Object.fromEntries(
+        Object.entries(expected).filter(([field]) => isEvaluationReviewField(field)),
+      ),
       predicted: predictions(row),
     };
   });
@@ -405,6 +428,19 @@ export function scoreEvaluation(
     status: input.dataset === 'synthetic' ? 'human_reviewed_synthetic' : 'human_reviewed_real',
     dataset: input.dataset,
     pilotGatePassed: false,
+    scoringVersion: 'geo-local-scoring-2',
+    unscoredLegacyFields: packet.review.some((row) =>
+      Object.hasOwn(row.options, 'evidence.support'),
+    )
+      ? [
+          {
+            field: 'evidence.support',
+            records: packet.review.filter((row) => Object.hasOwn(row.options, 'evidence.support'))
+              .length,
+            reason: 'Duplicate of evidenceSupport; no separate classifier prediction.',
+          },
+        ]
+      : [],
     manifestHash: hash(packet.manifest),
     labelsHash: hash(labels),
     abstentionLabels: [...abstentions],
@@ -558,7 +594,7 @@ async function main() {
   }
   const packet = (await readJson(resolve(output, 'packet.json'))) as Packet;
   const labels = (await readJson(resolve(output, 'human-labels.json'))) as HumanLabels;
-  if (hash(packet) !== hash(prepareEvaluation(input)))
+  if (preparedPacketHash(packet) !== hash(prepareEvaluation(input)))
     throw new Error('Prepared input or split changed');
   if (command === 'freeze') {
     await writeFile(

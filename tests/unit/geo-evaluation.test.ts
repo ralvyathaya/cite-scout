@@ -153,6 +153,39 @@ function gold(source: EvaluationInput, packet: ReturnType<typeof prepareEvaluati
 }
 
 describe('local human GEO evaluation', () => {
+  it('does not request a duplicate support label and scores legacy packets without inventing one', () => {
+    const data = input();
+    const modern = prepareEvaluation(data);
+    expect(modern.review[0]?.options).not.toHaveProperty('evidence.support');
+    const legacy = structuredClone(modern);
+    for (const row of legacy.review) row.options['evidence.support'] = ['yes', 'no', 'unknown'];
+    for (const row of legacy.labels.records) row.values['evidence.support'] = null;
+    const labels = gold(data, legacy);
+    for (const row of labels.records) row.values['evidence.support'] = null;
+    const packetBefore = JSON.stringify(legacy),
+      labelsBefore = JSON.stringify(labels);
+    const lock = freezeHumanLabels(legacy, labels);
+    const report = scoreEvaluation(data, legacy, labels, lock);
+    expect(report.overall.fields).not.toHaveProperty('evidence.support');
+    expect(report.overall.fields.evidenceSupport?.reviewed).toBe(data.records.length);
+    expect(report).toMatchObject({
+      pilotGatePassed: false,
+      unscoredLegacyFields: [{ field: 'evidence.support', records: 3 }],
+    });
+    expect(JSON.stringify(legacy)).toBe(packetBefore);
+    expect(JSON.stringify(labels)).toBe(labelsBefore);
+    const changedLegacyValue = structuredClone(labels);
+    at(changedLegacyValue.records).values['evidence.support'] = 'yes';
+    expect(() => scoreEvaluation(data, legacy, changedLegacyValue, lock)).toThrow(/changed/);
+    const missing = structuredClone(labels);
+    at(missing.records).values.evidenceSupport = null;
+    expect(() => freezeHumanLabels(legacy, missing)).toThrow(/Missing or invalid/);
+    const tampered = structuredClone(legacy);
+    at(tampered.review).answerText += 'changed';
+    expect(() =>
+      scoreEvaluation(data, tampered, labels, freezeHumanLabels(tampered, labels)),
+    ).toThrow(/changed/);
+  });
   it('the CLI rejects public paths and preserves prepared packets and frozen label locks', () => {
     const directory = mkdtempSync(join(tmpdir(), 'citescout-evaluation-'));
     const privateRoot = join(directory, 'research/private');

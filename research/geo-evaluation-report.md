@@ -1,5 +1,7 @@
 # GEO classification evaluation
 
+Checkpoint on 25 October 2026: primary Answer labels and Findings/Tasks are both complete across 20 records: 260 saved human choices, all valid. A tooling defect generated a duplicate `evidence.support` question with no corresponding classifier prediction. New packets omit it; old packets retain it unchanged but no longer require or score it. The owner packet therefore has 1,229 scored fields and 969 remaining (81 evidence/fit/competitor and 888 source labels), while its original 1,249-key structure remains intact. No full completion timestamp, label lock or classifier score exists. [Progress and compatibility fix](../docs/validation/2026-10-25-findings-review.md) record the boundary; G3 remains pending.
+
 Checkpoint on 24 October 2026: the owner has saved the five primary Answer labels for all 20 records (100 of 1,249 fields). A private byte-preserved draft checkpoint was retained before reviewing capture-envelope discrepancies. The remaining 1,149 detail fields are unreviewed; no full completion timestamp, label lock or classifier score exists. The human primary labels contain 14 absent and six unknown brand-presence judgments, with no positive brand-presence examples. These are partial human-review drafts, not a G3 pass. [Checkpoint and parser replay](../docs/validation/2026-10-24-primary-review-checkpoint.md) record the limits. The historical counts below describe the original export.
 
 Status on 2026-10-16: offline evaluation tooling is ready; **G3 is pending human labels**. Twenty stored owner-staging observations and classifier outputs were exported read-only. No capture, inference, deployment or paid request was made. Synthetic tests and JSON validation do not establish real model accuracy.
@@ -15,7 +17,7 @@ Status on 2026-10-16: offline evaluation tooling is ready; **G3 is pending human
 | Held-out precision/recall and safety counts        | not measurable                      |
 | Real classifier latency or invoice-reconciled cost | not measured here                   |
 
-The private packet contains 1,249 field slots, including source/evidence labels. Counts follow frozen groups; empty Bing and partial OpenAI records remain included. Classification does not turn these into successful AI-answer captures.
+The original private packet contains 1,249 field slots, including 20 duplicate placeholders excluded by scoring version `geo-local-scoring-2`. Its 1,229 actual review fields retain the same groups; empty Bing and partial OpenAI records remain included. Classification does not turn these into successful AI-answer captures.
 
 The classifier remains Workers AI `@cf/cloudflare/clef-flash`, rubric `geo-rubric-1`, policy `geo-policy-1`. This work changes no model, rubric or diagnosis policy. Every diagnosis still requires review. Native probabilities are model outputs, not measured accuracy.
 
@@ -43,7 +45,7 @@ For the existing owner packet, an optional local form avoids editing JSON by han
 npx tsx scripts/review-geo.ts
 ```
 
-Open the printed loopback link on this laptop. The form reads only the blind packet and human labels, starts all unreviewed fields blank, and never calls an AI provider. Enter the reviewer name; review one answer at a time through Answer, Sources, Evidence, and Findings/Tasks sections. Save each draft before moving. Saving five answer labels is a first step, not a completed record: all 1,249 fields across 20 records still require human review. The complete-review button requires all labels and records the review time only after explicit confirmation.
+Open the printed loopback link on this laptop. The form reads only the blind packet and human labels, starts all unreviewed fields blank, and never calls an AI provider. Enter the reviewer name; review one answer at a time through Answer, Sources, Evidence, and Findings/Tasks sections. Save each draft before moving. Saving five answer labels is a first step, not a completed record: all 1,229 actual fields across 20 records require human review. Twenty duplicate legacy placeholders remain in the original file but are hidden and not required. Never fill them to satisfy a counter. The complete-review button requires every actual label and records the review time only after explicit confirmation.
 
 Draft saves retain a one-time `.backup`, reject stale versions, and refuse edits after a label lock exists. This is a single-reviewer local helper: stop its process before manually editing labels or running freeze/score. It is not deployed to staging, and the private packet must never enter public build assets. Reloading the form discards unsaved selections; save first.
 
@@ -56,7 +58,7 @@ npx tsx scripts/evaluate-geo.ts freeze research/private/owner-evaluation-input.j
 npx tsx scripts/evaluate-geo.ts score research/private/owner-evaluation-input.json research/private/owner-evaluation-review
 ```
 
-Freeze rejects incomplete/invalid labels and creates a non-overwritten lock. Score rejects changed inputs, labels, split or packet. It reuses the existing evaluation builder, classification projection, diagnosis policy and task generator locally, comparing stored decisions to frozen human labels. Stored/current policy disagreements are separate; history is not rewritten. There is no provider request.
+Freeze rejects incomplete/invalid actual labels and creates a non-overwritten lock. The duplicate legacy `evidence.support` may remain null; real `evidenceSupport` and every actual field remain required. Score rejects changed inputs, labels, split or packet, including changes to ignored legacy values after freezing. Legacy packet comparison recognizes only the original duplicate placeholder, without editing the packet; scoring reports it in `unscoredLegacyFields`. It reuses the existing evaluation builder, classification projection, diagnosis policy and task generator locally, comparing stored decisions to frozen human labels. Stored/current policy disagreements are separate; history is not rewritten. There is no provider request.
 
 ## Metrics and limitations
 

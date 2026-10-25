@@ -166,6 +166,7 @@
         ><button id="next">Berikutnya →</button>
       </div>
       <p id="progress" class="muted"></p>
+      <p id="legacy-notice" class="muted"></p>
       <p id="status" class="status" role="status" aria-live="polite">Memuat packet lokal…</p>
     </header>
     <main>
@@ -269,8 +270,13 @@
         return data;
       };
       const remaining = () =>
-        state.labels.records.reduce(
-          (n, row) => n + Object.values(row.values).filter((v) => v === null).length,
+        state.review.reduce(
+          (n, row) =>
+            n +
+            Object.keys(row.options).filter(
+              (field) =>
+                state.labels.records.find((label) => label.id === row.id).values[field] === null,
+            ).length,
           0,
         );
       function render() {
@@ -321,6 +327,17 @@
           ['Bukti & kesesuaian', []],
           ['Temuan & tindakan', []],
         ]);
+        const fieldName = (field) => {
+          if (field === 'fit.buyer_intent')
+            return `Kesesuaian ${row.context.brand.name} dengan kebutuhan pembeli`;
+          if (field.startsWith('competitor.')) {
+            const competitor = row.context.competitors.find((item) => item.id === field.slice(11));
+            return `Sikap jawaban terhadap ${competitor?.name || field}`;
+          }
+          if (field.startsWith('evidence.segment_'))
+            return `Bukti terkait brand pada ${field.slice(9).replace('_', ' ')}`;
+          return labels[field] || field.replaceAll('_', ' ');
+        };
         for (const [field, options] of Object.entries(row.options)) {
           const group = field.startsWith('source.')
             ? 'Sumber'
@@ -331,10 +348,10 @@
                 : 'Jawaban';
           const label = document.createElement('label');
           label.className = 'field';
-          label.textContent = labels[field] || field.replaceAll('_', ' ');
+          label.textContent = fieldName(field);
           const select = document.createElement('select');
           select.dataset.field = field;
-          select.setAttribute('aria-label', labels[field] || field);
+          select.setAttribute('aria-label', fieldName(field));
           const empty = document.createElement('option');
           empty.value = '';
           empty.textContent = '— Belum dinilai —';
@@ -360,7 +377,15 @@
             d.open = name === 'Jawaban';
             const s = document.createElement('summary');
             s.textContent = `${name} · ${fields.length} label`;
-            d.append(s, ...fields);
+            d.append(s);
+            if (name === 'Bukti & kesesuaian') {
+              const help = document.createElement('p');
+              help.className = 'muted';
+              help.textContent =
+                'Kesesuaian produk memakai fakta terverifikasi yang disediakan; bila tidak tersedia, gunakan unclear. Untuk bukti segmen, baca kutipan di “Kandidat bukti dari teks asli”. Nilai sikap terhadap masing-masing kompetitor dari jawaban ini.';
+              d.append(help);
+            }
+            d.append(...fields);
             return d;
           }),
         );
@@ -369,6 +394,9 @@
         ).length;
         el('progress').textContent =
           `Jawaban ${index + 1} dari ${state.review.length} · Ringkasan utama ${primaryDone}/${state.review.length} · ${remaining()} label belum dinilai di seluruh review`;
+        el('legacy-notice').textContent = state.ignoredLabelCount
+          ? `${state.ignoredLabelCount} field duplikat dari packet lama tidak perlu dinilai. Data asli tetap disimpan.`
+          : '';
         el('previous').disabled = index === 0;
         el('next').disabled = index === state.review.length - 1;
         el('save').disabled = state.locked;
