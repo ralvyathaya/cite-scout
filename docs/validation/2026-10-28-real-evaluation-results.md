@@ -2,6 +2,8 @@
 
 **Verdict: the local review and scoring step is complete; G3 is unmet.** This is a partial real-data evaluation, not a public release approval or a general classifier accuracy estimate. U4 and the [public MVP plan](../plans/2026-10-22-public-mvp-readiness-plan.md) remain open.
 
+Subsequent [guided adjudication and same-capture Google archive checks](2026-10-28-g3-adjudication-and-google-capture.md) resolved the 16-case worklist and demonstrated missing structured answer content in all four Google captures. The frozen results below remain unchanged; their earlier unresolved-Google assessment is superseded by that evidence. G3 still does not pass.
+
 ## Review, freeze and provenance
 
 The owner saved all 171 source groups: 110 calibration groups with assisted provenance and 61 held-out groups without displayed proposals. All actual fields were accounted for, and the owner explicitly confirmed completion at `2026-10-28T09:37:00.215Z`. The agent did not enter or replace any human judgment.
