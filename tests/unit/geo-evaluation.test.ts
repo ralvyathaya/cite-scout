@@ -160,6 +160,100 @@ function gold(source: EvaluationInput, packet: ReturnType<typeof prepareEvaluati
 }
 
 describe('local human GEO evaluation', () => {
+  it('evaluates repeated-source tasks within their frozen partition and project context', () => {
+    const data = input([
+      record('a', 'one'),
+      record('b', 'one'),
+      record('c', 'two'),
+      record('d', 'one'),
+    ]);
+    for (const row of data.records) {
+      if (row.observation.id === 'd') continue;
+      row.observation.capture.sources = [
+        {
+          id: 'shared',
+          url: 'https://community.example/thread',
+          canonicalUrl: 'https://community.example/thread',
+          title: 'Synthetic discussion',
+          referenceLevel: 'answer',
+        },
+      ];
+      row.classification = projectGeoClassification(
+        row.observation,
+        buildGeoEvaluation(row.observation),
+        row.classification.native,
+      );
+    }
+    const packet = prepareEvaluation(data),
+      labels = gold(data, packet);
+    for (const row of labels.records) {
+      if (row.id !== 'd') {
+        row.values['source.shared.role'] = 'third_party';
+        row.values['source.shared.type'] = 'unknown';
+      }
+      row.values['task.inspect_earned_source'] = ['a', 'b'].includes(row.id) ? 'yes' : 'no';
+    }
+    expect(packet.manifest.records.find((r) => r.id === 'a')?.split).toBe(
+      packet.manifest.records.find((r) => r.id === 'b')?.split,
+    );
+    expect(packet.manifest.records.find((r) => r.id === 'a')?.split).not.toBe(
+      packet.manifest.records.find((r) => r.id === 'c')?.split,
+    );
+    const report = scoreEvaluation(data, packet, labels, freezeHumanLabels(packet, labels));
+    expect(report.overall.fields['task.inspect_earned_source']?.disagreements).toEqual([]);
+    expect(report.scoringVersion).toBe('geo-local-scoring-4');
+
+    const separated = input([record('x', 'same'), record('y', 'same')]);
+    for (const row of separated.records) {
+      row.observation.capture.sources = structuredClone(
+        at(data.records).observation.capture.sources,
+      );
+      row.classification = projectGeoClassification(
+        row.observation,
+        buildGeoEvaluation(row.observation),
+        row.classification.native,
+      );
+    }
+    at(separated.records, 1).observation.projectId = 'different-project';
+    at(separated.records, 1).observation.context.projectId = 'different-project';
+    const isolatedPacket = prepareEvaluation(separated),
+      isolatedLabels = gold(separated, isolatedPacket);
+    for (const row of isolatedLabels.records) {
+      row.values['source.shared.role'] = 'third_party';
+      row.values['source.shared.type'] = 'unknown';
+    }
+    expect(
+      scoreEvaluation(
+        separated,
+        isolatedPacket,
+        isolatedLabels,
+        freezeHumanLabels(isolatedPacket, isolatedLabels),
+      ).overall.fields['task.inspect_earned_source']?.disagreements,
+    ).toEqual([]);
+  });
+  it('replays legacy methods and scoring without silently promoting the frozen packet', () => {
+    const versions = { rubric: 'geo-rubric-1', policy: 'geo-policy-1', ownership: 'geo-domain-1' };
+    const data = input();
+    for (const row of data.records) {
+      row.classification = projectGeoClassification(
+        row.observation,
+        buildGeoEvaluation(row.observation, row.checks, row.criteria, versions),
+        row.classification.native,
+        versions,
+      );
+      row.diagnoses = diagnoseGeo(row.observation, row.classification, row.checks);
+    }
+    const packet = prepareEvaluation(data, versions),
+      labels = gold(data, packet);
+    const before = JSON.stringify(packet);
+    const report = scoreEvaluation(data, packet, labels, freezeHumanLabels(packet, labels));
+    expect(report.scoringVersion).toBe('geo-local-scoring-2');
+    expect(report.safety.storedPolicyDisagreements).toBe(0);
+    expect(JSON.stringify(packet)).toBe(before);
+    expect(() => prepareEvaluation(data, { ...versions, policy: 'unrecognized' })).toThrow(
+      'GEO_UNSUPPORTED_ANALYSIS_VERSIONS',
+    );
+  });
   it('completes the local grouped API review and freezes both files without filling raw human source values', async () => {
     const data = input();
     for (const row of data.records)
@@ -304,7 +398,7 @@ describe('local human GEO evaluation', () => {
     expect(heldOut.fields['source.s1.role']?.reviewed).toBe(1);
     expect(report.overall.fields['source.s1.role']?.reviewed).toBe(1);
     expect(report.pilotGatePassed).toBe(false);
-    expect(report.scoringVersion).toBe('geo-local-scoring-3');
+    expect(report.scoringVersion).toBe('geo-local-scoring-4');
     expect(report.status).toBe('partially_human_reviewed_synthetic');
     expect(report.sourceReview?.contentCoverage.overall).toEqual({
       sourceOccurrences: 3,

@@ -10,7 +10,9 @@ import {
   geoClassificationSchema,
   geoDiagnosisSchema,
   geoVersions,
+  readGeoVersions,
   type GeoPageCheck,
+  type GeoVersionSet,
 } from '../src/shared/geo-analysis';
 import { geoEngineSchema, type GeoObservation } from '../src/shared/geo';
 import {
@@ -55,7 +57,7 @@ const templates = [
 ];
 const abstentions = new Set(['unknown', 'unclear', 'ambiguous', 'unavailable', 'not_applicable']);
 export const isEvaluationReviewField = (field: string) => field !== 'evidence.support';
-function fieldOptions(row: EvaluationRecord) {
+function fieldOptions(row: EvaluationRecord, versions: GeoVersionSet) {
   const fields: Record<string, readonly string[]> = {
     captureQuality: ['complete', 'partial', 'no_feature'],
     answerQuality: geoClassificationSchema.shape.answerQuality.options,
@@ -64,7 +66,7 @@ function fieldOptions(row: EvaluationRecord) {
     evidenceSupport: geoClassificationSchema.shape.evidenceSupport.options,
   };
   for (const [id, question] of Object.entries(
-    buildGeoEvaluation(row.observation, row.checks, row.criteria).questions,
+    buildGeoEvaluation(row.observation, row.checks, row.criteria, versions).questions,
   )) {
     if (id.startsWith('fit_') && question.type === 'choice')
       fields[`fit.${id.slice(4)}`] = Object.keys(question.criteria);
@@ -84,7 +86,8 @@ function fieldOptions(row: EvaluationRecord) {
   for (const template of templates) fields[`task.${template}`] = ['yes', 'no', 'unknown'];
   return fields;
 }
-export function prepareEvaluation(input: EvaluationInput) {
+export function prepareEvaluation(input: EvaluationInput, method: GeoVersionSet = geoVersions) {
+  const versions = readGeoVersions(method);
   const ids = input.records.map((row) => row.observation.id),
     expected = input.expectedObservationIds;
   if (
@@ -142,7 +145,7 @@ export function prepareEvaluation(input: EvaluationInput) {
   const manifest = {
     version: 'geo-local-evaluation-1',
     dataset: input.dataset,
-    versions: geoVersions,
+    versions,
     inputHash: hash(input),
     groups: assigned,
     records: input.records.map((row) => {
@@ -173,8 +176,9 @@ export function prepareEvaluation(input: EvaluationInput) {
       sources: row.observation.capture.sources,
       checks: row.checks,
       criteria: row.criteria,
-      candidates: buildGeoEvaluation(row.observation, row.checks, row.criteria).candidates,
-      options: fieldOptions(row),
+      candidates: buildGeoEvaluation(row.observation, row.checks, row.criteria, versions)
+        .candidates,
+      options: fieldOptions(row, versions),
     })),
     labels: {
       reviewedBy: '',
@@ -182,7 +186,7 @@ export function prepareEvaluation(input: EvaluationInput) {
       records: input.records.map((row) => ({
         id: row.observation.id,
         values: Object.fromEntries(
-          Object.keys(fieldOptions(row)).map((field) => [field, null as string | null]),
+          Object.keys(fieldOptions(row, versions)).map((field) => [field, null as string | null]),
         ),
       })),
     },
@@ -242,7 +246,17 @@ export function freezeHumanLabels(
     ...(sourceReview ? { sourceReviewHash: hash(sourceReview) } : {}),
   };
 }
-function predictions(row: EvaluationRecord) {
+const taskInput = (row: EvaluationRecord) => ({
+  observation: row.observation,
+  analysis: {
+    id: `stored-${row.observation.id}`,
+    state: 'completed' as const,
+    createdAt: row.observation.capturedAt,
+    classification: row.classification,
+    diagnoses: row.diagnoses,
+  },
+});
+function predictions(row: EvaluationRecord, tasks = actionCandidates([taskInput(row)])) {
   const classification = row.classification;
   const fields: Record<string, string> = {
     captureQuality: row.observation.capture.quality,
@@ -263,20 +277,14 @@ function predictions(row: EvaluationRecord) {
   for (const issue of issues)
     fields[`diagnosis.${issue}`] =
       row.diagnoses.find((diagnosis) => diagnosis.type === issue)?.status ?? 'none';
-  const tasks = actionCandidates([
-    {
-      observation: row.observation,
-      analysis: {
-        id: `stored-${row.observation.id}`,
-        state: 'completed',
-        createdAt: row.observation.capturedAt,
-        classification,
-        diagnoses: row.diagnoses,
-      },
-    },
-  ]);
   for (const template of templates)
-    fields[`task.${template}`] = tasks.some((task) => task.templateId === template) ? 'yes' : 'no';
+    fields[`task.${template}`] = tasks.some(
+      (task) =>
+        task.templateId === template &&
+        task.evidence.some((proof) => proof.observationId === row.observation.id),
+    )
+      ? 'yes'
+      : 'no';
   return fields;
 }
 const ratio = (numerator: number, denominator: number) =>
@@ -373,10 +381,11 @@ export function scoreEvaluation(
   lock: ReturnType<typeof freezeHumanLabels>,
   sourceReview?: SourceReview,
 ) {
+  const versions = readGeoVersions(packet.manifest.versions);
   if (
     hash(lock) !== hash(freezeHumanLabels(packet, labels, sourceReview)) ||
     packet.manifest.inputHash !== hash(input) ||
-    preparedPacketHash(packet) !== hash(prepareEvaluation(input))
+    preparedPacketHash(packet) !== hash(prepareEvaluation(input, versions))
   )
     throw new Error('Frozen input, labels or split changed');
   const safety = {
@@ -389,13 +398,50 @@ export function scoreEvaluation(
     storedPolicyDisagreements: 0,
   };
   const resolved = sourceReview ? resolveSourceReview(packet, labels, sourceReview) : undefined;
+  const splits = new Map(packet.manifest.records.map((row) => [row.id, row.split]));
+  const taskGroup = (row: EvaluationRecord) =>
+    hash({
+      split: splits.get(row.observation.id),
+      projectId: row.observation.projectId,
+      contextVersion: row.observation.context.contextVersion,
+      brand: row.observation.context.brand,
+      competitors: [...row.observation.context.competitors].sort((a, b) =>
+        a.id.localeCompare(b.id),
+      ),
+      method: [
+        row.classification.rubricVersion,
+        row.classification.policyVersion,
+        row.classification.ownershipVersion,
+      ],
+    });
+  const groups = new Map<string, EvaluationRecord[]>();
+  if (versions.policy === 'geo-policy-2')
+    for (const row of input.records) {
+      const key = taskGroup(row),
+        group = groups.get(key) ?? [];
+      group.push(row);
+      groups.set(key, group);
+    }
+  const cohortTasks = new Map(
+    [...groups].map(([key, group]) => [key, actionCandidates(group.map(taskInput))]),
+  );
   const rows = input.records.map((row) => {
     const expected = (resolved?.labels ?? labels).records.find(
       (label) => label.id === row.observation.id,
     )?.values;
     if (!expected) throw new Error('Human label missing');
-    const evaluation = buildGeoEvaluation(row.observation, row.checks, row.criteria);
-    const replay = projectGeoClassification(row.observation, evaluation, row.classification.native);
+    const storedMethod = readGeoVersions({
+      rubric: row.classification.rubricVersion,
+      policy: row.classification.policyVersion,
+      ownership: row.classification.ownershipVersion,
+    });
+    const evaluation = buildGeoEvaluation(row.observation, row.checks, row.criteria, storedMethod);
+    const replay = projectGeoClassification(
+      row.observation,
+      evaluation,
+      row.classification.native,
+      storedMethod,
+    );
     const diagnoses = diagnoseGeo(row.observation, replay, row.checks);
     safety.falseComplete += Number(
       row.observation.capture.quality === 'complete' && expected.captureQuality !== 'complete',
@@ -444,7 +490,7 @@ export function scoreEvaluation(
             (!resolved || !isAssistedSourceField(resolved.assisted, row.observation.id, field)),
         ),
       ),
-      predicted: predictions(row),
+      predicted: predictions(row, cohortTasks.get(taskGroup(row))),
     };
   });
   return {
@@ -457,7 +503,15 @@ export function scoreEvaluation(
         : 'human_reviewed_real',
     dataset: input.dataset,
     pilotGatePassed: false,
-    scoringVersion: sourceReview ? 'geo-local-scoring-3' : 'geo-local-scoring-2',
+    scoringVersion:
+      versions.policy === 'geo-policy-2'
+        ? 'geo-local-scoring-4'
+        : sourceReview
+          ? 'geo-local-scoring-3'
+          : 'geo-local-scoring-2',
+    ...(versions.policy === 'geo-policy-2'
+      ? { taskScope: 'frozen_partition_and_project_context' }
+      : {}),
     ...(resolved
       ? {
           sourceReview: {
