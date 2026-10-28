@@ -2,6 +2,8 @@
 
 **G3 remains unmet.** The owner completed the 16-case guided worklist. A small Google parser correction is verified locally; it does not repair incomplete provider output or establish release readiness. The [MVP plan](../plans/2026-10-22-public-mvp-readiness-plan.md) remains open.
 
+The subsequent [versioned evidence guards](2026-10-28-g3-evidence-guards.md) implement the classifier/task-scoring fixes and keep new Google/SerpApi captures partial pending coverage verification. That receipt supersedes the implementation status below; original review results remain unchanged.
+
 ## Human decisions and preserved baseline
 
 The explicit owner replies cover 48 distinct field occurrences: 46 revised judgments and two reaffirmed original judgments. Google answer 2 remains **partial**; the Peec AI stance in answer 4 remains **conditional recommendation**. Grouped replies apply only to their enumerated fields, not entire records.

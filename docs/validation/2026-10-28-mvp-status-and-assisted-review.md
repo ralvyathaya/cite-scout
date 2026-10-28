@@ -2,6 +2,10 @@
 
 The [22 October MVP plan](../plans/2026-10-22-public-mvp-readiness-plan.md) is **not fully complete**. This receipt records current repository evidence; it is not a fresh production/staging configuration audit or release approval. The plan body remains unchanged.
 
+Latest follow-up: [G3 guard, rubric and task-scoring corrections](2026-10-28-g3-evidence-guards.md) are implemented and tested. Read-only staging inventory found no additional complete captures beyond the reviewed set. Fresh independent validation is blocked by the explicitly unchanged zero test limits, not by unfinished annotation of the 16-case worklist. No G3 pass or public launch approval is claimed.
+
+These corrections are now [deployed to staging](2026-10-28-g3-staging-release.md). All 54 bindings, runtime/settings and schedules were compared and preserved. This is a code release with no new paid capture or classifier call; a bounded test allowance still needs explicit approval.
+
 Final update: the owner has completed and confirmed all 171 source groups. The real label/provenance lock and local score now exist. The result is partial and G3 is unmet; see the [frozen results and gate assessment](2026-10-28-real-evaluation-results.md). Implementation-verification paragraphs below retain their earlier checkpoint evidence.
 
 Later update: the 16-case guided adjudication worklist is complete and remains separate from frozen gold. Same-capture archives demonstrate the four Google omissions. The prospective parser correction and remaining classifier/evidence work are recorded in the [G3 follow-up receipt](2026-10-28-g3-adjudication-and-google-capture.md); completing this worklist does not close U4 or the MVP plan.
