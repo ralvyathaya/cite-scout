@@ -75,6 +75,137 @@ const native = (
   ),
 });
 describe('atomic decision provider contract and grounded diagnosis', () => {
+  it('keeps analysis of historical SerpApi Google captures partial without rewriting their saved quality', () => {
+    const historical = {
+      ...observation,
+      context: {
+        ...observation.context,
+        collector: 'serpapi' as const,
+        collectorVersion: 'geo-collector-2' as const,
+      },
+    };
+    const before = structuredClone(historical);
+    const evaluation = buildGeoEvaluation(historical);
+    const result = validateDecision(
+      native(evaluation, { brand_presence: 'absent' }),
+      evaluation,
+      'clef-flash',
+    );
+    expect(evaluation.state.captureCoverage).toBe('unverified');
+    expect(projectGeoClassification(historical, evaluation, result)).toMatchObject({
+      scope: 'partial',
+      brandPresence: 'unknown',
+      brandStance: 'unknown',
+    });
+    expect(historical).toEqual(before);
+    expect(historical.capture.quality).toBe('complete');
+  });
+  it.each(['no_feature', 'complete'] as const)(
+    'abstains on an empty %s answer without changing native output',
+    (quality) => {
+      const empty = {
+        ...observation,
+        capture: { ...observation.capture, answerText: '', quality },
+      };
+      const evaluation = buildGeoEvaluation(empty);
+      const result = validateDecision(
+        native(evaluation, { brand_presence: 'absent' }),
+        evaluation,
+        'clef-flash',
+      );
+      const before = structuredClone(result);
+      expect(projectGeoClassification(empty, evaluation, result)).toMatchObject({
+        answerQuality: 'unknown',
+        brandPresence: 'unknown',
+        brandStance: 'unknown',
+        scope: 'partial',
+      });
+      expect(result).toEqual(before);
+      expect(evaluation.state.captureQuality).toBe(quality);
+    },
+  );
+  it('does not turn absence in a partial capture or classifier excerpt into whole-answer absence', () => {
+    for (const capture of [
+      { ...observation.capture, quality: 'partial' as const },
+      { ...observation.capture, answerText: 'Other options. '.repeat(1000) },
+    ]) {
+      const partial = { ...observation, capture },
+        evaluation = buildGeoEvaluation(partial);
+      const result = validateDecision(
+        native(evaluation, { brand_presence: 'absent' }),
+        evaluation,
+        'clef-flash',
+      );
+      expect(projectGeoClassification(partial, evaluation, result)).toMatchObject({
+        brandPresence: 'unknown',
+        brandStance: 'unknown',
+        scope: 'partial',
+      });
+    }
+  });
+  it('uses not-applicable stance for known absence and retains explicit positive evidence in partial text', () => {
+    const evaluation = buildGeoEvaluation(observation);
+    const absent = validateDecision(
+      native(evaluation, { brand_presence: 'absent', brand_stance: 'unknown' }),
+      evaluation,
+      'clef-flash',
+    );
+    expect(projectGeoClassification(observation, evaluation, absent).brandStance).toBe(
+      'not_applicable',
+    );
+    const partial = {
+      ...observation,
+      capture: {
+        ...observation.capture,
+        quality: 'partial' as const,
+        answerText: 'Orbit is useful if you need team scheduling.',
+      },
+    };
+    const partialEvaluation = buildGeoEvaluation(partial);
+    const present = validateDecision(
+      native(partialEvaluation, {
+        brand_presence: 'present',
+        brand_stance: 'conditional_recommendation',
+      }),
+      partialEvaluation,
+      'clef-flash',
+    );
+    expect(projectGeoClassification(partial, partialEvaluation, present)).toMatchObject({
+      brandPresence: 'present',
+      brandStance: 'conditional_recommendation',
+      scope: 'partial',
+    });
+  });
+  it('defines conditional recommendations for both brand and competitor while preserving the legacy rubric', () => {
+    const tracked = {
+      ...observation,
+      context: {
+        ...observation.context,
+        competitors: [{ id: 'r', name: 'Rival', domain: 'rival.example' }],
+      },
+    };
+    const evaluation = buildGeoEvaluation(tracked);
+    for (const id of ['brand_stance', 'competitor_0']) {
+      const question = evaluation.questions[id];
+      if (question?.type !== 'choice') throw Error('Expected stance question');
+      expect(question.criteria.conditional_recommendation).toContain('only if');
+    }
+    const legacy = { rubric: 'geo-rubric-1', policy: 'geo-policy-1', ownership: 'geo-domain-1' };
+    const old = buildGeoEvaluation(tracked, [], [], legacy);
+    expect(old.state).not.toHaveProperty('captureQuality');
+    expect(old.questions.brand_stance).not.toEqual(evaluation.questions.brand_stance);
+    const response = validateDecision(
+      native(old, { brand_presence: 'absent', brand_stance: 'unknown' }),
+      old,
+      'clef-flash',
+    );
+    expect(projectGeoClassification(tracked, old, response, legacy)).toMatchObject({
+      brandPresence: 'absent',
+      brandStance: 'unknown',
+      rubricVersion: legacy.rubric,
+      policyVersion: legacy.policy,
+    });
+  });
   it('uses Clef Flash binding by default and preserves native probability, quotes and provenance', async () => {
     const evaluation = buildGeoEvaluation(observation);
     const run = vi

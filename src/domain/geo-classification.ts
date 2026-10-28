@@ -1,11 +1,13 @@
 import {
   geoVersions,
+  readGeoVersions,
   geoClassificationSchema,
   type DecisionQuestion,
   type GeoEvaluation,
   type GeoClassification,
   type NativeDecision,
   type GeoPageCheck,
+  type GeoVersionSet,
 } from '../shared/geo-analysis';
 import type { GeoObservation } from '../shared/geo';
 
@@ -20,6 +22,8 @@ const choice = (instructions: string, options: readonly string[]): DecisionQuest
   instructions,
   criteria: Object.fromEntries(options.map((option) => [option, option.replaceAll('_', ' ')])),
 });
+const unverifiedOverview = (observation: GeoObservation) =>
+  observation.engine === 'google_aio' && observation.context.collector === 'serpapi';
 export const belongsToDomain = (url: string, domain: string | null) => {
   if (!domain) return false;
   try {
@@ -34,7 +38,9 @@ export function buildGeoEvaluation(
   observation: GeoObservation,
   checks: GeoPageCheck[] = [],
   criteria: { id: string; criterion: string; verifiedFact: string }[] = [],
+  method: GeoVersionSet = geoVersions,
 ): GeoEvaluation {
+  const versions = readGeoVersions(method);
   const text = observation.capture.answerText;
   let end = Math.min(text.length, 8000);
   while (new TextEncoder().encode(text.slice(0, end)).length > 10000) end = Math.floor(end * 0.8);
@@ -88,6 +94,20 @@ export function buildGeoEvaluation(
       labels.brand_stance,
     );
   });
+  if (versions.rubric === 'geo-rubric-2') {
+    for (const [id, question] of Object.entries(questions)) {
+      if ((id === 'brand_stance' || id.startsWith('competitor_')) && question.type === 'choice') {
+        question.criteria.recommended =
+          'Directly selected or recommended without an unresolved buyer condition.';
+        question.criteria.conditional_recommendation =
+          'Recommended only if a stated buyer need or condition holds, including "consider if" or "better if".';
+        question.criteria.not_applicable =
+          'The entity is not discussed in an available complete answer.';
+        question.instructions +=
+          ' Distinguish direct from conditional recommendations. Missing answer content is unknown, not a negative or neutral stance.';
+      }
+    }
+  }
   const usableChecks = checks
     .filter((check) => check.status === 'checked' && check.excerpt !== null)
     .slice(0, 3);
@@ -104,8 +124,22 @@ export function buildGeoEvaluation(
       `Classify the supplied content of checked source ${check.target}. A URL alone does not determine this classification.`,
       ['editorial', 'review_directory', 'community', 'official_product', 'other', 'unknown'],
     );
+  const scope =
+    end < text.length ||
+    (versions.policy === 'geo-policy-2' &&
+      (observation.capture.quality !== 'complete' ||
+        !text.trim() ||
+        unverifiedOverview(observation)))
+      ? 'partial'
+      : 'complete';
   return {
     state: {
+      ...(versions.rubric === 'geo-rubric-2'
+        ? {
+            captureQuality: observation.capture.quality,
+            ...(unverifiedOverview(observation) ? { captureCoverage: 'unverified' } : {}),
+          }
+        : {}),
       prompt: observation.context.promptText,
       brand: observation.context.brand,
       competitors: observation.context.competitors.slice(0, 5),
@@ -117,23 +151,43 @@ export function buildGeoEvaluation(
         excerpt: check.excerpt?.slice(0, 800),
       })),
       verifiedCriteria: facts,
-      scope: end < text.length ? 'partial' : 'complete',
+      scope,
     },
     questions,
     candidates,
-    scope: end < text.length ? 'partial' : 'complete',
+    scope,
   };
 }
 export function projectGeoClassification(
   observation: GeoObservation,
   evaluation: GeoEvaluation,
   native: NativeDecision,
+  method: GeoVersionSet = geoVersions,
 ): GeoClassification {
+  const versions = readGeoVersions(method);
   const value = (id: string, fallback = 'unknown') => {
     const answer = native.answers[id];
     return answer?.type === 'choice' ? answer.choice : fallback;
   };
   const pages = evaluation.state.checkedPages as GeoPageCheck[];
+  const guarded = versions.policy === 'geo-policy-2';
+  const hasAnswer =
+    observation.capture.quality !== 'no_feature' && Boolean(observation.capture.answerText.trim());
+  const scope =
+    guarded &&
+    (!hasAnswer || observation.capture.quality !== 'complete' || unverifiedOverview(observation))
+      ? 'partial'
+      : evaluation.scope;
+  const brandPresence =
+    guarded && (!hasAnswer || (scope === 'partial' && value('brand_presence') === 'absent'))
+      ? 'unknown'
+      : value('brand_presence');
+  const brandStance =
+    !guarded || brandPresence === 'present'
+      ? value('brand_stance')
+      : brandPresence === 'absent'
+        ? 'not_applicable'
+        : 'unknown';
   const sources = observation.capture.sources.map((source) => ({
     id: source.id,
     role: belongsToDomain(source.canonicalUrl, observation.context.brand.domain)
@@ -152,28 +206,35 @@ export function projectGeoClassification(
     observationId: observation.id,
     model: native.model,
     provider: native.model.startsWith('jev') ? 'typesafe' : 'workers_ai',
-    rubricVersion: geoVersions.rubric,
-    policyVersion: geoVersions.policy,
-    ownershipVersion: geoVersions.ownership,
-    scope: evaluation.scope,
+    rubricVersion: versions.rubric,
+    policyVersion: versions.policy,
+    ownershipVersion: versions.ownership,
+    scope,
     needsReview: true,
-    answerQuality: value('answer_quality'),
-    brandPresence: value('brand_presence'),
-    brandStance: value('brand_stance'),
+    answerQuality: guarded && !hasAnswer ? 'unknown' : value('answer_quality'),
+    brandPresence,
+    brandStance,
     evidenceSupport: pages.length ? value('evidence_support') : 'unavailable',
     fitByCriterion: Object.fromEntries(
       Object.keys(evaluation.questions)
         .filter((id) => id.startsWith('fit_'))
         .map((id) => [
           id.slice(4),
-          id === 'fit_buyer_intent' && (evaluation.state.verifiedCriteria as unknown[]).length === 0
+          (guarded && !hasAnswer) ||
+          (id === 'fit_buyer_intent' &&
+            (evaluation.state.verifiedCriteria as unknown[]).length === 0)
             ? 'unclear'
             : value(id, 'unclear'),
         ]),
     ),
     competitors: observation.context.competitors.slice(0, 5).map((competitor, index) => ({
       id: competitor.id,
-      stance: value(`competitor_${String(index)}`),
+      stance:
+        guarded &&
+        (!hasAnswer ||
+          (scope === 'partial' && value(`competitor_${String(index)}`) === 'not_applicable'))
+          ? 'unknown'
+          : value(`competitor_${String(index)}`),
     })),
     evidence: evaluation.candidates.map((candidate) => {
       const answer = native.answers[`evidence_${candidate.id}`];

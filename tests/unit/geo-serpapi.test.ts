@@ -41,7 +41,7 @@ const overview = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('bounded SerpApi captures', () => {
-  it('sends literal Google prompt fresh and preserves answer and reference provenance', async () => {
+  it('preserves Google evidence without treating provider success as verified answer coverage', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(reply(envelope({ ai_overview: overview })));
@@ -60,7 +60,7 @@ describe('bounded SerpApi captures', () => {
     expect(before).toHaveBeenCalledTimes(1);
     expect(capture).toMatchObject({
       answerText: 'Orbit is an option.',
-      quality: 'complete',
+      quality: 'partial',
       model: null,
       providerRequestId: 'search-1',
       providerStatus: 'Success',
@@ -68,6 +68,19 @@ describe('bounded SerpApi captures', () => {
     });
     expect(capture.sources.some((source) => source.referenceLevel === 'answer')).toBe(true);
     expect(capture.sources.every((source) => source.spans === undefined)).toBe(true);
+    const legacyFetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(reply(envelope({ ai_overview: overview })));
+    expect(
+      (
+        await captureSerpApiGeo(
+          'key',
+          { ...context(), collectorVersion: 'geo-collector-2' },
+          allow,
+          legacyFetcher,
+        )
+      ).quality,
+    ).toBe('complete');
   });
 
   it('reserves every follow-up, uses a fixed endpoint, and redacts both raw envelopes', async () => {
@@ -185,7 +198,7 @@ describe('bounded SerpApi captures', () => {
       .fn<typeof fetch>()
       .mockResolvedValue(reply(envelope({ ai_overview: feature })));
     const capture = await captureSerpApiGeo('key', context(), allow, fetcher);
-    expect(capture.quality).toBe('complete');
+    expect(capture.quality).toBe('partial');
     for (const text of [
       'Orbit',
       'Works for teams.',
@@ -243,7 +256,7 @@ describe('bounded SerpApi captures', () => {
       .fn<typeof fetch>()
       .mockImplementation(() => Promise.resolve(reply(envelope({ ai_overview: feature }))));
     const capture = await captureSerpApiGeo('key', context(), allow, fetcher);
-    expect(capture.quality).toBe('complete');
+    expect(capture.quality).toBe('partial');
     expect(capture.answerText).toBe('Options:\nOrbit\nFor teams.\nCompare plans.');
     expect(capture.sources).toEqual(
       expect.arrayContaining([
@@ -540,7 +553,7 @@ describe('bounded SerpApi captures', () => {
         reply(envelope({ ai_overview: { text_blocks: [], page_token: 'token' } })),
       )
       .mockResolvedValueOnce(reply(envelope({ ai_overview: overview }, 'second')));
-    expect((await captureSerpApiGeo('key', context(), allow, fetcher)).quality).toBe('complete');
+    expect((await captureSerpApiGeo('key', context(), allow, fetcher)).quality).toBe('partial');
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 

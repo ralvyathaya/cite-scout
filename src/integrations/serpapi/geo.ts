@@ -267,6 +267,8 @@ function normalize(
   }
   capture.answerText = capture.textParts.map((value) => value.text).join('\n');
   if (!capture.answerText.trim()) partial();
+  // shortcut: structured Google output can omit HTML sections; require verified coverage before marking it complete.
+  if (context.engine === 'google_aio' && context.collectorVersion === 'geo-collector-4') partial();
   return capture;
 }
 

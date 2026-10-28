@@ -5,6 +5,7 @@ import { checkOwnedPage } from '../../integrations/page-check';
 import { geoHash } from '../../shared/geo';
 import {
   geoVersions,
+  readGeoVersions,
   geoAnalysisSchema,
   type DecisionModel,
   type GeoAnalysis,
@@ -280,6 +281,8 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
       env,
       `SELECT o.id,p.user_id FROM geo_observations o JOIN projects p ON p.id=o.project_id
       WHERE ${geoAccessSql(env, new Date(clock()))}
+      AND json_extract(o.capture_json,'$.quality')='complete' AND trim(o.answer_text,char(9,10,11,12,13,32))<>''
+      AND NOT(o.engine='google_aio' AND json_extract(o.context_json,'$.collector')='serpapi')
       AND NOT EXISTS(SELECT 1 FROM geo_processing_attempts a WHERE a.observation_id=o.id AND a.kind='analysis')
       AND (SELECT count(*) FROM geo_processing_attempts a WHERE a.project_id=p.id AND a.usage_date=?)<?
       ORDER BY o.captured_at,o.id LIMIT ?`,
@@ -399,6 +402,11 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
         const input = JSON.parse(row.input_json) as { target: string; domain: string };
         result = await checkOwnedPage(input.target, input.domain);
       } else {
+        const versions = readGeoVersions({
+          rubric: row.rubric_version,
+          policy: row.policy_version,
+          ownership: geoVersions.ownership,
+        });
         await reserveGeoProviderRequest(env, {
           operationKey: `processing:${row.id}`,
           processingId: row.id,
@@ -422,7 +430,7 @@ export async function processGeoAnalysis(env: CloudflareBindings, limit = 5, at 
           evaluation,
           row.model,
         );
-        const classification = projectGeoClassification(observation, evaluation, native),
+        const classification = projectGeoClassification(observation, evaluation, native, versions),
           checks = evaluation.state.pageChecks as GeoPageCheck[];
         result = { classification, diagnoses: diagnoseGeo(observation, classification, checks) };
         inputTokens = native.usage.input_tokens;

@@ -210,7 +210,7 @@ export class GeoFixtureWorkspace {
                   : null,
             modelReported: surface.reportsModel,
             inlineReferencesAvailable: false,
-            quality: 'complete',
+            quality: engine === 'google_aio' ? 'partial' : 'complete',
             providerRequestId: `fixture-${id}`,
             providerStatus: 'fixture',
             reportedCost: 0,
