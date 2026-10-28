@@ -31,7 +31,7 @@ it('uses the prospective collector policy for fresh synthetic runs and preserves
   ).toEqual({
     perplexity: ['geo-collector-1', 700],
     openai_web_search: ['geo-collector-3', 1600],
-    google_aio: ['geo-collector-2', 700],
+    google_aio: ['geo-collector-4', 700],
     bing_copilot: ['geo-collector-3', 700],
   });
   for (const saved of before.observations)

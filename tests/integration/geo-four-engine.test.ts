@@ -225,7 +225,7 @@ describe('four-engine staging observation loop', () => {
     const expected = {
       perplexity: ['geo-collector-1', 700],
       openai_web_search: ['geo-collector-3', 1600],
-      google_aio: ['geo-collector-2', 700],
+      google_aio: ['geo-collector-4', 700],
       bing_copilot: ['geo-collector-3', 700],
     };
     const current = await readCurrentGeoContexts(env, owner.userId, run.items);

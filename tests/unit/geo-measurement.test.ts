@@ -108,6 +108,23 @@ it('splits changed reported models/rubrics/prompts but ignores unsupported Perpl
     capture: { ...base.capture, model: null, modelReported: false },
   };
   expect(await measurementCohort(google, 'mention')).not.toBeNull();
+  const serpapi = {
+    ...google,
+    context: {
+      ...google.context,
+      collector: 'serpapi' as const,
+      collectorVersion: 'geo-collector-2' as const,
+    },
+  };
+  expect(
+    await measurementCohort(
+      {
+        ...serpapi,
+        context: { ...serpapi.context, collectorVersion: 'geo-collector-4' },
+      },
+      'mention',
+    ),
+  ).not.toBe(await measurementCohort(serpapi, 'mention'));
   expect(
     await measurementCohort(
       { ...google, context: { ...google.context, locationCode: 2036 } },

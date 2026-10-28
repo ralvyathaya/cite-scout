@@ -68,10 +68,10 @@ export function geoCollectorPolicy(
 ): Pick<GeoRequestContext, 'collectorVersion' | 'maxOutputTokens'> {
   return {
     collectorVersion:
-      engine === 'openai_web_search' || (engine === 'bing_copilot' && collector === 'serpapi')
-        ? 'geo-collector-3'
-        : (engine === 'google_aio' || engine === 'bing_copilot') && collector === 'serpapi'
-          ? 'geo-collector-2'
+      engine === 'google_aio' && collector === 'serpapi'
+        ? 'geo-collector-4'
+        : engine === 'openai_web_search' || (engine === 'bing_copilot' && collector === 'serpapi')
+          ? 'geo-collector-3'
           : 'geo-collector-1',
     maxOutputTokens:
       engine === 'claude_web_search' ? 4096 : engine === 'openai_web_search' ? 1600 : 700,
@@ -126,7 +126,7 @@ export interface GeoRequestContext {
   engine: GeoEngine;
   surface: (typeof geoSurfaces)[GeoEngine]['surface'];
   collector: GeoCollector;
-  collectorVersion: 'geo-collector-1' | 'geo-collector-2' | 'geo-collector-3';
+  collectorVersion: 'geo-collector-1' | 'geo-collector-2' | 'geo-collector-3' | 'geo-collector-4';
   requestedModel?: string;
   languageCode: string;
   locationCode: number;

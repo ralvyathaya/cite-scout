@@ -543,7 +543,12 @@ const observationSchema = z.object({
       'bing_copilot_answers',
     ]),
     collector: z.enum(['perplexity_api', 'openai_responses', 'serpapi', 'dataforseo_standard']),
-    collectorVersion: z.enum(['geo-collector-1', 'geo-collector-2', 'geo-collector-3']),
+    collectorVersion: z.enum([
+      'geo-collector-1',
+      'geo-collector-2',
+      'geo-collector-3',
+      'geo-collector-4',
+    ]),
     requestedModel: z.string().optional(),
     languageCode: z.string(),
     locationCode: z.number(),
