@@ -1,11 +1,59 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, readdir, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startGeoReview } from '../../scripts/review-geo';
+import { createContext, Script } from 'node:vm';
+import { createSourceFile, isFunctionDeclaration, ScriptTarget } from 'typescript';
 
 let review: Awaited<ReturnType<typeof startGeoReview>> | undefined;
 let directory = '';
+
+it.each(['synthetic-spot-check', 'synthetic-unsampled'])(
+  'retains an unsaved source correction (%s) and prevents bulk requests before that correction is saved',
+  async (groupId) => {
+    const html = await readFile(
+      new URL('../../scripts/geo-review-ui.html', import.meta.url),
+      'utf8',
+    );
+    const script = /<script nonce="__NONCE__">([\s\S]*?)<\/script>/u.exec(html)?.[1];
+    if (!script) throw Error('Review script missing');
+    const syntax = createSourceFile('review.js', script, ScriptTarget.Latest);
+    const action = syntax.statements.find(
+      (node) => isFunctionDeclaration(node) && node.name?.text === 'saveSource',
+    );
+    if (!action) throw Error('Source action missing');
+    const status = { textContent: '' },
+      originalState = { locked: false, version: 'synthetic', sourceReview: { decisions: {} } };
+    let writes = 0;
+    const sandbox = {
+      busy: false,
+      dirty: false,
+      sourceDirty: true,
+      state: originalState,
+      sourceGroupId: groupId,
+      el: (id: string) =>
+        id === 'status'
+          ? status
+          : { value: id === 'reviewer' ? 'Synthetic browser test' : 'owned' },
+      document: { querySelectorAll: () => [] },
+      confirm: () => true,
+      render: vi.fn(),
+      sourceGroups: () => [],
+      request: (path: string) => {
+        if (path === '/sources') writes++;
+        return Promise.resolve(originalState);
+      },
+    };
+    const execution: unknown = new Script(
+      `${action.getText(syntax)}\nsaveSource('accept_remaining')`,
+    ).runInContext(createContext(sandbox));
+    await Promise.resolve(execution);
+    expect(writes).toBe(0);
+    expect(sandbox.sourceDirty).toBe(true);
+    expect(status.textContent).toMatch(/Simpan.*kelompok/iu);
+  },
+);
 afterEach(async () => {
   if (review)
     await new Promise<void>((resolve, reject) =>
@@ -24,6 +72,9 @@ it('keeps blind review private, validates human saves, retains drafts and refuse
   directory = await mkdtemp(join(tmpdir(), 'citescout-review-'));
   const rows = ['first', 'second'].map((id) => ({
     id,
+    sources: [],
+    checks: [],
+    context: { brand: { id: 'brand', name: 'Brand', domain: 'brand.example' }, competitors: [] },
     answerText: 'Synthetic evidence',
     options: { brandPresence: ['present', 'absent'], 'evidence.support': ['yes', 'no', 'unknown'] },
   }));
@@ -36,7 +87,13 @@ it('keeps blind review private, validates human saves, retains drafts and refuse
     })),
   };
   const original = JSON.stringify(labels);
-  await writeFile(join(directory, 'packet.json'), JSON.stringify({ review: rows }));
+  await writeFile(
+    join(directory, 'packet.json'),
+    JSON.stringify({
+      review: rows,
+      manifest: { records: rows.map((row) => ({ id: row.id, split: 'held_out' })) },
+    }),
+  );
   await writeFile(join(directory, 'human-labels.json'), original);
   review = await startGeoReview(directory);
   const { origin, token } = review;

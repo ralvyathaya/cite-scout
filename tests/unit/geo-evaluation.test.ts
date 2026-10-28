@@ -13,6 +13,13 @@ import { buildGeoEvaluation, projectGeoClassification } from '../../src/domain/g
 import { diagnoseGeo } from '../../src/domain/geo-diagnosis';
 import type { GeoObservation } from '../../src/shared/geo';
 import type { NativeDecision } from '../../src/shared/geo-analysis';
+import {
+  createSourceReview,
+  readSourceReview,
+  reviewSourceGroup,
+  sourceReviewGroups,
+} from '../../scripts/geo-source-review';
+import { startGeoReview } from '../../scripts/review-geo';
 
 function at<T>(values: T[], index = 0): T {
   const value = values[index];
@@ -153,6 +160,165 @@ function gold(source: EvaluationInput, packet: ReturnType<typeof prepareEvaluati
 }
 
 describe('local human GEO evaluation', () => {
+  it('completes the local grouped API review and freezes both files without filling raw human source values', async () => {
+    const data = input();
+    for (const row of data.records)
+      row.observation.capture.sources = [
+        {
+          id: 's1',
+          url: 'https://rival.example/page',
+          canonicalUrl: 'https://rival.example/page',
+          title: null,
+          referenceLevel: 'retrieved',
+        },
+      ];
+    const packet = prepareEvaluation(data),
+      labels = gold(data, packet);
+    labels.reviewedAt = null;
+    for (const row of labels.records)
+      for (const field of Object.keys(row.values))
+        if (field.startsWith('source.')) row.values[field] = null;
+    const dir = mkdtempSync(join(tmpdir(), 'citescout-review-complete-'));
+    writeFileSync(join(dir, 'packet.json'), JSON.stringify(packet));
+    writeFileSync(join(dir, 'human-labels.json'), JSON.stringify(labels));
+    const local = await startGeoReview(dir);
+    try {
+      const headers = {
+        'X-Review-Token': local.token,
+        Origin: local.origin,
+        'Content-Type': 'application/json',
+      };
+      const state = async () =>
+        (await (await fetch(`${local.origin}/state`, { headers })).json()) as {
+          version: string;
+          labels: typeof labels;
+        };
+      const post = (path: string, body: unknown) =>
+        fetch(`${local.origin}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+      const firstRow = at(labels.records);
+      const complete = async () =>
+        post('/save', {
+          version: (await state()).version,
+          reviewedBy: 'Synthetic human',
+          recordId: firstRow.id,
+          values: firstRow.values,
+          complete: true,
+        });
+      const groups = sourceReviewGroups(packet);
+      for (const group of groups.slice(0, -1))
+        expect(
+          (
+            await post('/sources', {
+              version: (await state()).version,
+              reviewedBy: 'Synthetic human',
+              action: 'save',
+              groupId: group.id,
+              value: group.kind === 'role' ? 'competitor_owned' : 'unknown',
+            })
+          ).status,
+        ).toBe(200);
+      expect((await complete()).status).toBe(422);
+      const last = at(groups.slice(-1));
+      expect(
+        (
+          await post('/sources', {
+            version: (await state()).version,
+            reviewedBy: 'Synthetic human',
+            action: 'save',
+            groupId: last.id,
+            value: last.kind === 'role' ? 'competitor_owned' : 'unknown',
+          })
+        ).status,
+      ).toBe(200);
+      expect((await complete()).status).toBe(200);
+      const finished = await state();
+      expect(finished.labels.reviewedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
+      expect(
+        finished.labels.records.every(
+          (row) => row.values['source.s1.role'] === null && row.values['source.s1.type'] === null,
+        ),
+      ).toBe(true);
+      const provenance = await readSourceReview(dir);
+      if (!provenance) throw Error('Source review missing');
+      expect(freezeHumanLabels(packet, finished.labels, provenance).sourceReviewHash).toBeTypeOf(
+        'string',
+      );
+      expect(
+        (
+          await post('/sources', {
+            version: finished.version,
+            reviewedBy: 'Synthetic human',
+            action: 'save',
+            groupId: last.id,
+            value: 'unknown',
+          })
+        ).status,
+      ).toBe(409);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        local.server.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        }),
+      );
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it('freezes source provenance and excludes assisted annotations from all accuracy partitions', () => {
+    const data = input();
+    for (const row of data.records) {
+      row.observation.capture.sources = [
+        {
+          id: 's1',
+          url: 'https://rival.example/page',
+          canonicalUrl: 'https://rival.example/page',
+          title: null,
+          referenceLevel: 'retrieved',
+        },
+      ];
+      row.classification.sources = [{ id: 's1', role: 'competitor_owned', type: 'unknown' }];
+    }
+    const packet = prepareEvaluation(data),
+      labels = gold(data, packet);
+    for (const row of labels.records)
+      for (const field of Object.keys(row.values))
+        if (field.startsWith('source.')) row.values[field] = null;
+    const original = JSON.stringify(labels);
+    expect(() => freezeHumanLabels(packet, labels)).toThrow(/Missing/);
+    let review = createSourceReview(packet);
+    for (const group of sourceReviewGroups(packet))
+      review = reviewSourceGroup(packet, review, {
+        action: 'save',
+        reviewedBy: 'Synthetic reviewer',
+        groupId: group.id,
+        value: group.kind === 'role' ? 'competitor_owned' : 'unknown',
+      });
+    const lock = freezeHumanLabels(packet, labels, review);
+    const report = scoreEvaluation(data, packet, labels, lock, review);
+    expect(report.sourceReview?.assistedFieldsExcludedFromAccuracy).toBe(4);
+    expect(report.sourceReview?.independentGroupDecisions).toBe(2);
+    const calibration = report.byPartition.calibration,
+      heldOut = report.byPartition.held_out;
+    if (!calibration || !heldOut) throw Error('Missing expected partitions');
+    expect(calibration.fields).not.toHaveProperty('source.s1.role');
+    expect(heldOut.fields['source.s1.role']?.reviewed).toBe(1);
+    expect(report.overall.fields['source.s1.role']?.reviewed).toBe(1);
+    expect(report.pilotGatePassed).toBe(false);
+    expect(report.scoringVersion).toBe('geo-local-scoring-3');
+    expect(report.status).toBe('partially_human_reviewed_synthetic');
+    expect(report.sourceReview?.contentCoverage.overall).toEqual({
+      sourceOccurrences: 3,
+      withCheckedContent: 0,
+      withoutCheckedContent: 3,
+    });
+    expect(report.sourceReview?.contentCoverage.byPartition.held_out.sourceOccurrences).toBe(1);
+    expect(JSON.stringify(labels)).toBe(original);
+    const changed = structuredClone(review);
+    at(Object.values(changed.decisions).filter((decision) => decision !== undefined)).reviewedBy =
+      'changed';
+    expect(() => scoreEvaluation(data, packet, labels, lock, changed)).toThrow(/changed/);
+    expect(() => scoreEvaluation(data, packet, labels, lock)).toThrow();
+  });
   it('does not request a duplicate support label and scores legacy packets without inventing one', () => {
     const data = input();
     const modern = prepareEvaluation(data);

@@ -76,6 +76,7 @@
       }
       .panel {
         min-width: 0;
+        overflow-wrap: anywhere;
         background: white;
         border: 1px solid #dde1e6;
         border-radius: 10px;
@@ -95,6 +96,13 @@
         display: block;
         width: 100%;
         margin-top: 4px;
+      }
+      .bar label {
+        min-width: 0;
+        max-width: 100%;
+      }
+      .bar select {
+        width: 100%;
       }
       details {
         border-top: 1px solid #e1e4e8;
@@ -184,8 +192,10 @@
           </li>
         </ol>
         <p>
-          Lima label di bagian Jawaban adalah tahap pertama. Ringkasan utama 20/20 belum berarti
-          seluruh review selesai: label sumber, bukti, temuan, dan tindakan dinilai terpisah.
+          Ringkasan utama 20/20 belum berarti seluruh review selesai. Sumber kini dinilai
+          berkelompok; usulan kalibrasi yang disetujui dicatat sebagai assisted dan dikeluarkan dari
+          skor akurasi. Enam jawaban uji tetap tanpa usulan. Tidak ada panggilan AI atau pembacaan
+          halaman baru.
         </p>
         <p>
           Kelengkapan tangkapan menilai hasil teknis provider, bukan apakah teks terasa utuh. Status
@@ -203,6 +213,46 @@
           berlaku. Tugas “yes” harus berguna dan berdasar pada bukti jawaban ini.
         </p>
       </details>
+      <section class="panel" id="source-panel" hidden>
+        <h2>Review sumber ringkas</h2>
+        <p id="source-progress" class="muted"></p>
+        <div class="bar">
+          <label
+            >Bagian
+            <select id="source-partition">
+              <option value="calibration">Kalibrasi · dengan usulan</option>
+              <option value="held_out">Uji independen · tanpa usulan</option>
+            </select></label
+          >
+          <label
+            >Kelompok sumber
+            <select id="source-group"></select
+          ></label>
+        </div>
+        <h3 id="source-title"></h3>
+        <p id="source-help"></p>
+        <details>
+          <summary>Konteks dan sumber yang dinilai bersama</summary>
+          <pre id="source-context"></pre>
+          <div id="source-refs"></div>
+          <pre id="source-content"></pre>
+        </details>
+        <label class="field"
+          >Penilaian kelompok ini
+          <select id="source-choice">
+            <option value="">— Belum dinilai —</option>
+          </select></label
+        >
+        <div class="bar">
+          <button id="source-save">Simpan penilaian kelompok</button
+          ><button id="source-batch">Setujui sisa usulan kepemilikan kalibrasi</button>
+        </div>
+        <p class="muted">
+          Persetujuan kelompok berlaku pada semua entri yang tercantum. Batch memerlukan spot-check
+          yang sesuai dan tidak mencakup data uji. Pilihan sumber lama yang sudah diisi sendiri
+          tidak ditimpa.
+        </p>
+      </section>
       <div class="layout">
         <article class="panel">
           <h2 id="prompt"></h2>
@@ -225,15 +275,18 @@
         </article>
         <section class="panel">
           <h2 id="heading" tabindex="-1">Label manusia</h2>
-          <p class="muted">Pilih sendiri; tidak ada label otomatis.</p>
+          <p class="muted">
+            Jawaban, bukti dan temuan tetap dinilai sendiri. Gunakan review ringkas untuk sumber.
+          </p>
           <div id="fields"></div>
           <div class="bar">
             <button id="save" class="save">Simpan jawaban ini</button
             ><button id="complete">Konfirmasi seluruh review selesai</button>
           </div>
           <p class="muted">
-            Penyimpanan hanya memperbarui human-labels.json lokal. Freeze dan scoring dilakukan
-            setelah review manusia selesai.
+            Pilihan asli disimpan di human-labels.json; keputusan kelompok dan provenance di
+            source-review.json lokal. Freeze mengunci keduanya; label assisted tidak menjadi gold
+            independen.
           </p>
         </section>
       </div>
@@ -248,7 +301,9 @@
       let state,
         index = 0,
         dirty = false,
-        busy = false;
+        busy = false,
+        sourceDirty = false,
+        sourceGroupId = '';
       const labels = {
         captureQuality: 'Kelengkapan tangkapan',
         answerQuality: 'Kualitas jawaban',
@@ -275,14 +330,147 @@
             n +
             Object.keys(row.options).filter(
               (field) =>
+                !field.startsWith('source.') &&
                 state.labels.records.find((label) => label.id === row.id).values[field] === null,
             ).length,
           0,
+        ) + (state.sourceReview?.remaining ?? 0);
+      const sourceGroups = () =>
+        state.sourceReview.groups.filter((g) => g.split === el('source-partition').value);
+      const sourceChoiceName = (value) =>
+        ({
+          owned: 'Milik brand',
+          competitor_owned: 'Milik kompetitor',
+          third_party: 'Pihak ketiga',
+          unknown: 'Belum bisa ditentukan',
+          editorial: 'Artikel / editorial',
+          review_directory: 'Direktori ulasan',
+          community: 'Komunitas / forum',
+          official_product: 'Halaman resmi produk',
+          other: 'Lainnya',
+        })[value] || value;
+      function renderSources() {
+        const groups = sourceGroups(),
+          decisions = state.sourceReview.decisions;
+        el('source-panel').hidden = !state.sourceReview.groups.length;
+        if (!groups.some((g) => g.id === sourceGroupId))
+          sourceGroupId = groups.find((g) => !decisions[g.id])?.id || groups[0]?.id || '';
+        el('source-group').replaceChildren(
+          ...groups.map((g) => {
+            const o = document.createElement('option');
+            o.value = g.id;
+            o.textContent = `${decisions[g.id] ? '✓ ' : ''}${g.spotCheck ? '★ Spot-check · ' : ''}${g.kind === 'role' ? 'Kepemilikan' : 'Jenis konten'} · ${g.label} · ${g.refs.length} entri`;
+            return o;
+          }),
         );
+        el('source-group').value = sourceGroupId;
+        const group = groups.find((g) => g.id === sourceGroupId);
+        el('source-progress').textContent =
+          `${Object.keys(decisions).length}/${state.sourceReview.groups.length} keputusan kelompok tersimpan · ${state.sourceReview.remaining} field sumber belum dinilai · ${state.sourceReview.assistedFields} field assisted (tidak masuk akurasi) · Isi halaman tersedia: ${state.sourceReview.contentCoverage.overall.withCheckedContent}/${state.sourceReview.contentCoverage.overall.sourceOccurrences}${state.sourceReview.preservedHumanDifferences ? ` · ${state.sourceReview.preservedHumanDifferences} pilihan manusia lama berbeda dan tetap dipertahankan` : ''}`;
+        el('source-save').disabled = !group || state.locked || !!state.labels.reviewedAt;
+        const checks = state.sourceReview.groups.filter((g) => g.spotCheck);
+        el('source-batch').disabled =
+          state.locked ||
+          !!state.labels.reviewedAt ||
+          !checks.length ||
+          checks.some((g) => !decisions[g.id] || decisions[g.id].value !== g.proposal) ||
+          !state.sourceReview.groups.some(
+            (g) =>
+              g.split === 'calibration' &&
+              g.kind === 'role' &&
+              !g.spotCheck &&
+              g.proposal &&
+              g.proposal !== 'unknown' &&
+              !decisions[g.id],
+          );
+        if (!group) return;
+        el('source-title').textContent =
+          `${group.kind === 'role' ? 'Kepemilikan situs' : 'Jenis isi halaman'} · ${group.label}`;
+        el('source-help').textContent =
+          `${group.reason} ${group.split === 'held_out' ? 'Nilai sendiri; tidak ada usulan.' : group.proposal ? `Usulan aturan: ${sourceChoiceName(group.proposal)}. Persetujuan tetap dicatat sebagai assisted.` : 'Tidak ada usulan yang didukung bukti; nilai dari materi tersimpan.'}`;
+        const context = JSON.parse(group.context);
+        el('source-context').textContent =
+          `Brand: ${context.brand.name} (${context.brand.domain || 'domain tidak tersedia'})\nKompetitor: ${context.competitors.map((item) => `${item.name} (${item.domain || 'domain tidak tersedia'})`).join(', ') || 'Tidak tersedia'}`;
+        el('source-content').textContent = group.evidence.length
+          ? JSON.stringify(group.evidence, null, 2)
+          : 'Tidak ada isi halaman yang diperiksa pada kelompok ini.';
+        el('source-refs').replaceChildren(
+          ...group.refs.map((ref) => {
+            const p = document.createElement('p');
+            const old = state.labels.records.find((r) => r.id === ref.recordId).values[ref.field];
+            p.textContent = `Jawaban ${state.review.findIndex((r) => r.id === ref.recordId) + 1} · ${ref.field} · ${ref.url} · ${old === null ? 'Target kosong: akan diisi oleh keputusan kelompok' : `Pilihan manusia lama: ${sourceChoiceName(old)} (dipertahankan)`}`;
+            return p;
+          }),
+        );
+        el('source-choice').replaceChildren(
+          ...['', ...group.options].map((value) => {
+            const o = document.createElement('option');
+            o.value = value;
+            o.textContent = value ? sourceChoiceName(value) : '— Belum dinilai —';
+            return o;
+          }),
+        );
+        el('source-choice').value = decisions[group.id]?.value || '';
+        el('source-choice').disabled = state.locked || !!state.labels.reviewedAt;
+      }
+      async function saveSource(action) {
+        if (busy || state.locked) return;
+        if (action === 'accept_remaining' && sourceDirty) {
+          el('status').textContent = 'Simpan penilaian kelompok sumber dahulu.';
+          return;
+        }
+        if (dirty) {
+          el('status').textContent = 'Simpan perubahan jawaban/nama reviewer dahulu.';
+          return;
+        }
+        if (action === 'save' && !el('source-choice').value) {
+          el('status').textContent = 'Pilih penilaian kelompok dahulu.';
+          return;
+        }
+        if (
+          action === 'accept_remaining' &&
+          !confirm(
+            'Setujui sisa usulan aturan kepemilikan kalibrasi sebagai assisted? Ini tidak memberi label pada data uji dan tidak menghasilkan akurasi independen.',
+          )
+        )
+          return;
+        busy = true;
+        const controls = [...document.querySelectorAll('input,select,button')].map((c) => [
+          c,
+          c.disabled,
+        ]);
+        for (const [c] of controls) c.disabled = true;
+        let success = false,
+          message;
+        try {
+          await request('/sources', {
+            version: state.version,
+            reviewedBy: el('reviewer').value,
+            action,
+            ...(action === 'save'
+              ? { groupId: sourceGroupId, value: el('source-choice').value }
+              : {}),
+          });
+          state = await request('/state');
+          sourceDirty = false;
+          success = true;
+          sourceGroupId =
+            sourceGroups().find((g) => !state.sourceReview.decisions[g.id])?.id || sourceGroupId;
+          message = 'Keputusan kelompok tersimpan dengan provenance. Label asli tidak ditimpa.';
+        } catch (error) {
+          message = error.message;
+        } finally {
+          busy = false;
+          for (const [c, disabled] of controls) c.disabled = disabled;
+          if (success) render();
+          el('status').textContent = message;
+        }
+      }
       function render() {
         const row = state.review[index],
           saved = state.labels.records.find((r) => r.id === row.id);
         dirty = false;
+        sourceDirty = false;
         el('records').replaceChildren(
           ...state.review.map((r, i) => {
             const o = document.createElement('option');
@@ -339,13 +527,12 @@
           return labels[field] || field.replaceAll('_', ' ');
         };
         for (const [field, options] of Object.entries(row.options)) {
-          const group = field.startsWith('source.')
-            ? 'Sumber'
-            : /^(evidence|fit|competitor)\./.test(field)
-              ? 'Bukti & kesesuaian'
-              : /^(diagnosis|task)\./.test(field)
-                ? 'Temuan & tindakan'
-                : 'Jawaban';
+          if (field.startsWith('source.')) continue;
+          const group = /^(evidence|fit|competitor)\./.test(field)
+            ? 'Bukti & kesesuaian'
+            : /^(diagnosis|task)\./.test(field)
+              ? 'Temuan & tindakan'
+              : 'Jawaban';
           const label = document.createElement('label');
           label.className = 'field';
           label.textContent = fieldName(field);
@@ -365,6 +552,11 @@
           select.value = saved.values[field] || '';
           select.disabled = state.locked;
           select.onchange = () => {
+            if (sourceDirty) {
+              select.value = saved.values[field] || '';
+              el('status').textContent = 'Simpan penilaian kelompok sumber dahulu.';
+              return;
+            }
             dirty = true;
             el('status').textContent = 'Perubahan belum disimpan.';
           };
@@ -386,6 +578,12 @@
               d.append(help);
             }
             d.append(...fields);
+            if (name === 'Sumber') {
+              const p = document.createElement('p');
+              p.textContent =
+                'Gunakan Review sumber ringkas di atas. Field sumber asli dan keputusan kelompok disimpan terpisah.';
+              d.append(p);
+            }
             return d;
           }),
         );
@@ -401,6 +599,7 @@
         el('next').disabled = index === state.review.length - 1;
         el('save').disabled = state.locked;
         el('complete').disabled = state.locked || remaining() > 0;
+        renderSources();
         el('status').textContent = state.locked
           ? 'Label sudah dikunci; hanya dapat dibaca.'
           : state.labels.reviewedAt
@@ -409,6 +608,10 @@
       }
       async function save(complete = false) {
         if (!state || busy || state.locked) return;
+        if (sourceDirty) {
+          el('status').textContent = 'Simpan penilaian kelompok sumber dahulu.';
+          return;
+        }
         busy = true;
         const controls = [...document.querySelectorAll('input,select,button')].map((control) => [
           control,
@@ -419,10 +622,19 @@
           message;
         try {
           const values = Object.fromEntries(
-            [...el('fields').querySelectorAll('select')].map((s) => [
-              s.dataset.field,
-              s.value || null,
+            Object.keys(state.review[index].options).map((field) => [
+              field,
+              state.labels.records.find((r) => r.id === state.review[index].id).values[field],
             ]),
+          );
+          Object.assign(
+            values,
+            Object.fromEntries(
+              [...el('fields').querySelectorAll('select')].map((s) => [
+                s.dataset.field,
+                s.value || null,
+              ]),
+            ),
           );
           const data = await request('/save', {
             version: state.version,
@@ -447,7 +659,7 @@
       }
       function move(to) {
         if (!state || busy) return;
-        if (dirty) {
+        if (dirty || sourceDirty) {
           el('status').textContent = 'Simpan perubahan sebelum pindah jawaban.';
           el('records').value = index;
           return;
@@ -457,17 +669,54 @@
         el('heading').focus();
       }
       el('reviewer').oninput = () => {
-        dirty = true;
+        if (!sourceDirty) dirty = true;
       };
       el('save').onclick = () => void save();
       el('complete').onclick = () => {
-        if (confirm('Semua label sudah dinilai sendiri berdasarkan bukti?')) void save(true);
+        if (
+          confirm(
+            'Konfirmasi keputusan asli, penilaian uji independen, dan keputusan assisted sudah selesai? Assisted tetap dikecualikan dari akurasi.',
+          )
+        )
+          void save(true);
       };
+      el('source-choice').onchange = () => {
+        if (dirty) {
+          el('source-choice').value = state.sourceReview.decisions[sourceGroupId]?.value || '';
+          el('status').textContent = 'Simpan perubahan jawaban/nama reviewer dahulu.';
+          return;
+        }
+        sourceDirty = true;
+        el('source-batch').disabled = true;
+        el('status').textContent = 'Penilaian kelompok belum disimpan.';
+      };
+      el('source-group').onchange = () => {
+        if (sourceDirty) {
+          el('source-group').value = sourceGroupId;
+          el('status').textContent = 'Simpan penilaian kelompok dahulu.';
+          return;
+        }
+        sourceGroupId = el('source-group').value;
+        renderSources();
+      };
+      el('source-partition').onchange = () => {
+        if (sourceDirty) {
+          el('source-partition').value = state.sourceReview.groups.find(
+            (g) => g.id === sourceGroupId,
+          ).split;
+          el('status').textContent = 'Simpan penilaian kelompok dahulu.';
+          return;
+        }
+        sourceGroupId = '';
+        renderSources();
+      };
+      el('source-save').onclick = () => void saveSource('save');
+      el('source-batch').onclick = () => void saveSource('accept_remaining');
       el('previous').onclick = () => move(index - 1);
       el('next').onclick = () => move(index + 1);
       el('records').onchange = (e) => move(Number(e.target.value));
       addEventListener('beforeunload', (e) => {
-        if (dirty) {
+        if (dirty || sourceDirty) {
           e.preventDefault();
           e.returnValue = '';
         }

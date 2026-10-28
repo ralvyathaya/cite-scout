@@ -13,6 +13,12 @@ import {
   type GeoPageCheck,
 } from '../src/shared/geo-analysis';
 import { geoEngineSchema, type GeoObservation } from '../src/shared/geo';
+import {
+  isAssistedSourceField,
+  readSourceReview,
+  resolveSourceReview,
+  type SourceReview,
+} from './geo-source-review';
 
 export interface EvaluationRecord {
   observation: GeoObservation;
@@ -202,7 +208,11 @@ function preparedPacketHash(packet: Packet) {
   }
   return hash(normalized);
 }
-export function freezeHumanLabels(packet: Packet, labels: HumanLabels) {
+export function freezeHumanLabels(
+  packet: Packet,
+  labels: HumanLabels,
+  sourceReview?: SourceReview,
+) {
   if (
     !labels.reviewedBy.trim() ||
     !labels.reviewedAt ||
@@ -214,8 +224,9 @@ export function freezeHumanLabels(packet: Packet, labels: HumanLabels) {
     new Set(labels.records.map((row) => row.id)).size !== packet.review.length
   )
     throw new Error('Every observation requires one human label record');
+  const resolved = sourceReview ? resolveSourceReview(packet, labels, sourceReview).labels : labels;
   for (const row of packet.review) {
-    const label = labels.records.find((label) => label.id === row.id);
+    const label = resolved.records.find((label) => label.id === row.id);
     if (!label || hash(Object.keys(label.values).sort()) !== hash(Object.keys(row.options).sort()))
       throw new Error('Human label fields must match the blinded packet');
     for (const [field, options] of Object.entries(row.options)) {
@@ -225,7 +236,11 @@ export function freezeHumanLabels(packet: Packet, labels: HumanLabels) {
         throw new Error(`Missing or invalid human label for ${field}`);
     }
   }
-  return { packetHash: hash(packet), labelsHash: hash(labels) };
+  return {
+    packetHash: hash(packet),
+    labelsHash: hash(labels),
+    ...(sourceReview ? { sourceReviewHash: hash(sourceReview) } : {}),
+  };
 }
 function predictions(row: EvaluationRecord) {
   const classification = row.classification;
@@ -356,9 +371,10 @@ export function scoreEvaluation(
   packet: Packet,
   labels: HumanLabels,
   lock: ReturnType<typeof freezeHumanLabels>,
+  sourceReview?: SourceReview,
 ) {
   if (
-    hash(lock) !== hash(freezeHumanLabels(packet, labels)) ||
+    hash(lock) !== hash(freezeHumanLabels(packet, labels, sourceReview)) ||
     packet.manifest.inputHash !== hash(input) ||
     preparedPacketHash(packet) !== hash(prepareEvaluation(input))
   )
@@ -372,8 +388,11 @@ export function scoreEvaluation(
     unsupportedFit: 0,
     storedPolicyDisagreements: 0,
   };
+  const resolved = sourceReview ? resolveSourceReview(packet, labels, sourceReview) : undefined;
   const rows = input.records.map((row) => {
-    const expected = labels.records.find((label) => label.id === row.observation.id)?.values;
+    const expected = (resolved?.labels ?? labels).records.find(
+      (label) => label.id === row.observation.id,
+    )?.values;
     if (!expected) throw new Error('Human label missing');
     const evaluation = buildGeoEvaluation(row.observation, row.checks, row.criteria);
     const replay = projectGeoClassification(row.observation, evaluation, row.classification.native);
@@ -419,16 +438,40 @@ export function scoreEvaluation(
       engine: row.observation.engine,
       split: packet.manifest.records.find((item) => item.id === row.observation.id)?.split,
       expected: Object.fromEntries(
-        Object.entries(expected).filter(([field]) => isEvaluationReviewField(field)),
+        Object.entries(expected).filter(
+          ([field]) =>
+            isEvaluationReviewField(field) &&
+            (!resolved || !isAssistedSourceField(resolved.assisted, row.observation.id, field)),
+        ),
       ),
       predicted: predictions(row),
     };
   });
   return {
-    status: input.dataset === 'synthetic' ? 'human_reviewed_synthetic' : 'human_reviewed_real',
+    status: resolved?.assisted.size
+      ? input.dataset === 'synthetic'
+        ? 'partially_human_reviewed_synthetic'
+        : 'partially_human_reviewed_real'
+      : input.dataset === 'synthetic'
+        ? 'human_reviewed_synthetic'
+        : 'human_reviewed_real',
     dataset: input.dataset,
     pilotGatePassed: false,
-    scoringVersion: 'geo-local-scoring-2',
+    scoringVersion: sourceReview ? 'geo-local-scoring-3' : 'geo-local-scoring-2',
+    ...(resolved
+      ? {
+          sourceReview: {
+            protocol: sourceReview?.protocol,
+            assistedFieldsExcludedFromAccuracy: resolved.assisted.size,
+            independentGroupDecisions: resolved.independentGroups,
+            assistedGroupDecisions: resolved.assistedGroups,
+            remainingSourceFields: resolved.remaining,
+            contentCoverage: resolved.contentCoverage,
+            preservedHumanSourceDifferences: resolved.preservedHumanDifferences,
+            note: 'Assisted annotations are excluded from accuracy. Repeated source occurrences are not independent samples; missing-content unknowns do not validate content categories.',
+          },
+        }
+      : {}),
     unscoredLegacyFields: packet.review.some((row) =>
       Object.hasOwn(row.options, 'evidence.support'),
     )
@@ -594,20 +637,23 @@ async function main() {
   }
   const packet = (await readJson(resolve(output, 'packet.json'))) as Packet;
   const labels = (await readJson(resolve(output, 'human-labels.json'))) as HumanLabels;
+  const sourceReview = await readSourceReview(output);
   if (preparedPacketHash(packet) !== hash(prepareEvaluation(input)))
     throw new Error('Prepared input or split changed');
   if (command === 'freeze') {
     await writeFile(
       resolve(output, 'labels-lock.json'),
-      `${JSON.stringify(freezeHumanLabels(packet, labels), null, 2)}\n`,
+      `${JSON.stringify(freezeHumanLabels(packet, labels, sourceReview), null, 2)}\n`,
       { flag: 'wx' },
     );
-    console.log('Human labels frozen. Model results may now be scored locally.');
+    console.log(
+      'Review frozen, including source provenance when supplied. Model results may now be scored locally.',
+    );
   } else {
     const lock = (await readJson(resolve(output, 'labels-lock.json'))) as ReturnType<
       typeof freezeHumanLabels
     >;
-    const report = scoreEvaluation(input, packet, labels, lock);
+    const report = scoreEvaluation(input, packet, labels, lock, sourceReview);
     await writeFile(resolve(output, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
     console.log(
       `Scored ${String(input.records.length)} ${input.dataset} observations. Private report written; pilot gate remains pending.`,
