@@ -2,6 +2,8 @@
 
 The owner approved the bounded follow-up in the [frozen proposal](2026-10-29-g3-policy3-validation-proposal.md). This receipt separates dispatch, independent human review and the release decision. Running a paid test does not establish a passing result.
 
+**Review update:** the owner subsequently completed and confirmed all 48 critical labels. [Frozen scoring](2026-10-29-g3-policy3-frozen-results.md) retains 23 raw differences and confirms excessive abstention in the policy-3 guard. G3 remains unmet; the execution and initial review-preparation checkpoints below are preserved as history.
+
 ## Frozen scope and execution
 
 The private manifest fixed three new prompt families and their text before dispatch: vendor evidence before an annual purchase, a demo for mistaken brand identification, and an explicit tracked-domain identity check. The third is brand seeded; it cannot measure organic discovery. The prompt-list SHA-256 is `087811471fcb29c15a48dd9ba2cb0c904529e7952cbfeb83b8bcae7842e488ee`.
@@ -42,7 +44,7 @@ Verification used the existing packet-preparation CLI and private operation asse
 
 ## Remaining MVP gates
 
-- **U4 / G3:** independent review and a scoped release assessment of these three new cases; do not tune on this cohort and reuse it as a fresh holdout.
+- **U4 / G3:** independent review and scoring are complete; resolve the guard defect and remaining adjudication before a separately versioned correction and new prospective assessment. Do not tune on this cohort and reuse it as a fresh holdout.
 - **U4 / G1 and G2:** the final complete OpenAI buyer baseline and a real complete buyer-relevant Copilot answer retain their separate unmet receipts. This Perplexity-only allowance cannot fund them.
 - **U4 / G4:** record a genuine implemented website change and obtain comparable observations on two later UTC days. Do not manufacture a completion date, a post sample or causal uplift.
 - **U3:** verify actual provider/search-account capacity and costs, payment fees and package-level contribution of at least 60%. A few inexpensive test requests are not a margin certificate; prices remain unchanged.
