@@ -2,7 +2,7 @@
 
 The [22 October MVP plan](../plans/2026-10-22-public-mvp-readiness-plan.md) is **not fully complete**. This receipt records current repository evidence; it is not a fresh production/staging configuration audit or release approval. The plan body remains unchanged.
 
-Latest checkpoint: the owner-authorized [29 October prospective G3 batch](2026-10-29-g3-prospective-staging-validation.md) completed three captures and three analyses, then restored the prior operational staging version. Its 48 critical labels await human review; no new G3 pass is claimed. Earlier zero-allowance and approval-pending statements below describe their historical checkpoints.
+Latest checkpoint: the owner-authorized [29 October prospective G3 batch](2026-10-29-g3-prospective-staging-validation.md) completed three captures and three analyses, then restored the prior operational staging version. All 48 critical labels are now confirmed, frozen and [scored locally](2026-10-29-g3-frozen-critical-results.md): safety counters are zero, while 22 differences and a possible same-name identity mismatch require adjudication. G3 remains unmet. Earlier review-pending, zero-allowance and approval-pending statements below describe their historical checkpoints.
 
 Latest follow-up: [G3 guard, rubric and task-scoring corrections](2026-10-28-g3-evidence-guards.md) are implemented and tested. Read-only staging inventory found no additional complete captures beyond the reviewed set. Fresh independent validation is blocked by the explicitly unchanged zero test limits, not by unfinished annotation of the 16-case worklist. No G3 pass or public launch approval is claimed.
 

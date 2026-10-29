@@ -1,6 +1,8 @@
 # GEO classification evaluation
 
-Latest implementation: [versioned evidence guards and task scoring](../docs/validation/2026-10-28-g3-evidence-guards.md) are verified locally. New packets use scoring version 4; the frozen real report still replays exactly under version 3. G3 needs fresh independent evidence and a separately approved small test allowance; its pass flag remains false.
+Latest result: the owner-authorized prospective batch now has three real Perplexity answers with 48 confirmed critical labels, frozen and scored under version 4. All safety counters are zero, but 22 differences and a possible same-name identity mismatch remain for adjudication. [Frozen critical results](../docs/validation/2026-10-29-g3-frozen-critical-results.md) are the latest receipt; G3 remains unmet, with original labels/report preserved.
+
+Implementation checkpoint: [versioned evidence guards and task scoring](../docs/validation/2026-10-28-g3-evidence-guards.md) are verified locally. New packets use scoring version 4; the original 20-record real report replays under version 3. The earlier allowance/review-pending entries below describe historical checkpoints.
 
 The [staging code release](../docs/validation/2026-10-28-g3-staging-release.md) is active with the prior configuration and no new paid requests. Deployment does not substitute for that independent validation.
 

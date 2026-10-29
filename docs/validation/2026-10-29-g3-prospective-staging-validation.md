@@ -1,6 +1,6 @@
 # Prospective G3 staging validation — 29 October 2026
 
-**Three new captures and three analyses completed; human review is pending. G3 and the full public MVP plan are not yet complete.** This follows the [staging guard release](2026-10-28-g3-staging-release.md). The owner subsequently authorized its previously proposed additional test allowance of at most $1.51.
+**Three new captures and three analyses completed.** The owner subsequently completed the critical review; [frozen results and adjudication](2026-10-29-g3-frozen-critical-results.md) supersede the review-pending checkpoint below. G3 and the full public MVP plan remain incomplete. This follows the [staging guard release](2026-10-28-g3-staging-release.md), whose proposed additional test allowance of at most $1.51 the owner authorized.
 
 ## Execution and cost
 
