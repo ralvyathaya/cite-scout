@@ -1,6 +1,6 @@
 # Frozen prospective G3 results — 29 October 2026
 
-**Review, freeze and local scoring are complete. G3 remains unmet pending adjudication and identity checks.** This is the result of the [bounded staging batch](2026-10-29-g3-prospective-staging-validation.md), not an additional paid test or a public-release approval.
+**Review, freeze, scoring and owner adjudication are complete. G3 remains unmet pending fresh validation of the corrected policy.** This is the result of the [bounded staging batch](2026-10-29-g3-prospective-staging-validation.md), not an additional paid test or a public-release approval.
 
 ## Frozen evidence
 
@@ -26,7 +26,7 @@ All three captures agree with the owner's `complete` and `usable` judgments. The
 | Diagnoses                       |                           4 |
 | Proposed actions                |                           9 |
 
-The initial human labels and stored projections both label two answers absent and one present. That last agreement concerns a literal name match whose entity identity remains unresolved; it must not be represented as verified visibility of the owner's business.
+The initial human labels and stored projections both label two answers absent and one present. The owner subsequently adjudicated the last match as `ambiguous`, in the separate record described below. It must not be represented as verified visibility of the owner's business.
 
 ## Safety checks and limits
 
@@ -40,13 +40,22 @@ The third answer discusses a product called CiteScout, while a returned source i
 
 The immutable raw report retains all 22 differences. Guided corrections go only into the separate private `adjudication-2026-10-29.json` ledger, with the original artifact hashes and explicit owner decisions. These post-score decisions are assisted/model-exposed; they are not a new independent gold set or a replacement accuracy report. The frozen review was reopened read-only.
 
-Through guided pattern 12, the owner has adjudicated **17 of the 22 raw differences**, plus the additional identity concern. The latter is now explicitly `ambiguous`; the original human/model agreement on `present` was not part of the 22 differences. Five raw fields remain: product-fit actions on three answers and third-party-source inspection on two. The original choices and report remain unchanged.
+All **22 of the 22 raw differences** now have explicit owner adjudication, plus the additional identity concern. The latter is `ambiguous`; the original human/model agreement on `present` was not part of the 22 differences. There are no pending labels in this worklist. In the last two patterns, the owner chose `unknown` for product-fit actions on all three answers and `no` for third-party-source inspection on answers 1–2. The original choices and report remain unchanged.
 
-Decisions retain genuine disagreements: Otterly's recommendation with a caveat in answer 1 remains a direct recommendation; inspecting an owned page in answer 3 remains useful; some diagnosis/action judgments are unknown rather than the model's no/none. Task usefulness and the generator's conservative emission thresholds are different questions. Corrections are not forced to match the model.
+Ten field occurrences still differ from the stored projection after owner adjudication. This is a qualitative worklist, not a replacement score or accuracy denominator:
+
+| Scope                                                      | Count | Owner judgment / stored output                     | Interpretation                                                                                                                    |
+| ---------------------------------------------------------- | ----: | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Otterly stance, answer 1                                   |     1 | Direct recommendation / conditional recommendation | Retained owner distinction between a recommendation with a caveat and an unresolved buyer condition.                              |
+| Evidence/fit diagnoses, answer 3                           |     2 | Unknown / no diagnosis emitted (`none`)            | No emitted finding is different from an affirmative claim that the problem is ruled out.                                          |
+| Inspect owned page, answer 3                               |     1 | Useful / no task emitted                           | The owner retains the usefulness of checking the ambiguous product identity; automatic task coverage remains a separate question. |
+| Verify buyer evidence and clarify product fit, all answers |     6 | Unknown / no task emitted                          | An unclear task target is not the same judgment as whether the current generator emitted a task.                                  |
+
+These ten judgments are final for this assisted worklist; they do not require the owner to repeat the same review. Task usefulness and the generator's conservative emission thresholds are different questions, so their raw differences must not be presented as ten proven model errors. Corrections are not forced to match the model. The additional identity false-positive concern remains material even though it was absent from the raw 22-disagreement count.
 
 The [entity-uncertainty correction](2026-10-29-g3-entity-abstention.md) investigates why the weak native match became definite presence and introduces a separate policy version. Any replay of this now-exposed batch is development evidence, not a fresh held-out score or retrospective G3 pass.
 
-Before a G3 pass, assess the remaining critical disagreements and identity concern against the frozen method and actual evidence. Model agreement is not itself a reason to change a human label. If a real behavior defect remains, record it as a defect; tuning on this batch would make it development evidence rather than another fresh holdout. Do not lower the gate or purchase replacement answers to make the result green without a new explicit scope.
+Before a G3 pass, validate the changed policy on a newly frozen prospective cohort and keep these retained edge cases and field-contract limits visible. Model agreement is not itself a reason to change a human label. This exposed batch is development evidence, not another fresh holdout. Do not lower the gate or purchase replacement answers to make the result green without a new explicit scope. A [bounded follow-up proposal](2026-10-29-g3-policy3-validation-proposal.md) is prepared, not authorized or executed.
 
 The initial freeze/scoring step used only local files and the existing evaluation CLI. It made no provider requests, deployment, database writes, merchant transactions or configuration changes; application code and broad runtime tests were unchanged at that checkpoint. Freeze/hash validation and local scoring completed successfully. The later policy-3 implementation, staging deployment and preservation checks are recorded separately in the entity-uncertainty correction linked above, rather than attributed to the frozen evaluation.
 

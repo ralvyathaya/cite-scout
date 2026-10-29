@@ -101,7 +101,7 @@ The audit deliberately supplies scenarios instead of inventing these commercial 
 
 **Acceptance:** G1–G4 receive separate pass/unmet receipts with actual scope/counts/costs. Public claims reflect the measured coverage, not model probabilities or a generalized accuracy percentage. A failure is a retained finding, not authority to switch models/surfaces.
 
-**29 October checkpoint:** [Critical labels are frozen and scored](../validation/2026-10-29-g3-frozen-critical-results.md); 17 raw disagreements plus the additional identity concern have separate owner adjudication, with five fields pending. The [policy-3 entity guard](../validation/2026-10-29-g3-entity-abstention.md) is tested and deployed only to staging, preserving operational configuration and making no new provider requests. G3, U4 and the overall public-MVP plan remain open; exposed development replay is not independent release evidence.
+**29 October checkpoint:** [Critical labels are frozen and scored](../validation/2026-10-29-g3-frozen-critical-results.md); all 22 raw disagreements plus the additional identity concern have separate owner adjudication, with no fields pending. The [policy-3 entity guard](../validation/2026-10-29-g3-entity-abstention.md) is tested and deployed only to staging, preserving operational configuration and making no new provider requests. A [bounded prospective validation proposal](../validation/2026-10-29-g3-policy3-validation-proposal.md) awaits a new explicit test allowance. G3, U4 and the overall public-MVP plan remain open; exposed development replay is not independent release evidence.
 
 ### U5. Align the approved offer and customer expectations
 
