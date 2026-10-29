@@ -57,7 +57,11 @@ const templates = [
 ];
 const abstentions = new Set(['unknown', 'unclear', 'ambiguous', 'unavailable', 'not_applicable']);
 export const isEvaluationReviewField = (field: string) => field !== 'evidence.support';
-function fieldOptions(row: EvaluationRecord, versions: GeoVersionSet) {
+function fieldOptions(
+  row: EvaluationRecord,
+  versions: GeoVersionSet,
+  reviewScope?: 'g3_validation',
+) {
   const fields: Record<string, readonly string[]> = {
     captureQuality: ['complete', 'partial', 'no_feature'],
     answerQuality: geoClassificationSchema.shape.answerQuality.options,
@@ -84,10 +88,21 @@ function fieldOptions(row: EvaluationRecord, versions: GeoVersionSet) {
   for (const issue of issues)
     fields[`diagnosis.${issue}`] = ['none', ...geoDiagnosisSchema.shape.status.options];
   for (const template of templates) fields[`task.${template}`] = ['yes', 'no', 'unknown'];
-  return fields;
+  return reviewScope === 'g3_validation'
+    ? Object.fromEntries(
+        Object.entries(fields).filter(([field]) => !/^(source|evidence)\./u.test(field)),
+      )
+    : fields;
 }
-export function prepareEvaluation(input: EvaluationInput, method: GeoVersionSet = geoVersions) {
+export function prepareEvaluation(
+  input: EvaluationInput,
+  method: GeoVersionSet = geoVersions,
+  reviewScope?: 'g3_validation',
+) {
   const versions = readGeoVersions(method);
+  z.literal('g3_validation').optional().parse(reviewScope);
+  if (reviewScope !== undefined && versions.policy !== 'geo-policy-2')
+    throw new Error('Unsupported review scope or method');
   const ids = input.records.map((row) => row.observation.id),
     expected = input.expectedObservationIds;
   if (
@@ -137,7 +152,7 @@ export function prepareEvaluation(input: EvaluationInput, method: GeoVersionSet 
   const groups = [...grouped.values()]
     .map((members) => ({ id: hash([...members].sort()), members: [...members].sort() }))
     .sort((a, b) => a.id.localeCompare(b.id));
-  const heldOut = Math.max(1, Math.round(groups.length / 3));
+  const heldOut = reviewScope ? groups.length : Math.max(1, Math.round(groups.length / 3));
   const assigned = groups.map((group, index) => ({
     ...group,
     split: index >= groups.length - heldOut ? ('held_out' as const) : ('calibration' as const),
@@ -146,6 +161,7 @@ export function prepareEvaluation(input: EvaluationInput, method: GeoVersionSet 
     version: 'geo-local-evaluation-1',
     dataset: input.dataset,
     versions,
+    ...(reviewScope ? { reviewScope } : {}),
     inputHash: hash(input),
     groups: assigned,
     records: input.records.map((row) => {
@@ -178,7 +194,7 @@ export function prepareEvaluation(input: EvaluationInput, method: GeoVersionSet 
       criteria: row.criteria,
       candidates: buildGeoEvaluation(row.observation, row.checks, row.criteria, versions)
         .candidates,
-      options: fieldOptions(row, versions),
+      options: fieldOptions(row, versions, reviewScope),
     })),
     labels: {
       reviewedBy: '',
@@ -186,7 +202,10 @@ export function prepareEvaluation(input: EvaluationInput, method: GeoVersionSet 
       records: input.records.map((row) => ({
         id: row.observation.id,
         values: Object.fromEntries(
-          Object.keys(fieldOptions(row, versions)).map((field) => [field, null as string | null]),
+          Object.keys(fieldOptions(row, versions, reviewScope)).map((field) => [
+            field,
+            null as string | null,
+          ]),
         ),
       })),
     },
@@ -385,7 +404,8 @@ export function scoreEvaluation(
   if (
     hash(lock) !== hash(freezeHumanLabels(packet, labels, sourceReview)) ||
     packet.manifest.inputHash !== hash(input) ||
-    preparedPacketHash(packet) !== hash(prepareEvaluation(input, versions))
+    preparedPacketHash(packet) !==
+      hash(prepareEvaluation(input, versions, packet.manifest.reviewScope))
   )
     throw new Error('Frozen input, labels or split changed');
   const safety = {
@@ -494,14 +514,18 @@ export function scoreEvaluation(
     };
   });
   return {
-    status: resolved?.assisted.size
-      ? input.dataset === 'synthetic'
-        ? 'partially_human_reviewed_synthetic'
-        : 'partially_human_reviewed_real'
-      : input.dataset === 'synthetic'
-        ? 'human_reviewed_synthetic'
-        : 'human_reviewed_real',
+    status: packet.manifest.reviewScope
+      ? `critical_fields_human_reviewed_${input.dataset}`
+      : resolved?.assisted.size
+        ? `partially_human_reviewed_${input.dataset}`
+        : `human_reviewed_${input.dataset}`,
     dataset: input.dataset,
+    ...(packet.manifest.reviewScope
+      ? {
+          reviewScope: packet.manifest.reviewScope,
+          unmeasuredDimensions: ['source role', 'source type', 'segment relevance'],
+        }
+      : {}),
     pilotGatePassed: false,
     scoringVersion:
       versions.policy === 'geo-policy-2'
@@ -659,9 +683,14 @@ const inputSchema = z.object({
 });
 async function main() {
   const [command, inputFile, directory] = process.argv.slice(2);
-  if (!command || !['prepare', 'freeze', 'score'].includes(command) || !inputFile || !directory)
+  if (
+    !command ||
+    !['prepare', 'prepare-g3', 'freeze', 'score'].includes(command) ||
+    !inputFile ||
+    !directory
+  )
     throw new Error(
-      'Usage: npx tsx scripts/evaluate-geo.ts prepare|freeze|score research/private/input.json research/private/review',
+      'Usage: npx tsx scripts/evaluate-geo.ts prepare|prepare-g3|freeze|score research/private/input.json research/private/review',
     );
   const privateRoot = resolve('research/private');
   const privatePath = (path: string) => {
@@ -681,8 +710,12 @@ async function main() {
   const readJson = async (name: string): Promise<unknown> =>
     JSON.parse(await readFile(name, 'utf8')) as unknown;
   const input: EvaluationInput = inputSchema.parse(await readJson(source));
-  if (command === 'prepare') {
-    const packet = prepareEvaluation(input);
+  if (command === 'prepare' || command === 'prepare-g3') {
+    const packet = prepareEvaluation(
+      input,
+      geoVersions,
+      command === 'prepare-g3' ? 'g3_validation' : undefined,
+    );
     await mkdir(output, { recursive: true });
     for (const [file, value] of [
       ['packet.json', packet],
@@ -697,7 +730,10 @@ async function main() {
   const packet = (await readJson(resolve(output, 'packet.json'))) as Packet;
   const labels = (await readJson(resolve(output, 'human-labels.json'))) as HumanLabels;
   const sourceReview = await readSourceReview(output);
-  if (preparedPacketHash(packet) !== hash(prepareEvaluation(input)))
+  if (
+    preparedPacketHash(packet) !==
+    hash(prepareEvaluation(input, packet.manifest.versions, packet.manifest.reviewScope))
+  )
     throw new Error('Prepared input or split changed');
   if (command === 'freeze') {
     await writeFile(

@@ -130,6 +130,7 @@ export async function startGeoReview(directory: string) {
             0,
           ),
           labels: state.labels,
+          reviewScope: packet.manifest.reviewScope ?? null,
           version: state.version,
           sourceReview: {
             groups,

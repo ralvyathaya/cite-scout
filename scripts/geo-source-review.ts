@@ -6,7 +6,10 @@ import type { prepareEvaluation } from './evaluate-geo';
 
 type Packet = ReturnType<typeof prepareEvaluation>;
 export interface SourcePacket {
-  manifest: { records: { id: string; split: 'calibration' | 'held_out' }[] };
+  manifest: {
+    reviewScope?: 'g3_validation';
+    records: { id: string; split: 'calibration' | 'held_out' }[];
+  };
   review: (Pick<Packet['review'][number], 'id' | 'sources' | 'checks'> & {
     context: Pick<Packet['review'][number]['context'], 'brand' | 'competitors'>;
     options: Partial<Record<string, readonly string[]>>;
@@ -96,7 +99,10 @@ export function sourceReviewGroups(packet: SourcePacket): SourceGroup[] {
       for (const kind of ['role', 'type'] as const) {
         const field = `source.${source.id}.${kind}`,
           suppliedOptions = row.options[field];
-        if (!suppliedOptions) throw Error('Source field missing');
+        if (!suppliedOptions) {
+          if (packet.manifest.reviewScope === 'g3_validation') continue;
+          throw Error('Source field missing');
+        }
         const options =
           kind === 'type' && !checked.length
             ? suppliedOptions.filter((value) => value === 'unknown')

@@ -160,6 +160,47 @@ function gold(source: EvaluationInput, packet: ReturnType<typeof prepareEvaluati
 }
 
 describe('local human GEO evaluation', () => {
+  it('keeps prospective G3 review blinded and held out, with unmeasured dimensions explicit', () => {
+    const data = input();
+    for (const row of data.records)
+      row.observation.capture.sources = [
+        {
+          id: 's1',
+          url: 'https://rival.example/page',
+          canonicalUrl: 'https://rival.example/page',
+          title: null,
+          referenceLevel: 'answer',
+        },
+      ];
+    const packet = prepareEvaluation(data, undefined, 'g3_validation');
+    expect(packet.manifest.records.every((row) => row.split === 'held_out')).toBe(true);
+    expect(packet.review.every((row) => row.sources.length === 1)).toBe(true);
+    expect(sourceReviewGroups(packet)).toEqual([]);
+    for (const row of packet.labels.records) {
+      expect(Object.values(row.values).every((value) => value === null)).toBe(true);
+      expect(Object.keys(row.values).some((field) => /^(source|evidence)\./u.test(field))).toBe(
+        false,
+      );
+      expect(row.values).toHaveProperty('task.inspect_owned_page');
+    }
+    const labels = gold(data, packet),
+      lock = freezeHumanLabels(packet, labels);
+    const report = scoreEvaluation(data, packet, labels, lock);
+    expect(report).toMatchObject({
+      status: 'critical_fields_human_reviewed_synthetic',
+      reviewScope: 'g3_validation',
+      pilotGatePassed: false,
+      unmeasuredDimensions: ['source role', 'source type', 'segment relevance'],
+    });
+    at(labels.records).values.answerQuality = null;
+    expect(() => freezeHumanLabels(packet, labels)).toThrow(/Missing or invalid/);
+    const tampered = structuredClone(packet);
+    delete tampered.manifest.reviewScope;
+    expect(() => scoreEvaluation(data, tampered, gold(data, packet), lock)).toThrow(/changed/);
+    const full = prepareEvaluation(data);
+    delete at(full.review).options['source.s1.role'];
+    expect(() => sourceReviewGroups(full)).toThrow('Source field missing');
+  });
   it('evaluates repeated-source tasks within their frozen partition and project context', () => {
     const data = input([
       record('a', 'one'),
@@ -482,6 +523,23 @@ describe('local human GEO evaluation', () => {
       expect(
         JSON.parse(readFileSync(join(privateRoot, 'review/report.json'), 'utf8')),
       ).toMatchObject({ dataset: 'synthetic', pilotGatePassed: false });
+      const legacy = prepareEvaluation(data, {
+        rubric: 'geo-rubric-1',
+        policy: 'geo-policy-1',
+        ownership: 'geo-domain-1',
+      });
+      mkdirSync(join(privateRoot, 'legacy'));
+      writeFileSync(join(privateRoot, 'legacy/packet.json'), JSON.stringify(legacy));
+      writeFileSync(
+        join(privateRoot, 'legacy/human-labels.json'),
+        JSON.stringify(gold(data, legacy)),
+      );
+      run('freeze', 'research/private/legacy');
+      run('score', 'research/private/legacy');
+      run('prepare-g3', 'research/private/g3');
+      expect(JSON.parse(readFileSync(join(privateRoot, 'g3/packet.json'), 'utf8'))).toMatchObject({
+        manifest: { reviewScope: 'g3_validation' },
+      });
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
