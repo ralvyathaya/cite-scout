@@ -75,6 +75,45 @@ const native = (
   ),
 });
 describe('atomic decision provider contract and grounded diagnosis', () => {
+  it.each([
+    ['present', 'ambiguous'],
+    ['absent', 'unknown'],
+  ])(
+    'abstains from weak %s entity decisions without editing native evidence',
+    (presence, expected) => {
+      const evaluation = buildGeoEvaluation(observation);
+      const response = native(evaluation, {
+        brand_presence: presence,
+        brand_stance: 'recommended',
+      });
+      response.answers.brand_presence = {
+        type: 'choice',
+        choice: presence,
+        confidence: 0.35,
+        probabilities: Object.fromEntries(
+          ['present', 'absent', 'ambiguous', 'unknown'].map((label) => [
+            label,
+            label === presence ? 0.7 : 0.1,
+          ]),
+        ),
+      };
+      const result = validateDecision(response, evaluation, 'clef-flash');
+      const before = structuredClone(result);
+      expect(projectGeoClassification(observation, evaluation, result)).toMatchObject({
+        brandPresence: expected,
+        brandStance: 'unknown',
+      });
+      expect(result).toEqual(before);
+      const previous = {
+        rubric: 'geo-rubric-2',
+        policy: 'geo-policy-2',
+        ownership: 'geo-domain-1',
+      };
+      expect(
+        projectGeoClassification(observation, evaluation, result, previous).brandPresence,
+      ).toBe(presence);
+    },
+  );
   it('keeps analysis of historical SerpApi Google captures partial without rewriting their saved quality', () => {
     const historical = {
       ...observation,
@@ -99,6 +138,20 @@ describe('atomic decision provider contract and grounded diagnosis', () => {
     });
     expect(historical).toEqual(before);
     expect(historical.capture.quality).toBe('complete');
+  });
+  it.each([
+    { presence: 'present', confidence: 0.5 },
+    { presence: 'absent', confidence: 1 },
+    { presence: 'ambiguous', confidence: 0 },
+    { presence: 'unknown', confidence: 0 },
+  ])('retains $presence at entity confidence $confidence', ({ presence, confidence }) => {
+    const evaluation = buildGeoEvaluation(observation);
+    const response = native(evaluation, { brand_presence: presence });
+    const entity = response.answers.brand_presence;
+    if (entity?.type !== 'choice') throw Error('Expected entity choice');
+    entity.confidence = confidence;
+    const result = validateDecision(response, evaluation, 'clef-flash');
+    expect(projectGeoClassification(observation, evaluation, result).brandPresence).toBe(presence);
   });
   it.each(['no_feature', 'complete'] as const)(
     'abstains on an empty %s answer without changing native output',

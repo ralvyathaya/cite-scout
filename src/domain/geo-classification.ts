@@ -126,7 +126,7 @@ export function buildGeoEvaluation(
     );
   const scope =
     end < text.length ||
-    (versions.policy === 'geo-policy-2' &&
+    (versions.policy !== 'geo-policy-1' &&
       (observation.capture.quality !== 'complete' ||
         !text.trim() ||
         unverifiedOverview(observation)))
@@ -170,7 +170,7 @@ export function projectGeoClassification(
     return answer?.type === 'choice' ? answer.choice : fallback;
   };
   const pages = evaluation.state.checkedPages as GeoPageCheck[];
-  const guarded = versions.policy === 'geo-policy-2';
+  const guarded = versions.policy !== 'geo-policy-1';
   const hasAnswer =
     observation.capture.quality !== 'no_feature' && Boolean(observation.capture.answerText.trim());
   const scope =
@@ -178,10 +178,15 @@ export function projectGeoClassification(
     (!hasAnswer || observation.capture.quality !== 'complete' || unverifiedOverview(observation))
       ? 'partial'
       : evaluation.scope;
-  const brandPresence =
-    guarded && (!hasAnswer || (scope === 'partial' && value('brand_presence') === 'absent'))
-      ? 'unknown'
-      : value('brand_presence');
+  const entity = native.answers.brand_presence;
+  // Operating abstention boundary, not calibrated accuracy; prior policies must replay unchanged.
+  const weakEntity =
+    versions.policy === 'geo-policy-3' && entity?.type === 'choice' && entity.confidence < 0.5;
+  let brandPresence = value('brand_presence');
+  if (guarded && (!hasAnswer || (scope === 'partial' && brandPresence === 'absent')))
+    brandPresence = 'unknown';
+  else if (weakEntity && brandPresence === 'present') brandPresence = 'ambiguous';
+  else if (weakEntity && brandPresence === 'absent') brandPresence = 'unknown';
   const brandStance =
     !guarded || brandPresence === 'present'
       ? value('brand_stance')

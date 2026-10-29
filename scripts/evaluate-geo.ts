@@ -101,7 +101,7 @@ export function prepareEvaluation(
 ) {
   const versions = readGeoVersions(method);
   z.literal('g3_validation').optional().parse(reviewScope);
-  if (reviewScope !== undefined && versions.policy !== 'geo-policy-2')
+  if (reviewScope !== undefined && versions.policy === 'geo-policy-1')
     throw new Error('Unsupported review scope or method');
   const ids = input.records.map((row) => row.observation.id),
     expected = input.expectedObservationIds;
@@ -435,7 +435,7 @@ export function scoreEvaluation(
       ],
     });
   const groups = new Map<string, EvaluationRecord[]>();
-  if (versions.policy === 'geo-policy-2')
+  if (versions.policy !== 'geo-policy-1')
     for (const row of input.records) {
       const key = taskGroup(row),
         group = groups.get(key) ?? [];
@@ -528,12 +528,12 @@ export function scoreEvaluation(
       : {}),
     pilotGatePassed: false,
     scoringVersion:
-      versions.policy === 'geo-policy-2'
+      versions.policy !== 'geo-policy-1'
         ? 'geo-local-scoring-4'
         : sourceReview
           ? 'geo-local-scoring-3'
           : 'geo-local-scoring-2',
-    ...(versions.policy === 'geo-policy-2'
+    ...(versions.policy !== 'geo-policy-1'
       ? { taskScope: 'frozen_partition_and_project_context' }
       : {}),
     ...(resolved

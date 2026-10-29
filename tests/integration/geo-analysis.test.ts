@@ -11,7 +11,7 @@ import {
 } from '../../src/server/v2/analysis';
 import { buildGeoEvaluation } from '../../src/domain/geo-classification';
 import { geoHash } from '../../src/shared/geo';
-import { legacyGeoVersions } from '../../src/shared/geo-analysis';
+import { geoVersionsV2, legacyGeoVersions } from '../../src/shared/geo-analysis';
 import type { GeoCapture } from '../../src/shared/geo';
 import { readGeoObservation } from '../../src/server/v2/geo-store';
 import { geoUsage } from '../../src/server/v2/geo-readiness';
@@ -176,55 +176,67 @@ describe('independent analysis budget and stored capture recovery', () => {
       }
     },
   );
-  it('preserves a pending legacy method and uses the new method only for a new request', async () => {
-    const { env, owner, id } = await capture();
-    const observation = await readGeoObservation(env, owner.userId, id);
-    const legacy = buildGeoEvaluation(observation, [], [], legacyGeoVersions);
-    const run = vi.fn().mockResolvedValue(nativeAnswer(legacy));
-    const classifierEnv = { ...env, AI: { run } as unknown as Ai };
-    const queued = await queueGeoAnalysis(classifierEnv, owner.userId, id, crypto.randomUUID(), at);
-    const inputHash = await geoHash({
-      observationId: id,
-      kind: 'analysis',
-      model: 'clef-flash',
-      input: legacy,
-      rubric: legacyGeoVersions.rubric,
-      policy: legacyGeoVersions.policy,
-    });
-    await env.DB.prepare(
-      'UPDATE geo_processing_attempts SET rubric_version=?,policy_version=?,input_json=?,input_hash=? WHERE id=?',
-    )
-      .bind(
-        legacyGeoVersions.rubric,
-        legacyGeoVersions.policy,
-        JSON.stringify(legacy),
-        inputHash,
-        queued.id,
+  it.each([
+    { method: legacyGeoVersions, stance: 'recommended' },
+    { method: geoVersionsV2, stance: 'not_applicable' },
+  ])(
+    'preserves pending $method.policy and uses the new method only for a new request',
+    async ({ method, stance }) => {
+      const { env, owner, id } = await capture();
+      const observation = await readGeoObservation(env, owner.userId, id);
+      const legacy = buildGeoEvaluation(observation, [], [], method);
+      const run = vi.fn().mockResolvedValue(nativeAnswer(legacy));
+      const classifierEnv = { ...env, AI: { run } as unknown as Ai };
+      const queued = await queueGeoAnalysis(
+        classifierEnv,
+        owner.userId,
+        id,
+        crypto.randomUUID(),
+        at,
+      );
+      const inputHash = await geoHash({
+        observationId: id,
+        kind: 'analysis',
+        model: 'clef-flash',
+        input: legacy,
+        rubric: method.rubric,
+        policy: method.policy,
+      });
+      await env.DB.prepare(
+        'UPDATE geo_processing_attempts SET rubric_version=?,policy_version=?,input_json=?,input_hash=? WHERE id=?',
       )
-      .run();
-    await processGeoAnalysis(classifierEnv, 1, at);
-    const before = (await readGeoAnalyses(env, owner.userId, id)).find(
-      (row) => row.id === queued.id,
-    );
-    expect(before?.classification).toMatchObject({
-      policyVersion: 'geo-policy-1',
-      rubricVersion: 'geo-rubric-1',
-      brandPresence: 'absent',
-      brandStance: 'recommended',
-    });
-    const fresh = await queueGeoAnalysis(classifierEnv, owner.userId, id, crypto.randomUUID(), at);
-    expect(fresh.id).not.toBe(queued.id);
-    await processGeoAnalysis(classifierEnv, 1, at);
-    const after = await readGeoAnalyses(env, owner.userId, id);
-    expect(after.find((row) => row.id === fresh.id)?.classification).toMatchObject({
-      policyVersion: 'geo-policy-2',
-      rubricVersion: 'geo-rubric-2',
-      brandPresence: 'absent',
-      brandStance: 'not_applicable',
-    });
-    expect(after.find((row) => row.id === queued.id)).toEqual(before);
-    expect(run).toHaveBeenCalledTimes(2);
-  });
+        .bind(method.rubric, method.policy, JSON.stringify(legacy), inputHash, queued.id)
+        .run();
+      await processGeoAnalysis(classifierEnv, 1, at);
+      const before = (await readGeoAnalyses(env, owner.userId, id)).find(
+        (row) => row.id === queued.id,
+      );
+      expect(before?.classification).toMatchObject({
+        policyVersion: method.policy,
+        rubricVersion: method.rubric,
+        brandPresence: 'absent',
+        brandStance: stance,
+      });
+      const fresh = await queueGeoAnalysis(
+        classifierEnv,
+        owner.userId,
+        id,
+        crypto.randomUUID(),
+        at,
+      );
+      expect(fresh.id).not.toBe(queued.id);
+      await processGeoAnalysis(classifierEnv, 1, at);
+      const after = await readGeoAnalyses(env, owner.userId, id);
+      expect(after.find((row) => row.id === fresh.id)?.classification).toMatchObject({
+        policyVersion: 'geo-policy-3',
+        rubricVersion: 'geo-rubric-2',
+        brandPresence: 'absent',
+        brandStance: 'not_applicable',
+      });
+      expect(after.find((row) => row.id === queued.id)).toEqual(before);
+      expect(run).toHaveBeenCalledTimes(2);
+    },
+  );
   it('rejects unsupported saved methods before reserving or calling the classifier', async () => {
     const { env, owner, id } = await capture();
     const queued = await queueGeoAnalysis(env, owner.userId, id, crypto.randomUUID(), at);
