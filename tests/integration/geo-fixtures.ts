@@ -240,12 +240,14 @@ export async function seedGeoEvidence(
       at.getTime(),
     ),
     env.DB.prepare(
-      "INSERT INTO geo_processing_attempts(id,project_id,observation_id,request_id,kind,provider,model,rubric_version,policy_version,input_hash,input_json,state,result_json,input_tokens,output_tokens,estimated_cost_usd,latency_ms,created_at,due_at,completed_at) VALUES(?,?,?,?,'analysis','fixture','clef-flash','geo-rubric-1','geo-policy-1',?,?,'completed',?,0,0,'0',0,?,?,?)",
+      "INSERT INTO geo_processing_attempts(id,project_id,observation_id,request_id,kind,provider,model,rubric_version,policy_version,input_hash,input_json,state,result_json,input_tokens,output_tokens,estimated_cost_usd,latency_ms,created_at,due_at,completed_at) VALUES(?,?,?,?,'analysis','fixture','clef-flash',?,?,?,?,'completed',?,0,0,'0',0,?,?,?)",
     ).bind(
       analysisId,
       owner.projectId,
       id,
       crypto.randomUUID(),
+      classification.rubricVersion,
+      classification.policyVersion,
       `fixture-${id}`,
       JSON.stringify(evaluation),
       JSON.stringify({ classification, diagnoses }),
