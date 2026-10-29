@@ -1,6 +1,6 @@
 # Prospective policy-3 G3 validation — proposal, 29 October 2026
 
-**Prepared only. No new authorization, activation, deployment or provider call.** The previous explicit allowance covered exactly three Perplexity captures and three classifier calls; those calls and the [owner adjudication](2026-10-29-g3-frozen-critical-results.md) are finished. Further expenditure requires a new owner decision. This proposal does not promise a passing G3 result or completion of the public MVP.
+**Preparation checkpoint, subsequently approved and executed.** The owner approved this bounded follow-up; [the execution receipt](2026-10-29-g3-policy3-prospective-validation.md) records three captures, three analyses, actual accounting, restoration and the new blind review. The proposal below preserves the pre-dispatch scope and acceptance criteria. The earlier policy-2 batch and its [owner adjudication](2026-10-29-g3-frozen-critical-results.md) remain separate and immutable. This proposal does not promise a passing G3 result or completion of the public MVP.
 
 ## Fixed candidate and evidence
 
