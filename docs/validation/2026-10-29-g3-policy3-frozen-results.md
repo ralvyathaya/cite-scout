@@ -2,6 +2,8 @@
 
 **G3 remains unmet.** The owner completed all 48 critical labels for the three [prospective policy-3 captures](2026-10-29-g3-policy3-prospective-validation.md), confirmed the review at `2026-10-29T15:25:38.759Z`, and the local writer was stopped before freeze/scoring. All three cases are real, complete/usable and in three separately frozen held-out groups. No human labels were supplied by AI.
 
+**30 October follow-up:** the owner worklist is closed, with all 23 raw differences accounted for: nine explicit corrections, six confirmed guard differences and eight retained judgments that compare different emission contracts. No further labeling is requested for this batch. The [policy-4 correction](2026-10-30-g3-grounded-entity-guard.md) is tested and deployed only to staging; exposed replay improves the six guard fields while leaving this frozen report intact. It is not a fresh G3 pass.
+
 The existing CLI reports `critical_fields_human_reviewed_real`, scope `g3_validation`, scorer `geo-local-scoring-4`. The automatic pilot flag remains false. Source ownership/type and per-segment relevance are outside this narrower review; other engines/classes remain unmeasured. These results are not a population accuracy estimate.
 
 ## Immutable result
@@ -54,7 +56,7 @@ The original labels/report remain immutable. A separate private ledger records e
 - Pattern 4, confirmed on 30 October: the evidence-problem diagnosis on case 3, supported → **unknown**. Without inspected source contents or verified product facts, that supported root cause has not been established.
 - Pattern 5, corrected on 30 October: Peec AI stance on case 2, conditional recommendation → **neutral mention**. This latest explicit owner correction supersedes the immediately preceding instruction to retain conditional recommendation. Nine field corrections are now recorded separately; the 48 frozen labels and original score remain unchanged.
 
-The six confirmed guard differences are retained as model-policy findings. They are not a request to change the owner's presence or stance labels to agree with an abstention. Other differences remain findings or field-contract review items; no automatic pass is inferred from assisted corrections.
+The six confirmed guard differences are retained as model-policy findings. They are not a request to change the owner's presence or stance labels to agree with an abstention. The remaining eight original diagnosis/usefulness judgments are retained explicitly against the different finding/task-emission contract; no new owner choice or model accuracy claim is inferred. This closes the owner worklist, not G3 or the public MVP.
 
 ## Scope and next evidence
 

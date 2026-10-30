@@ -26,4 +26,19 @@ All **26 stored classifications** replay exactly with their original method. All
 
 Review scope was the four fix-owned source/test files, based on `37dc675`. A focused correctness/adversarial review (`20261030-grounded-entity-37dc675`) has no unresolved findings after verification. The separately dispatched adversarial read used the same serving family; no cross-model independence is claimed. The bundled external route could not run because the available Bash executable was a WSL shim without a distribution; no external peer call started. Simplification preserved all proof tests and skipped work for native unknown/ambiguous decisions. The existing large-client-chunk warning remains outside this fix.
 
-**Staging deployment: pending final active-version preservation checks.** Analysis remains disabled; no new provider capture or inference is authorized by this change.
+## Staging release and remaining gate
+
+Deployed only to staging at 100%: **`50148678-c686-4e6a-a9c2-b2d7403094df`**, code commit `05e0ea7`, Worker SHA-256 `f99f783fd4dc4a522d82fc8b0b7a549f445086fdb7683d85873da343d1c72968`. Rollback is `21700378-64d4-4e70-a629-bf34b7122a0c`.
+
+The preflight snapshot came from that named active version, not `/settings` for the latest inactive upload. Wrangler staged code/public assets with `--keep-vars` and active plaintext values; the final native version inherited every operational binding, including encrypted secrets, from the named active version. All **54 bindings**, effective runtime and schedules compared exactly before and after activation. The new code's etag is intentionally different; it is checked against the verified candidate rather than mistaken for an operational-setting change. Provider request counts, selected engines, daily-monitoring state and three active original prompts also match. No API key was read/replaced and no database content, price, customer entitlement, budget, provider/model or production deployment changed.
+
+Analysis remains disabled by the original operational configuration; saved classifications remain historical records. **Zero additional provider/classifier requests occurred.** This release does not retroactively apply policy 4 to stored answers or give the owner a subscription.
+
+The owner-review worklist is closed; there are no further labels to enter for this batch. **G3 remains unmet until a separately authorized prospective cohort verifies policy 4.** The six recovered fields are development replay after exposure, not a new independent score. The public MVP still needs its other engine/evidence gates, actual package economics, merchant lifecycle and recovery/rollout receipts. No new paid test or activation is authorized by this receipt.
+
+## Next owner inputs
+
+- **Merchant test setup:** the preserved active staging snapshot has billing test mode on, but store/product/legacy-variant IDs are empty and the merchant API/webhook secret bindings are absent. Identify the intended CiteScout store/product and prepare its six approved test variants; install credentials through the secret workflow rather than chat. Local `.dev.vars` does not provision Worker bindings. Test/live resources and the legacy subscription must stay separate.
+- **Actual economics:** supply the search-account plan/invoice and capacity allocation, plus the applicable payment-fee basis. The small Perplexity smoke cost does not establish at least 60% contribution for three-engine monthly/annual packages. Keep approved prices/allowances unchanged while checking this gate.
+- **Real outcome evidence:** choose and implement a genuine website improvement, record its actual completion and compare eligible observations on two later UTC days. Additional capture/follow-up scopes need their own bounded authorization. Do not backdate a change or infer causal uplift.
+- **Remaining release evidence:** a new prospective G3 assessment, final G1/G2 surface checks, real billing lifecycle and the production-copy recovery/rollout rehearsal remain required. No current review form needs to be refilled; no production activation is included here.
