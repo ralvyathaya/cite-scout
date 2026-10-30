@@ -119,6 +119,8 @@ The audit deliberately supplies scenarios instead of inventing these commercial 
 
 ### U6. Rehearse migration, billing and production rollout
 
+**30 October merchant checkpoint:** the owner supplied a [verified six-variant test catalog](../validation/2026-10-30-billing-test-catalog.md). Its staging IDs and encrypted billing bindings are deployed with checkout disabled; code, providers, budgets, subscriptions, runtime and schedules are unchanged. Store ID is `476459` (the supplied `47645` omitted its last digit). Existing merchant callbacks target production, while the staging callback redirects to Cloudflare Access. Exact-path webhook routing and the corresponding owner-only isolation guard need explicit authorization/review before attaching a separate test webhook and enabling test checkout. No transaction or lifecycle pass is claimed.
+
 **Requirements:** R2, R4–R8. **Dependencies:** U1–U5, manifest, real gate receipts, separate migration/rollout authority. **Evidence:** B1/B6.
 
 **Approach:** snapshot active production configuration and schema, prepare a backup/restore strategy, and rehearse migrations 0002–0011 against an isolated copy containing the old schema and retained test subscription. Check each pending SQL migration rather than assuming additivity. Additive changes must preserve old evidence/accounting and the test/live access fix must prevent promotion of retained test rows. No new database is needed merely to reset allowances.
