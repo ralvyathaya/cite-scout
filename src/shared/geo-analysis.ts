@@ -11,14 +11,15 @@ export const geoVersionsV2 = {
   rubric: 'geo-rubric-2',
   policy: 'geo-policy-2',
 } as const;
-export const geoVersions = { ...geoVersionsV2, policy: 'geo-policy-3' } as const;
+export const geoVersionsV3 = { ...geoVersionsV2, policy: 'geo-policy-3' } as const;
+export const geoVersions = { ...geoVersionsV3, policy: 'geo-policy-4' } as const;
 export interface GeoVersionSet {
   rubric: string;
   policy: string;
   ownership: string;
 }
 export function readGeoVersions(input: GeoVersionSet) {
-  const versions = [legacyGeoVersions, geoVersionsV2, geoVersions].find(
+  const versions = [legacyGeoVersions, geoVersionsV2, geoVersionsV3, geoVersions].find(
     (candidate) =>
       candidate.rubric === input.rubric &&
       candidate.policy === input.policy &&

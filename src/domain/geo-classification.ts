@@ -34,6 +34,41 @@ export const belongsToDomain = (url: string, domain: string | null) => {
     return false;
   }
 };
+const mentionsName = (text: string, name: string) => {
+  const normalize = (value: string) => value.normalize('NFKC').toLowerCase().replace(/\s+/gu, ' ');
+  const escaped = normalize(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return (
+    Boolean(escaped) &&
+    new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'u').test(normalize(text))
+  );
+};
+const mentionsDomain = (text: string, domain: string | null) => {
+  if (!domain) return false;
+  const standaloneLinks =
+    /(^|\s)[*_`"'“”‘’]*\[[^\]\r\n]*\]\((https?:\/\/\S+)\)[*_`.,;:!?"'“”‘’]*(?=\s|$)/giu;
+  const candidates = [
+    ...Array.from(text.matchAll(standaloneLinks), (match) => match[2] ?? ''),
+    ...text.replace(standaloneLinks, ' ').split(/\s+/u),
+  ];
+  return candidates.some((token) => {
+    const candidate = token
+      .replace(/^[([{<>"'`*“”‘’]+/u, '')
+      .replace(/[)\]}>.,;:!?"'`*“”‘’]+$/u, '');
+    try {
+      const url = new URL(
+        /^[a-z][a-z\d+.-]*:\/\//iu.test(candidate) ? candidate : `https://${candidate}`,
+      );
+      return (
+        ['http:', 'https:'].includes(url.protocol) &&
+        !url.username &&
+        !url.password &&
+        belongsToDomain(url.href, domain)
+      );
+    } catch {
+      return false;
+    }
+  });
+};
 export function buildGeoEvaluation(
   observation: GeoObservation,
   checks: GeoPageCheck[] = [],
@@ -179,14 +214,27 @@ export function projectGeoClassification(
       ? 'partial'
       : evaluation.scope;
   const entity = native.answers.brand_presence;
-  // Operating abstention boundary, not calibrated accuracy; prior policies must replay unchanged.
-  const weakEntity =
-    versions.policy === 'geo-policy-3' && entity?.type === 'choice' && entity.confidence < 0.5;
+  const weakEntity = entity?.type === 'choice' && entity.confidence < 0.5;
   let brandPresence = value('brand_presence');
   if (guarded && (!hasAnswer || (scope === 'partial' && brandPresence === 'absent')))
     brandPresence = 'unknown';
-  else if (weakEntity && brandPresence === 'present') brandPresence = 'ambiguous';
-  else if (weakEntity && brandPresence === 'absent') brandPresence = 'unknown';
+  else if (weakEntity && versions.policy === 'geo-policy-3') {
+    if (brandPresence === 'present') brandPresence = 'ambiguous';
+    else if (brandPresence === 'absent') brandPresence = 'unknown';
+  } else if (
+    weakEntity &&
+    versions.policy === 'geo-policy-4' &&
+    (brandPresence === 'present' || brandPresence === 'absent')
+  ) {
+    const text = evaluation.candidates.map((segment) => segment.quote).join('');
+    const domain = mentionsDomain(text, observation.context.brand.domain);
+    if (brandPresence === 'present' && !domain) brandPresence = 'ambiguous';
+    else if (
+      brandPresence === 'absent' &&
+      (domain || mentionsName(text, observation.context.brand.name))
+    )
+      brandPresence = 'unknown';
+  }
   const brandStance =
     !guarded || brandPresence === 'present'
       ? value('brand_stance')

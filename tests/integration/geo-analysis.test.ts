@@ -11,7 +11,7 @@ import {
 } from '../../src/server/v2/analysis';
 import { buildGeoEvaluation } from '../../src/domain/geo-classification';
 import { geoHash } from '../../src/shared/geo';
-import { geoVersionsV2, legacyGeoVersions } from '../../src/shared/geo-analysis';
+import { geoVersionsV2, geoVersionsV3, legacyGeoVersions } from '../../src/shared/geo-analysis';
 import type { GeoCapture } from '../../src/shared/geo';
 import { readGeoObservation } from '../../src/server/v2/geo-store';
 import { geoUsage } from '../../src/server/v2/geo-readiness';
@@ -179,6 +179,7 @@ describe('independent analysis budget and stored capture recovery', () => {
   it.each([
     { method: legacyGeoVersions, stance: 'recommended' },
     { method: geoVersionsV2, stance: 'not_applicable' },
+    { method: geoVersionsV3, stance: 'not_applicable' },
   ])(
     'preserves pending $method.policy and uses the new method only for a new request',
     async ({ method, stance }) => {
@@ -228,7 +229,7 @@ describe('independent analysis budget and stored capture recovery', () => {
       await processGeoAnalysis(classifierEnv, 1, at);
       const after = await readGeoAnalyses(env, owner.userId, id);
       expect(after.find((row) => row.id === fresh.id)?.classification).toMatchObject({
-        policyVersion: 'geo-policy-3',
+        policyVersion: 'geo-policy-4',
         rubricVersion: 'geo-rubric-2',
         brandPresence: 'absent',
         brandStance: 'not_applicable',
