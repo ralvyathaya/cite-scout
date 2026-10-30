@@ -67,7 +67,7 @@
     "LEMON_SQUEEZY_VARIANT_ID": "",
     "LEMON_SQUEEZY_STORE_HOST": "citescout.lemonsqueezy.com",
     "LEMON_SQUEEZY_TEST_MODE": "true",
-    "BILLING_PLANS_ENABLED": "false",
+    "BILLING_PLANS_ENABLED": "true",
     "BILLING_PLAN_VARIANTS": "{\"test\":{\"starter\":{\"month\":\"2195435\",\"year\":\"2316256\"},\"growth\":{\"month\":\"2316257\",\"year\":\"2316258\"},\"pro\":{\"month\":\"2316261\",\"year\":\"2316262\"}}}",
     "RESEND_FROM_EMAIL": "CiteScout Staging <noreply@cite-scout.com>",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFUdD5T5nSD0fMzM",

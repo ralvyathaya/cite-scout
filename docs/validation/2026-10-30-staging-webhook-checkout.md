@@ -11,7 +11,7 @@ The owner authorized a Cloudflare Access exception only for the staging Lemon Sq
 
 This is **merchant API checkout smoke**, not an authenticated app-route/browser purchase or a billing lifecycle pass. Receipt payloads and checkout URLs remain private under `research/private/billing-webhook-2026-10-30/`.
 
-## Current blocker
+## Earlier blocker
 
 Cloudflare rejected creation of the callback application with **HTTP 403 / code 1010**. The available Access token permits inventory/preflight reads but not this write. The separate `STAGING_ACCESS_WRITE_TOKEN` has not been supplied. A scoped write token was requested through the owner-input workflow; its value must be placed in the ignored `.env.staging.access` file, never chat or Git.
 
@@ -20,6 +20,8 @@ Cloudflare rejected creation of the callback application with **HTTP 403 / code 
 After the credential is supplied: create/verify the owner-only descendant app and callback exception, prove unsigned/invalid-signature rejection and protected neighboring paths, attach a separate Test-mode staging webhook with the installed signing secret, then enable only staging test checkout using the named active-version snapshot and inherited operational bindings. Inspect test-event delivery and an isolated customer's lifecycle before claiming U6 billing completion. Do not submit a test purchase that can unintentionally alter an existing account or reach an unreviewed production callback.
 
 Rollback for the proposed routing change is removal of only the newly created callback/descendant applications and keeping `BILLING_PLANS_ENABLED=false`; preserve the original root owner-only app and original merchant webhook. No routing rollback is needed at this checkpoint because the write was denied.
+
+**Later checkpoint:** the owner supplied the scoped token and the [staging connection receipt](2026-10-30-staging-billing-connected.md) supersedes the blocked operational status above. The scoped Access apps and separate test webhook are now configured; 14 live boundary probes and six hosted Test-mode checkout pages pass, and only the staging checkout flag is enabled. No purchase or lifecycle pass is claimed.
 
 ## MVP status
 
