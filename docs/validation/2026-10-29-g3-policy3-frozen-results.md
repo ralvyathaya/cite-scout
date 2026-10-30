@@ -50,7 +50,9 @@ The original labels/report remain immutable. A separate private ledger records e
 
 - Pattern 1: retrieval diagnosis on case 1, supported → **suspected**. No page, HTTP or crawler checks establish a supported root cause.
 - Pattern 2: evidence support on cases 1–3, not applicable / not applicable / insufficient → **unavailable**. No inspected source-page contents are present in the packet.
-- Buyer-fit review is pending. All three packets contain no verified product criteria; the source facts and the field contract must be distinguished from general product knowledge.
+- Pattern 3, confirmed on 30 October: buyer fit on cases 1–3, not applicable / not applicable / partial → **unclear**. All three packets contain no verified product criteria; this field uses supplied verified facts rather than general product knowledge.
+- Pattern 4, confirmed on 30 October: the evidence-problem diagnosis on case 3, supported → **unknown**. Without inspected source contents or verified product facts, that supported root cause has not been established.
+- Pattern 5, corrected on 30 October: Peec AI stance on case 2, conditional recommendation → **neutral mention**. This latest explicit owner correction supersedes the immediately preceding instruction to retain conditional recommendation. Nine field corrections are now recorded separately; the 48 frozen labels and original score remain unchanged.
 
 The six confirmed guard differences are retained as model-policy findings. They are not a request to change the owner's presence or stance labels to agree with an abstention. Other differences remain findings or field-contract review items; no automatic pass is inferred from assisted corrections.
 
