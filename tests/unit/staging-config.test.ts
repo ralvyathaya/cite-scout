@@ -45,16 +45,40 @@ catch (error) { console.error(error.message); process.exitCode = 1; }`;
   return spawnSync(process.execPath, ['--input-type=module', '-e', program], { encoding: 'utf8' });
 }
 
-function checkRemoteAccess(response: string) {
+function checkRemoteAccess(response: string, requireWebhook = false) {
   const program = `import { verifyAccess } from './scripts/check-staging.mjs';
-globalThis.fetch = async () => { ${response} };
+globalThis.fetch = async (url) => { ${response} };
 try { await verifyAccess({
   CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32),
   STAGING_ACCESS_APPLICATION_ID: 'b'.repeat(36),
   STAGING_ACCESS_READ_TOKEN: 'test-only-token',
   STAGING_ACCESS_OWNER_EMAIL: 'owner@example.com',
-}); } catch (error) { console.error(error.message); process.exitCode = 1; }`;
+}, ${String(requireWebhook)}); } catch (error) { console.error(error.message); process.exitCode = 1; }`;
   return spawnSync(process.execPath, ['--input-type=module', '-e', program], { encoding: 'utf8' });
+}
+
+function checkWebhookAccess(application: object, policies: object[]) {
+  const program = `import { validateWebhookAccess } from './scripts/check-staging.mjs';
+try { validateWebhookAccess(${JSON.stringify(application)}, ${JSON.stringify(policies)}); }
+catch (error) { console.error(error.message); process.exitCode = 1; }`;
+  return spawnSync(process.execPath, ['--input-type=module', '-e', program], { encoding: 'utf8' });
+}
+
+function remoteTopology(extras: object[], webhookPolicies?: object[], requireWebhook = true) {
+  const root = { id: 'b'.repeat(36), type: 'self_hosted', domain: 'staging.cite-scout.com' };
+  const ownerPolicies = [
+    { decision: 'allow', include: [{ email: { email: 'owner@example.com' } }] },
+  ];
+  return checkRemoteAccess(
+    `
+    const root = ${JSON.stringify(root)}, apps = ${JSON.stringify([root, ...extras])};
+    const owner = ${JSON.stringify(ownerPolicies)}, webhook = ${JSON.stringify(webhookPolicies ?? [{ decision: 'bypass', include: [{ everyone: {} }] }])};
+    const result = url.includes('/policies?') ? (url.includes('/${'c'.repeat(36)}/') ? webhook : owner)
+      : url.endsWith('?per_page=1000') ? apps : root;
+    return Response.json({ success: true, result });
+  `,
+    requireWebhook,
+  );
 }
 
 describe('staging deployment guard', () => {
@@ -186,6 +210,89 @@ describe('staging deployment guard', () => {
     ]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('STAGING_ACCESS_MUST_PROTECT_ENTIRE_HOSTNAME');
+  });
+
+  it('allows a separate Bypass only at the staging Lemon Squeezy callback', () => {
+    expect(
+      checkWebhookAccess(
+        { type: 'self_hosted', domain: 'staging.cite-scout.com/api/webhooks/lemonsqueezy' },
+        [{ decision: 'bypass', include: [{ everyone: {} }] }],
+      ).status,
+    ).toBe(0);
+  });
+
+  it.each([
+    'staging.cite-scout.com',
+    'staging.cite-scout.com/api/*',
+    'staging.cite-scout.com/api/webhooks/*',
+    'staging.cite-scout.com/api/webhooks/lemonsqueezy/*',
+    'staging.cite-scout.com/api/billing/checkout',
+    'cite-scout.com/api/webhooks/lemonsqueezy',
+  ])('rejects a broad or unrelated callback exception: %s', (domain) => {
+    expect(
+      checkWebhookAccess({ type: 'self_hosted', domain }, [
+        { decision: 'bypass', include: [{ everyone: {} }] },
+      ]).stderr,
+    ).toContain('STAGING_WEBHOOK_ACCESS_MUST_BE_EXACT_BYPASS');
+  });
+
+  it.each([
+    { self_hosted_domains: ['staging.cite-scout.com/api/*'] },
+    { destinations: [{ type: 'public', uri: 'staging.cite-scout.com' }] },
+    { options_preflight_bypass: true },
+  ])('rejects additional callback destinations and bypass settings: %j', (extra) => {
+    expect(
+      checkWebhookAccess(
+        {
+          type: 'self_hosted',
+          domain: 'staging.cite-scout.com/api/webhooks/lemonsqueezy',
+          ...extra,
+        },
+        [{ decision: 'bypass', include: [{ everyone: {} }] }],
+      ).stderr,
+    ).toContain('STAGING_WEBHOOK_ACCESS_MUST_BE_EXACT_BYPASS');
+  });
+
+  it.each([
+    [],
+    [{ decision: 'allow', include: [{ everyone: {} }] }],
+    [{ decision: 'bypass', include: [{ email: { email: 'owner@example.com' } }] }],
+    [{ decision: 'bypass', include: [{ everyone: [] }] }],
+    [{ decision: 'bypass', include: [{ everyone: {} }], exclude: [{ everyone: {} }] }],
+    [
+      { decision: 'bypass', include: [{ everyone: {} }] },
+      { decision: 'allow', include: [{ everyone: {} }] },
+    ],
+  ])('rejects callback policies that do not match the reviewed exception: %j', (...policies) => {
+    expect(
+      checkWebhookAccess(
+        { type: 'self_hosted', domain: 'staging.cite-scout.com/api/webhooks/lemonsqueezy' },
+        policies,
+      ).stderr,
+    ).toContain('STAGING_WEBHOOK_ACCESS_MUST_BE_EXACT_BYPASS');
+  });
+
+  it('verifies callback policies remotely while retaining owner-only children', () => {
+    const webhook = {
+      id: 'c'.repeat(36),
+      type: 'self_hosted',
+      domain: 'staging.cite-scout.com/api/webhooks/lemonsqueezy',
+    };
+    const children = { id: 'd'.repeat(36), type: 'self_hosted', domain: `${webhook.domain}/*` };
+    expect(remoteTopology([webhook, children]).status).toBe(0);
+    expect(remoteTopology([webhook]).stderr).toContain('STAGING_WEBHOOK_CHILDREN_OWNER_REQUIRED');
+    expect(
+      remoteTopology([webhook, children], [{ decision: 'allow', include: [{ everyone: {} }] }])
+        .stderr,
+    ).toContain('STAGING_WEBHOOK_ACCESS_MUST_BE_EXACT_BYPASS');
+  });
+
+  it('rejects extra overlapping Access apps and requires a callback before enabling checkout', () => {
+    expect(remoteTopology([], undefined, false).status).toBe(0);
+    expect(remoteTopology([]).stderr).toContain('STAGING_WEBHOOK_ACCESS_REQUIRED');
+    expect(
+      remoteTopology([{ id: 'c'.repeat(36), domain: 'staging.cite-scout.com/api/*' }]).stderr,
+    ).toContain('STAGING_ACCESS_OVERLAPPING_APPLICATION_REQUIRES_REVIEW');
   });
 
   it.each([
