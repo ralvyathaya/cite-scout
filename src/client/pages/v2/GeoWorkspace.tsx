@@ -48,6 +48,7 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { ApiError, api, useResource } from './api';
+import { fixtureMode } from './geo-fixture-mode';
 import { WorkspaceHeading } from './WorkspaceHeading';
 import { GeoFollowUpDialog } from './GeoFollowUpDialog';
 import { actionCopy } from './action-copy';
@@ -3374,7 +3375,7 @@ export function GeoBilling() {
   const billing = useResource<Billing>('/api/billing/status');
   const [params] = useSearchParams();
   const mutation = useMutation();
-  const allowance = useResource<GeoAllowance>('/geo/allowance');
+  const allowance = useResource<GeoAllowance>(data.project ? '/geo/allowance' : null);
   const supportRequired = supportReasons.has(allowance.data?.reason ?? '');
   return (
     <section className="space-y-5">
@@ -3382,9 +3383,27 @@ export function GeoBilling() {
         title="Billing & usage"
         description="Your subscription, monitoring usage and available checks."
       >
-        <Button asChild variant="outline" size="sm">
-          <Link to="/app/settings#subscription">Manage subscription</Link>
-        </Button>
+        {data.project ? (
+          <Button asChild variant="outline" size="sm">
+            <Link to="/app/settings#subscription">Manage subscription</Link>
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!billing.data?.portalAvailable || mutation.busy || fixtureMode().requested}
+            onClick={() => {
+              void mutation.run(async () => {
+                const result = await api<{ url: string }>('/api/billing/portal', {});
+                const url = new URL(result.url);
+                if (url.protocol !== 'https:') throw new Error('Invalid billing URL.');
+                window.location.assign(url.href);
+              });
+            }}
+          >
+            Manage subscription
+          </Button>
+        )}
       </WorkspaceHeading>
       <ErrorNotice error={billing.error ?? allowance.error ?? mutation.error} />
       <div className="grid items-start gap-5 lg:grid-cols-[1fr_1.5fr]">
@@ -3421,7 +3440,11 @@ export function GeoBilling() {
         </section>
         <section className={box} aria-label="Monitoring usage">
           <h2 className="font-semibold">Monitoring usage</h2>
-          {allowance.loading ? (
+          {!data.project ? (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Complete project setup to see monitoring usage.
+            </p>
+          ) : allowance.loading ? (
             <p role="status" className="mt-4 text-sm">
               Loading monitoring usage…
             </p>

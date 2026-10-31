@@ -85,6 +85,48 @@ test('billing shows a verified legacy subscription without advertising it to new
   await expect(page.getByText('Test-mode billing', { exact: true })).toBeVisible();
 });
 
+test('a subscriber can open the billing portal before project setup without monitoring reads', async ({
+  page,
+}) => {
+  if ((page.viewportSize()?.width ?? 1280) < 1024)
+    await page.setViewportSize({ width: 320, height: 720 });
+  await billingWorkspace(page, {
+    subscription: { status: 'active', testMode: true, endsAt: null },
+    plan: { ...publicPlans[0], interval: 'month' },
+    portalAvailable: true,
+  });
+  const payload = (await new GeoFixtureWorkspace().request('/project')) as V2ProjectPayload;
+  await page.route('**/api/v2/project', (route) =>
+    route.fulfill({ json: { data: { ...payload, project: null } } }),
+  );
+  const apiCalls: { path: string; method: string }[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/'))
+      apiCalls.push({ path: new URL(request.url()).pathname, method: request.method() });
+  });
+  await page.route('**/api/billing/portal', (route) =>
+    route.fulfill({ json: { data: { url: 'https://billing.example.test/portal' } } }),
+  );
+  await page.route('https://billing.example.test/portal', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<h1>Synthetic billing portal</h1>' }),
+  );
+  await page.goto('/app/billing');
+  await expect(page.getByText('Starter · $29 / month · 5 active prompts')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
+  expect(apiCalls.some((call) => call.method !== 'GET')).toBe(false);
+  await page
+    .getByRole('button', { name: 'Manage subscription', exact: true })
+    .or(page.getByRole('link', { name: 'Manage subscription', exact: true }))
+    .click();
+  await expect(page.getByRole('heading', { name: 'Synthetic billing portal' })).toBeVisible();
+  expect(apiCalls.filter((call) => call.method !== 'GET')).toEqual([
+    { path: '/api/billing/portal', method: 'POST' },
+  ]);
+  expect(apiCalls.some((call) => call.path.includes('/geo/allowance'))).toBe(false);
+});
+
 test('unknown plan is unavailable rather than invented and closed sales cannot checkout', async ({
   page,
 }) => {
