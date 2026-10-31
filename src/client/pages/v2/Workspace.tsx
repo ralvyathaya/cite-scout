@@ -199,6 +199,7 @@ export function V2Shell() {
               const response = await fetch('/api/auth/sign-out', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                body: '{}',
               });
               if (!response.ok) throw new Error('Could not sign out.');
               sessionStorage.removeItem('citescout-run');

@@ -159,6 +159,20 @@ async function workspace(page: Page, data = project) {
     await route.fulfill({ json: body });
   });
 }
+test('signs out through the real auth endpoint without sending empty JSON', async ({ page }) => {
+  await workspace(page);
+  await page.route('**/api/auth/sign-out', (route) => route.continue());
+  await page.goto('/app/overview');
+  if (await page.getByRole('button', { name: 'Open navigation' }).isVisible())
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+  const finished = page.waitForResponse('**/api/auth/sign-out');
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  const response = await finished;
+  expect(await response.json()).toEqual({ success: true });
+  expect(response.status()).toBe(200);
+  await expect(page).toHaveURL('/');
+});
+
 test('opens exact evidence through the list and an old deep link', async ({ page }) => {
   await workspace(page);
   await page.goto('/app/overview');
