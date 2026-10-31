@@ -1,5 +1,7 @@
 # Starter, Growth and Pro pricing readiness
 
+**31 October checkpoint:** [current capacity and reproducible fee sensitivity](2026-10-31-mvp-gates-and-economics.md) retain the 60% release block. The actual account is Free/250 searches; the new reference scenario includes 7% + $0.50 international-subscription fees, with all unverified evidence flags still false. [Actual isolated Test-mode billing](2026-10-31-isolated-billing-lifecycle.md) has since advanced; the older merchant-setup notes below are historical, not the current connection status. No price, provider, budget or entitlement changed.
+
 Approved contract: one brand/account; 5/15/30 active prompts; Perplexity, OpenAI Web Search API and Google AI Overviews; 15/45/90 checks/day; $29/$79/$149 monthly or $290/$790/$1,490 annually. Annual is billed upfront and saves 16.7%. Existing $19 Perplexity subscriptions retain their existing price and rights. Claude and roadmap features are excluded from the public bundle.
 
 ## Cost gate: blocked, not a price change

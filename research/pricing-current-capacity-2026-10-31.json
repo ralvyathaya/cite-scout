@@ -1,0 +1,24 @@
+{
+  "monthDays": 31,
+  "accounts": { "starter": 1, "growth": 0, "pro": 0 },
+  "googleRequestsPerCheck": 2,
+  "searchPlan": {
+    "monthlyUsd": 0,
+    "monthlySearches": 250,
+    "otherMonthlySearches": 0,
+    "headroomFraction": 0.2
+  },
+  "costs": {
+    "perplexityPerCheckUsd": null,
+    "openaiPerCheckUsd": null,
+    "classificationPerCheckUsd": null,
+    "infrastructurePerAccountUsd": null
+  },
+  "payment": { "rate": 0.07, "perTransactionUsd": 0.5 },
+  "reserveFraction": 0.25,
+  "evidence": {
+    "providerRatesVerified": false,
+    "completeCapturesVerified": false,
+    "billingLifecycleVerified": false
+  }
+}

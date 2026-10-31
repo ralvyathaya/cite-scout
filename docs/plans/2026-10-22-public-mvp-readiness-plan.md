@@ -107,6 +107,8 @@ The audit deliberately supplies scenarios instead of inventing these commercial 
 
 ### U5. Align the approved offer and customer expectations
 
+**31 October evidence checkpoint:** [G1–G4 and package economics](../validation/2026-10-31-mvp-gates-and-economics.md) were checked without paid provider calls or configuration changes. Existing human-label work is complete; no further old-form entry is requested. G1 still lacks complete final-config OpenAI captures, G2 lacks a real Copilot answer, and G3 lacks prospective policy-4 evidence. The owner confirmed no public website change, so G4 needs a genuine baseline/change/two-day follow-up sequence. The target initial cohort is 5–10 paying users; no more detailed forecast is required for product work. Actual shared Free search capacity is insufficient for guaranteed package usage, and the unchanged illustrative ten-account scenario remains below 60% contribution at the current international-subscription fee reference. A small static metadata correction removes the stale legacy $19 offer as the default description; actual legacy prices and rights are unchanged. This is staging preparation, not a public implementation or a gate pass.
+
 **Requirements:** R1, R5, R8, R9. **Dependencies:** owner-approved commercial manifest; U1–U3 where the offer changes access. **Evidence:** B5/B6.
 
 **Approach:** update only necessary pricing/help/status wording and package access for the approved offer. Manual onboarding stays available when suggestions are disabled. Explain what one monitoring attempt counts, when daily checks can be deferred, and what saved evidence survives cancellation. Do not present an owner allowance as a subscription or the current preview as included before approval.
