@@ -57,7 +57,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.63.2",
-    "@cloudflare/vitest-plugin": "1.4.1",
+    "@cloudflare/vitest-plugin": "1.4.11",
     "@eslint/js": "latest",
     "@playwright/test": "latest",
     "@tailwindcss/vite": "latest",
