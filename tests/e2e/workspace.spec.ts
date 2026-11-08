@@ -686,7 +686,9 @@ for (const status of ['completed', 'partial', 'failed', 'deferred'])
     ).toBeVisible();
     if (status === 'deferred') await expect(page.getByText(/Next eligible attempt:/)).toBeVisible();
     if (status === 'failed')
-      await expect(page.getByRole('link', { name: 'Contact the founder for help' })).toBeVisible();
+      await expect(
+        page.getByRole('button', { name: 'Contact the founder for help' }),
+      ).toBeVisible();
   });
 test('archive retains question context after failure', async ({ page }) => {
   await workspace(page);

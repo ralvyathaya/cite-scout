@@ -294,8 +294,10 @@ test('accounting block keeps checks disabled and directs the customer to support
   await expect(page.getByRole('button', { name: 'Monitor Prompts' })).toBeDisabled();
   await expect(page.locator('#geo-monitor-status')).toContainText('Contact support');
   await expect(
-    page.getByRole('link', { name: 'Contact support about monitoring' }),
-  ).toHaveAttribute('href', /^mailto:/);
+    page.getByRole('button', { name: 'Contact support about monitoring' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Contact support about monitoring' }).click();
+  await expect(page.getByRole('dialog', { name: 'Tell us what you think' })).toBeVisible();
   expect(mutations).toEqual([]);
 });
 
@@ -307,8 +309,8 @@ test('missing production cost policy offers support without exposing internal co
   await expect(page.getByRole('button', { name: 'Monitor Prompts' })).toBeDisabled();
   await expect(page.locator('#geo-monitor-status')).toContainText('Contact support');
   await expect(
-    page.getByRole('link', { name: 'Contact support about monitoring' }),
-  ).toHaveAttribute('href', /^mailto:/);
+    page.getByRole('button', { name: 'Contact support about monitoring' }),
+  ).toBeVisible();
   await expect(page.getByText('GEO_PRODUCTION_COST_POLICY_REQUIRED', { exact: true })).toHaveCount(
     0,
   );

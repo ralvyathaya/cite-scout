@@ -14,10 +14,12 @@ export async function api<T>(
   path: string,
   body?: unknown,
   method = body === undefined ? 'GET' : 'POST',
+  signal?: AbortSignal,
 ): Promise<T> {
   if (fixtureMode().requested) return (await fixtureRequest(path, body, method)) as T;
   const response = await fetch(path.startsWith('/api/') ? path : `/api/v2${path}`, {
     method,
+    signal,
     credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),

@@ -30,6 +30,7 @@ import {
 } from 'recharts';
 import { Button } from '../../components/ui/button';
 import { PricingPlans } from '../../components/PricingPlans';
+import { FeedbackButton } from '../../components/FeedbackButton';
 import { billingSelection, subscriptionLabel } from '../../lib/billing-selection';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
@@ -573,28 +574,29 @@ export function GeoMonitor({
                   ? `${String(scopeEngines.length)} engines · 5 min cooldown per prompt and engine`
                   : `Fresh check · ${String(scopeEngines.length)} selected engines · five-minute prompt/engine cooldown`)}
           </p>
-          {reason && (
-            <Link
-              to={
-                supportRequired
-                  ? `mailto:${data.supportEmail}`
-                  : allowanceBlocked
+          {reason &&
+            (supportRequired ? (
+              <FeedbackButton className="h-auto justify-start p-0 text-xs font-medium text-primary underline underline-offset-4">
+                Contact support about monitoring
+              </FeedbackButton>
+            ) : (
+              <Link
+                to={
+                  allowanceBlocked
                     ? '/app/billing'
                     : promptBlocked
                       ? '/app/questions'
                       : '/app/settings'
-              }
-              className="text-xs font-medium text-primary underline underline-offset-4"
-            >
-              {supportRequired
-                ? 'Contact support about monitoring'
-                : allowanceBlocked
+                }
+                className="text-xs font-medium text-primary underline underline-offset-4"
+              >
+                {allowanceBlocked
                   ? 'Review monitoring usage'
                   : promptBlocked
                     ? 'Review prompts'
                     : 'Review monitoring settings'}
-            </Link>
-          )}
+              </Link>
+            ))}
         </div>
         <div className={small}>
           {allowance.data && (
@@ -3654,12 +3656,9 @@ export function GeoBilling() {
                   ? 'Manual checks are available within your monitoring limits.'
                   : allowanceReason(allowance.data.reason)}
                 {supportRequired && (
-                  <a
-                    className="mt-2 block font-medium text-primary underline"
-                    href={`mailto:${data.supportEmail}`}
-                  >
+                  <FeedbackButton className="mt-2 block font-medium text-primary underline">
                     Contact support about monitoring
-                  </a>
+                  </FeedbackButton>
                 )}
               </div>
             </>

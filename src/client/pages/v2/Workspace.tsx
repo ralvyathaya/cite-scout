@@ -24,6 +24,7 @@ import {
 } from 'react-router';
 import { Button } from '../../components/ui/button';
 import { BrandLogo } from '../../components/BrandLogo';
+import { FeedbackButton } from '../../components/FeedbackButton';
 import { WorkspaceHeading } from './WorkspaceHeading';
 import { WorkspaceModal } from './WorkspaceControls';
 import { Input } from '../../components/ui/input';
@@ -245,14 +246,13 @@ export function V2Shell() {
               </Button>
             </DialogTrigger>
             <WorkspaceBreadcrumb activePage={activePage} />
-            <a
-              href={`mailto:${resource.data?.supportEmail ?? 'support@cite-scout.com'}`}
+            <FeedbackButton
               className="ml-auto flex min-h-9 items-center gap-2 text-xs text-muted-foreground"
-              aria-label="Contact support"
+              ariaLabel="Send feedback"
             >
               <LifeBuoy className="size-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Help & support</span>
-            </a>
+              <span className="hidden sm:inline">Feedback</span>
+            </FeedbackButton>
           </header>
           <main
             id="main"
@@ -872,7 +872,6 @@ interface RunView {
 }
 const runPending = (run: RunView) => !run.terminal;
 export function RunProgress({ id }: { id: string }) {
-  const { data } = useOutletContext<WorkspaceContext>();
   const run = useResource<RunView>(`/scans/${id}`, runPending);
   if (!run.data) return <Failure error={run.error} />;
   return (
@@ -891,9 +890,9 @@ export function RunProgress({ id }: { id: string }) {
       {run.data.terminal && run.data.counts.successful === 0 && (
         <p className="text-sm">
           This check ended without a usable answer.{' '}
-          <a className="underline" href={`mailto:${data.supportEmail}`}>
+          <FeedbackButton className="h-auto min-h-0 p-0 text-sm underline">
             Contact the founder for help
-          </a>
+          </FeedbackButton>
           .
         </p>
       )}

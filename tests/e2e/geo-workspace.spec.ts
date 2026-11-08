@@ -438,7 +438,7 @@ test('billing keeps internal accounting out of customer UI while explaining bloc
     page.getByText(/Reported charges|Estimated charges|Reserved budget|Test spend cap/),
   ).toHaveCount(0);
   await expect(
-    page.getByRole('link', { name: 'Contact support about monitoring' }),
-  ).toHaveAttribute('href', /^mailto:/);
+    page.getByRole('button', { name: 'Contact support about monitoring' }),
+  ).toBeVisible();
   expect(mutations).toEqual([]);
 });

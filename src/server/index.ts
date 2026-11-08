@@ -14,6 +14,7 @@ import { operatorRoutes } from './routes/operator';
 import { processGeoCollectors } from './v2/collectors';
 import { processGeoAnalysis } from './v2/analysis';
 import { BodyTooLargeError } from './http';
+import { feedbackRoutes } from './routes/feedback';
 
 interface AppEnv {
   Bindings: CloudflareBindings;
@@ -155,6 +156,7 @@ app.route('/api/billing', billingRoutes);
 app.route('/api/login', loginRoutes);
 app.route('/api/scans', scanRoutes);
 app.route('/api/account', accountRoutes);
+app.route('/api/feedback', feedbackRoutes);
 app.route('/api/operator', operatorRoutes);
 app.post('/api/webhooks/lemonsqueezy', (c) => handleLemonWebhook(c.req.raw, c.env));
 
