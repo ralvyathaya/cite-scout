@@ -129,6 +129,7 @@ test('local fixture workspace completes the evidence-action loop without any API
   await expect(page.getByRole('heading', { name: 'Action brief', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Accept action', exact: true }).focus();
   await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Record your work', exact: true }).click();
   await page
     .getByLabel('Change description', { exact: true })
     .fill('Synthetic update: published a clearer buyer comparison with verified product facts.');
@@ -156,11 +157,12 @@ test('local fixture workspace completes the evidence-action loop without any API
   await page.getByRole('button', { name: 'Monitor Prompts', exact: true }).click();
   await expect(page.getByText(/observations saved/).first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('geo-action-pin.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Reopen work', exact: true }).click();
   await page
     .getByRole('textbox', { name: 'Reason for reopening', exact: true })
     .fill('Synthetic follow-up: verify the updated comparison evidence.');
   await page.getByRole('button', { name: 'Reopen action', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Complete action', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Record your work', exact: true })).toBeVisible();
   await expect(
     page
       .getByText('Synthetic follow-up: verify the updated comparison evidence.', { exact: false })
@@ -312,6 +314,7 @@ test('fixture raw download retains synthetic provenance and mobile navigation wo
 test('monitoring setup offers five engines with at most four selected and readable market controls', async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 390, height: 520 });
   const requests: string[] = [];
   await page.route('**/api/**', async (route) => {
     requests.push(route.request().url());
@@ -323,12 +326,17 @@ test('monitoring setup offers five engines with at most four selected and readab
   await page.goto('/app/overview?fixture=1');
   await expect(page.getByRole('button', { name: 'Monitor Prompts', exact: true })).toBeEnabled();
   await page.getByText('Monitoring details', { exact: true }).click();
-  const setup = page.locator('summary').filter({ hasText: 'Monitoring setup' });
-  await expect(setup).toBeVisible();
-  await setup.focus();
-  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Monitoring details', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Configure engines', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Configure engines', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit monitoring', exact: true }).click();
+  const settingsDialog = page.getByRole('dialog', {
+    name: 'Edit monitoring configuration',
+    exact: true,
+  });
+  await expect(
+    settingsDialog.getByRole('button', { name: 'Save monitoring settings', exact: true }),
+  ).toBeInViewport();
   await expect(
     page.getByRole('checkbox', { name: 'OpenAI Web Search API', exact: true }),
   ).toBeDisabled();
@@ -339,12 +347,16 @@ test('monitoring setup offers five engines with at most four selected and readab
   await openai.focus();
   await page.keyboard.press('Space');
   await expect(openai).toBeChecked();
-  await expect(page.getByRole('combobox', { name: 'Market', exact: true })).toHaveText(
-    'United States (US)',
-  );
-  await expect(page.getByRole('combobox', { name: 'Language', exact: true })).toHaveText(
-    'English (en)',
-  );
+  await expect(
+    page
+      .getByRole('group', { name: 'Market', exact: true })
+      .getByRole('radio', { name: 'United States (US)', exact: true }),
+  ).toBeChecked();
+  await expect(
+    page
+      .getByRole('group', { name: 'Language', exact: true })
+      .getByRole('radio', { name: 'English (en)', exact: true }),
+  ).toBeChecked();
   await expect(page.getByRole('checkbox', { name: 'Enable daily monitoring' })).not.toBeChecked();
   await page.getByRole('button', { name: 'Save monitoring settings', exact: true }).click();
   await expect(
@@ -381,6 +393,7 @@ test('engine availability explains customer options without internal setup detai
   });
   await page.goto('/app/settings');
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit monitoring', exact: true }).click();
   const google = page
     .locator('label')
     .filter({ has: page.getByRole('checkbox', { name: 'Google AI Overview', exact: true }) });

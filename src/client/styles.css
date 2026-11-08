@@ -177,11 +177,23 @@
 }
 
 body:has(.workspace-theme) {
-  --background: #f8f9fc;
+  --background: #fafafa;
+  --foreground: #171717;
+  --card: #ffffff;
+  --card-foreground: #171717;
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #171717;
+  --muted: #f4f4f5;
+  --muted-foreground: #666666;
+  --accent: #f4f4f5;
+  --accent-foreground: #171717;
+  --border: #e5e5e5;
+  --input: #d4d4d4;
 }
 
-.font-display,
-.workspace-theme h1 {
+.font-display {
   font-family: 'Newsreader', Georgia, serif;
   font-weight: 400;
   font-optical-sizing: auto;
@@ -189,8 +201,54 @@ body:has(.workspace-theme) {
 }
 
 .workspace-theme h1 {
-  font-size: clamp(1.75rem, 1.5rem + 0.5vw, 2rem);
+  font-family: 'Switzer', ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: -0.015em;
   line-height: 1.2;
+}
+
+@media (min-width: 640px) {
+  .workspace-theme h1 {
+    font-size: 1.75rem;
+  }
+}
+
+.workspace-theme :is(h2, h3) {
+  font-weight: 500;
+}
+.workspace-theme svg.lucide {
+  stroke-width: 1.5;
+}
+.workspace-theme [data-slot='button'] {
+  transition-property: color, background-color, border-color, opacity, box-shadow;
+}
+.workspace-modal [data-slot='dialog-close'] {
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 639px) {
+  .workspace-theme a[data-capture] {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+  .workspace-theme label:has(> input[type='radio']),
+  .workspace-theme [aria-label='Active filters'] button {
+    min-height: 2.75rem;
+  }
+  body:has(.workspace-theme)
+    :is([data-slot='button'], [data-slot='dialog-close'], .workspace-theme nav a) {
+    min-height: 2.75rem;
+  }
+  .workspace-theme :is(input:not([type='checkbox']):not([type='radio']), select) {
+    min-height: 2.75rem;
+  }
 }
 
 .workspace-theme .shadow-sm {

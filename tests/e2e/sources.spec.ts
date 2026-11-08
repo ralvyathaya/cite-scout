@@ -81,13 +81,14 @@ async function workspace(page: Page) {
 }
 
 async function filter(page: Page, name: string, value: string) {
-  const mobile = (page.viewportSize()?.width ?? 1440) < 768;
-  if (mobile) await page.getByRole('button', { name: 'Filters', exact: true }).click();
-  const controls = mobile
-    ? page.getByRole('dialog', { name: 'Sources filters' })
-    : page.getByLabel('Sources filters', { exact: true });
-  await controls.getByLabel(name, { exact: true }).selectOption(value);
-  if (mobile) await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  const controls = page.getByRole('dialog', { name: 'Sources filters', exact: true });
+  await controls
+    .getByRole('group', { name, exact: true })
+    .locator(`input[value="${value}"]`)
+    .check();
+  await controls.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(controls).not.toBeVisible();
 }
 
 test('sources provide Pages and Domains with unique totals, mixed owners, filtering and pagination', async ({
@@ -130,11 +131,11 @@ test('sources provide Pages and Domains with unique totals, mixed owners, filter
   await page.screenshot({ path: testInfo.outputPath('source-domains.png'), fullPage: true });
   await row.getByRole('link', { name: 'View pages', exact: true }).click();
   await expect(page.getByRole('table').getByRole('row')).toHaveCount(3);
-  await expect(page.getByRole('button', { name: 'Clear domain filter' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Remove Domain: .* filter$/ })).toBeVisible();
   await filter(page, 'Ownership', 'competitor_owned');
   await expect(page.getByRole('table').getByRole('row')).toHaveCount(2);
   await filter(page, 'Ownership', 'all');
-  await page.getByRole('button', { name: 'Clear domain filter' }).click();
+  await page.getByRole('button', { name: /^Remove Domain: .* filter$/ }).click();
   await page.getByLabel('Search sources').fill('Community');
   await expect(page.getByRole('table').locator('[data-label="Referenced"]')).toHaveText(['0']);
   await expect(page).not.toHaveURL(/[?&]domain=/u);
@@ -166,7 +167,10 @@ test('source evidence reads five at a time, caches previews, and restores the ex
     page.getByRole('link', { name: 'Buyer prompt for source-answer-7', exact: true }),
   ).toBeVisible();
   expect(reads).toHaveLength(7);
-  await open.click();
+  await page
+    .getByRole('dialog', { name: 'Source evidence', exact: true })
+    .getByRole('button', { name: 'Close', exact: true })
+    .click();
   await open.click();
   await expect(
     page.getByRole('link', { name: 'Buyer prompt for source-answer-1', exact: true }),
@@ -314,7 +318,7 @@ test('sources and answer breadcrumbs stay usable at desktop and mobile widths', 
     await page.goto('/app/sources?q=Video');
     await expect(page.getByRole('table')).toBeVisible();
     await expect(page.getByLabel('Search sources')).toBeVisible();
-    await expect(page.getByLabel('Period', { exact: true })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Period', exact: true })).toBeVisible();
     if (width >= 1280) expect((await page.getByRole('table').boundingBox())?.y).toBeLessThan(400);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
@@ -327,4 +331,48 @@ test('sources and answer breadcrumbs stay usable at desktop and mobile widths', 
       fullPage: true,
     });
   }
+});
+
+test('source filter drafts only apply on confirmation and reset preserves search, period and view', async ({
+  page,
+}) => {
+  const { writes, reads } = await workspace(page);
+  await page.goto('/app/sources?view=domains&days=14&q=Video&page=2');
+  const original = page.url();
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Sources filters', exact: true });
+  await dialog
+    .getByRole('group', { name: 'Ownership', exact: true })
+    .getByRole('radio', { name: 'Competitor', exact: true })
+    .check();
+  expect(page.url()).toBe(original);
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(page.url()).toBe(original);
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await expect(
+    dialog
+      .getByRole('group', { name: 'Ownership', exact: true })
+      .getByRole('radio', { name: 'All owners', exact: true }),
+  ).toBeChecked();
+  await dialog
+    .getByRole('group', { name: 'Ownership', exact: true })
+    .getByRole('radio', { name: 'Competitor', exact: true })
+    .check();
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page).toHaveURL(/owner=competitor_owned/);
+  expect(new URL(page.url()).searchParams.get('page')).toBeNull();
+  await expect(
+    page.getByRole('button', { name: 'Remove Competitor filter', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Reset', exact: true }).click();
+  await expect(page).toHaveURL(/owner=competitor_owned/);
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+  const query = new URL(page.url()).searchParams;
+  expect(query.get('owner')).toBeNull();
+  expect(query.get('view')).toBe('domains');
+  expect(query.get('days')).toBe('14');
+  expect(query.get('q')).toBe('Video');
+  expect(reads).toEqual([]);
+  expect(writes).toEqual([]);
 });

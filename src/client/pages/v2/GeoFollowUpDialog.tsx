@@ -3,14 +3,7 @@ import { Link } from 'react-router';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '../../components/ui/dialog';
+import { WorkspaceModal } from './WorkspaceControls';
 import type { GeoActionDetail } from '../../../shared/geo-actions';
 import { geoSurfaces } from '../../../shared/geo';
 import { api } from './api';
@@ -61,195 +54,195 @@ export function GeoFollowUpDialog({ detail }: { detail: GeoActionDetail }) {
   }
   const included = evidence.filter((proof) => selected.includes(proof.analysisId));
   return (
-    <Dialog
+    <WorkspaceModal
+      title="Plan follow-up work"
+      description="Choose the saved answers to compare against new work on your website. Your previous task, notes and completed work stay in its history. This does not run monitoring."
+      trigger={<Button variant="outline">Plan follow-up work</Button>}
+      wide
       open={open}
       onOpenChange={(value) => {
+        if (!value && busy) return;
         setOpen(value);
         if (!value) evidenceGeneration.current++;
         if (value && !created) void loadEvidence();
       }}
+      footer={
+        !created && (
+          <Button
+            type="submit"
+            form={formId}
+            disabled={
+              busy || !ready || !included.length || !changeDescription.trim() || !targetUrl.trim()
+            }
+          >
+            {busy ? 'Saving follow-up…' : 'Create follow-up action'}
+          </Button>
+        )
+      }
     >
-      <DialogTrigger asChild>
-        <Button variant="outline">Plan follow-up work</Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Plan follow-up work</DialogTitle>
-          <DialogDescription>
-            Choose the saved answers to compare against new work on your website. Your previous
-            task, notes and completed work stay in its history. This does not run monitoring.
-          </DialogDescription>
-        </DialogHeader>
-        {created ? (
-          <div className="space-y-3 text-sm" role="status">
-            <p>Follow-up action saved with {created.evidence.length} selected starting answers.</p>
-            <Link
-              className="text-primary underline"
-              to={`/app/playbook/${encodeURIComponent(created.action.id)}`}
-              onClick={() => {
-                setOpen(false);
-              }}
-            >
-              Open follow-up action
-            </Link>
-          </div>
-        ) : (
-          <form
-            className="min-w-0 space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (busy || !ready || !included.length) return;
-              const input = {
-                revision: detail.action.revision,
-                proofs: included.map(({ observationId, analysisId }) => ({
-                  observationId,
-                  analysisId,
-                })),
-                targetUrl,
-                changeDescription,
-              };
-              const body = JSON.stringify(input);
-              if (attempt.current?.body !== body)
-                attempt.current = { body, requestId: crypto.randomUUID() };
-              const requestId = attempt.current.requestId;
-              setBusy(true);
-              setError(null);
-              void api<GeoActionDetail>(`${path}/follow-ups`, { requestId, ...input })
-                .then(setCreated)
-                .catch((reason: unknown) => {
-                  setError(
-                    reason instanceof Error
-                      ? reason.message
-                      : 'Could not save follow-up work. Your draft is retained.',
-                  );
-                })
-                .finally(() => {
-                  setBusy(false);
-                });
+      {created ? (
+        <div className="space-y-3 text-sm" role="status">
+          <p>Follow-up action saved with {created.evidence.length} selected starting answers.</p>
+          <Link
+            className="text-primary underline"
+            to={`/app/playbook/${encodeURIComponent(created.action.id)}`}
+            onClick={() => {
+              setOpen(false);
             }}
           >
-            <Link
-              className="text-sm text-primary underline"
-              to={`/app/playbook/${encodeURIComponent(detail.action.id)}`}
-              onClick={() => {
-                setOpen(false);
-              }}
-            >
-              Review previous task history
-            </Link>
-            {loading ? (
-              <p role="status">Loading starting answers…</p>
-            ) : (
-              <fieldset disabled={busy} className="max-h-72 min-w-0 space-y-3 overflow-y-auto pr-1">
-                <legend className="mb-2 text-sm font-medium">Choose starting answers</legend>
-                <p className="text-xs text-muted-foreground">
-                  Choose one answer per question and engine. Only complete answers with a usable
-                  analysis and matching monitoring settings can be saved.
-                </p>
-                {!evidence.length && (
-                  <p className="text-sm">
-                    No starting answers are available. Save and review an answer first.
-                  </p>
-                )}
-                {evidence.map((proof) => (
-                  <div key={proof.analysisId} className="min-w-0 rounded-lg border p-3 text-sm">
-                    <label className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        className="mt-1 size-4 shrink-0 accent-primary"
-                        checked={selected.includes(proof.analysisId)}
-                        onChange={(event) => {
-                          setSelected((previous) =>
-                            event.target.checked
-                              ? [...previous, proof.analysisId]
-                              : previous.filter((id) => id !== proof.analysisId),
-                          );
-                        }}
-                      />
-                      <span className="min-w-0 break-words">
-                        {proof.scope.context.promptText}
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          {geoSurfaces[proof.scope.context.engine].label} ·{' '}
-                          {new Date(proof.scope.capturedAt).toLocaleString()}
-                        </span>
-                      </span>
-                    </label>
-                    <Link
-                      className="ml-7 mt-2 inline-block text-xs text-primary underline"
-                      to={`/app/observations/${encodeURIComponent(proof.observationId)}`}
-                    >
-                      Inspect original answer
-                    </Link>
-                    <details className="ml-7 mt-2 text-xs text-muted-foreground">
-                      <summary className="cursor-pointer">Answer details</summary>
-                      <p className="mt-1 break-words">
-                        {proof.scope.context.collector} ·{' '}
-                        {proof.scope.context.requestedModel ?? 'Model not requested'} ·{' '}
-                        {proof.scope.context.languageCode} / {proof.scope.context.locationCode} /{' '}
-                        {proof.scope.context.device}
-                      </p>
-                      <p className="mt-1 break-all">
-                        Prompt version {proof.scope.context.promptVersionId} ·{' '}
-                        {proof.scope.context.collectorVersion} · output limit{' '}
-                        {proof.scope.context.maxOutputTokens}
-                      </p>
-                    </details>
-                  </div>
-                ))}
-              </fieldset>
-            )}
-            <p className="text-sm" aria-live="polite">
-              Selected: {included.length} · Not selected: {evidence.length - included.length}. Only
-              selected answers will be added to this follow-up.
-            </p>
-            <div className="space-y-2 text-sm">
-              <label htmlFor={`${formId}-url`}>Page on your website</label>
-              <Input
-                id={`${formId}-url`}
-                required
-                type="url"
-                maxLength={2000}
-                value={targetUrl}
-                disabled={busy}
-                placeholder="https://your-website.com/comparison"
-                onChange={(event) => {
-                  setTargetUrl(event.target.value);
-                }}
-              />
-            </div>
-            <div className="space-y-2 text-sm">
-              <label htmlFor={`${formId}-change`}>Planned change</label>
-              <Textarea
-                id={`${formId}-change`}
-                required
-                minLength={5}
-                maxLength={2000}
-                value={changeDescription}
-                disabled={busy}
-                onChange={(event) => {
-                  setChangeDescription(event.target.value);
-                }}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              After creating this action, do the work in your own tools. Record the actual URL and
-              completion time when you finish, then compare new answers.
-            </p>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
+            Open follow-up action
+          </Link>
+        </div>
+      ) : (
+        <form
+          id={formId}
+          className="min-w-0 space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (busy || !ready || !included.length) return;
+            const input = {
+              revision: detail.action.revision,
+              proofs: included.map(({ observationId, analysisId }) => ({
+                observationId,
+                analysisId,
+              })),
+              targetUrl,
+              changeDescription,
+            };
+            const body = JSON.stringify(input);
+            if (attempt.current?.body !== body)
+              attempt.current = { body, requestId: crypto.randomUUID() };
+            const requestId = attempt.current.requestId;
+            setBusy(true);
+            setError(null);
+            void api<GeoActionDetail>(`${path}/follow-ups`, { requestId, ...input })
+              .then(setCreated)
+              .catch((reason: unknown) => {
+                setError(
+                  reason instanceof Error
+                    ? reason.message
+                    : 'Could not save follow-up work. Your draft is retained.',
+                );
+              })
+              .finally(() => {
+                setBusy(false);
+              });
+          }}
+        >
+          <Link
+            className="text-sm text-primary underline"
+            to={`/app/playbook/${encodeURIComponent(detail.action.id)}`}
+            onClick={() => {
+              setOpen(false);
+            }}
+          >
+            Review previous task history
+          </Link>
+          {loading ? (
+            <p role="status">Loading starting answers…</p>
+          ) : (
+            <fieldset disabled={busy} className="max-h-72 min-w-0 space-y-3 overflow-y-auto pr-1">
+              <legend className="mb-2 text-sm font-medium">Choose starting answers</legend>
+              <p className="text-xs text-muted-foreground">
+                Choose one answer per question and engine. Only complete answers with a usable
+                analysis and matching monitoring settings can be saved.
               </p>
-            )}
-            <Button
-              disabled={
-                busy || !ready || !included.length || !changeDescription.trim() || !targetUrl.trim()
-              }
-            >
-              {busy ? 'Saving follow-up…' : 'Create follow-up action'}
-            </Button>
-          </form>
-        )}
-      </DialogContent>
-    </Dialog>
+              {!evidence.length && (
+                <p className="text-sm">
+                  No starting answers are available. Save and review an answer first.
+                </p>
+              )}
+              {evidence.map((proof) => (
+                <div key={proof.analysisId} className="min-w-0 rounded-lg border p-3 text-sm">
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      className="mt-1 size-4 shrink-0 accent-primary"
+                      checked={selected.includes(proof.analysisId)}
+                      onChange={(event) => {
+                        setSelected((previous) =>
+                          event.target.checked
+                            ? [...previous, proof.analysisId]
+                            : previous.filter((id) => id !== proof.analysisId),
+                        );
+                      }}
+                    />
+                    <span className="min-w-0 break-words">
+                      {proof.scope.context.promptText}
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {geoSurfaces[proof.scope.context.engine].label} ·{' '}
+                        {new Date(proof.scope.capturedAt).toLocaleString()}
+                      </span>
+                    </span>
+                  </label>
+                  <Link
+                    className="ml-7 mt-2 inline-block text-xs text-primary underline"
+                    to={`/app/observations/${encodeURIComponent(proof.observationId)}`}
+                  >
+                    Inspect original answer
+                  </Link>
+                  <details className="ml-7 mt-2 text-xs text-muted-foreground">
+                    <summary className="cursor-pointer">Answer details</summary>
+                    <p className="mt-1 break-words">
+                      {proof.scope.context.collector} ·{' '}
+                      {proof.scope.context.requestedModel ?? 'Model not requested'} ·{' '}
+                      {proof.scope.context.languageCode} / {proof.scope.context.locationCode} /{' '}
+                      {proof.scope.context.device}
+                    </p>
+                    <p className="mt-1 break-all">
+                      Prompt version {proof.scope.context.promptVersionId} ·{' '}
+                      {proof.scope.context.collectorVersion} · output limit{' '}
+                      {proof.scope.context.maxOutputTokens}
+                    </p>
+                  </details>
+                </div>
+              ))}
+            </fieldset>
+          )}
+          <p className="text-sm" aria-live="polite">
+            Selected: {included.length} · Not selected: {evidence.length - included.length}. Only
+            selected answers will be added to this follow-up.
+          </p>
+          <div className="space-y-2 text-sm">
+            <label htmlFor={`${formId}-url`}>Page on your website</label>
+            <Input
+              id={`${formId}-url`}
+              required
+              type="url"
+              maxLength={2000}
+              value={targetUrl}
+              disabled={busy}
+              placeholder="https://your-website.com/comparison"
+              onChange={(event) => {
+                setTargetUrl(event.target.value);
+              }}
+            />
+          </div>
+          <div className="space-y-2 text-sm">
+            <label htmlFor={`${formId}-change`}>Planned change</label>
+            <Textarea
+              id={`${formId}-change`}
+              required
+              minLength={5}
+              maxLength={2000}
+              value={changeDescription}
+              disabled={busy}
+              onChange={(event) => {
+                setChangeDescription(event.target.value);
+              }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            After creating this action, do the work in your own tools. Record the actual URL and
+            completion time when you finish, then compare new answers.
+          </p>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+        </form>
+      )}
+    </WorkspaceModal>
   );
 }

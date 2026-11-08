@@ -25,6 +25,7 @@ import {
 import { Button } from '../../components/ui/button';
 import { BrandLogo } from '../../components/BrandLogo';
 import { WorkspaceHeading } from './WorkspaceHeading';
+import { WorkspaceModal } from './WorkspaceControls';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import {
@@ -141,7 +142,7 @@ export function V2Shell() {
         onClick={() => {
           setMobileOpen(false);
         }}
-        className="mx-4 mb-1 mt-5 flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:border-sidebar-ring/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring"
+        className="mx-4 mb-1 mt-4 flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:border-sidebar-ring/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring"
       >
         <span
           className="flex size-9 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-sm font-semibold text-sidebar-accent-foreground"
@@ -167,7 +168,7 @@ export function V2Shell() {
           return (
             <div key={path}>
               {group && (
-                <p className="px-3 pb-2 pt-5 text-xs font-medium text-muted-foreground">{group}</p>
+                <p className="px-3 pb-2 pt-6 text-xs font-medium text-muted-foreground">{group}</p>
               )}
               <Link
                 to={path}
@@ -175,9 +176,9 @@ export function V2Shell() {
                   setMobileOpen(false);
                 }}
                 aria-current={current ? 'page' : undefined}
-                className={`mb-1 flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring ${current ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}
+                className={`mb-1 flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium lg:min-h-9 lg:py-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring ${current ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}
               >
-                <Icon className="size-4 shrink-0" aria-hidden="true" />
+                <Icon className="size-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                 {label}
               </Link>
             </div>
@@ -300,9 +301,15 @@ export function V2Shell() {
 }
 function TrialStatus({ data }: { data: V2ProjectPayload }) {
   return (
-    <details className="rounded-lg border bg-card p-4 text-sm">
-      <summary className="cursor-pointer font-medium">About these results</summary>
-      <div className="mt-3 space-y-2 text-muted-foreground">
+    <WorkspaceModal
+      title="About these results"
+      trigger={
+        <Button variant="ghost" size="sm">
+          About these results
+        </Button>
+      }
+    >
+      <div className="space-y-2 text-sm text-muted-foreground">
         <p>
           API results may differ from the Perplexity app. A name match is not a recommendation or
           ranking.
@@ -314,7 +321,7 @@ function TrialStatus({ data }: { data: V2ProjectPayload }) {
           <p>Trial expires: {time(data.trial.expiresAt)}</p>
         )}
       </div>
-    </details>
+    </WorkspaceModal>
   );
 }
 interface IdentityDraft {
@@ -679,9 +686,15 @@ export function V2Onboarding() {
                   Competitors are inferred candidates, not independently verified. These suggestions
                   are not monitoring results.
                 </p>
-                <details>
-                  <summary className="cursor-pointer font-medium">Why these suggestions?</summary>
-                  <div className="mt-3 space-y-3">
+                <WorkspaceModal
+                  title="Why these suggestions?"
+                  trigger={
+                    <Button type="button" variant="outline" size="sm">
+                      Why these suggestions?
+                    </Button>
+                  }
+                >
+                  <div className="space-y-3 text-sm">
                     <p>Brand evidence from the homepage: “{suggestion.draft.brandEvidence}”</p>
                     <ul className="list-disc space-y-1 pl-5">
                       {suggestion.draft.competitors.map((item) => (
@@ -702,7 +715,7 @@ export function V2Onboarding() {
                       and other pages may be missing.
                     </p>
                   </div>
-                </details>
+                </WorkspaceModal>
               </section>
             )}
             <section className="space-y-4" aria-labelledby="project-identity-heading">
@@ -1441,7 +1454,7 @@ function Answer({ observation: o, label }: { observation: V2Observation; label: 
   return (
     <article className={`${box} min-w-0 space-y-4`}>
       <header>
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+        <p className="text-xs font-medium text-muted-foreground">
           {label} · {time(o.capturedAt)}
         </p>
         <p className="mt-2 text-sm font-medium">{o.questionText}</p>
@@ -1590,6 +1603,7 @@ export function V2Settings() {
   const billing = useResource<Billing>('/api/billing/status');
   const action = useAction(reload);
   const [identity, setIdentity] = useState<IdentityDraft | null>(null);
+  const [identityOpen, setIdentityOpen] = useState(false);
   const [confirmation, setConfirmation] = useState('');
   const [forfeit, setForfeit] = useState(false);
   const [monitoringReady, setMonitoringReady] = useState(false);
@@ -1638,40 +1652,92 @@ export function V2Settings() {
       </nav>
       <GeoSettingsPanel onReady={setMonitoringReady} />
       <Failure error={action.error ?? billing.error} />
-      <form
-        id="brand-context"
-        className={`${box} scroll-mt-20 space-y-4`}
-        onSubmit={(e) => {
-          e.preventDefault();
-          void action.run(async () => {
-            await api(
-              '/project',
-              { ...value, expectedContextVersion: data.project?.contextVersion },
-              'PATCH',
-            );
-            setIdentity(null);
-          });
-        }}
-      >
-        <h2 className="text-lg font-medium">Brand and competitors</h2>
-        <IdentityFields value={value} set={setIdentity} disabled={locked} />
-        <p className="text-sm text-muted-foreground">
-          Future checks start a new comparison baseline when names, domains or competitors change.
-          Saved evidence stays unchanged.
-        </p>
-        {locked ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={action.busy}
-            onClick={() => void action.run(() => api('/trial/cancel', {}))}
+      <section id="brand-context" className={`${box} scroll-mt-20 space-y-3`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-medium">Brand and competitors</h2>
+          <WorkspaceModal
+            title="Brand and competitors"
+            description="Names and domains provide context for future checks"
+            trigger={
+              <Button variant="outline" size="sm">
+                Edit brand and competitors
+              </Button>
+            }
+            open={identityOpen}
+            onOpenChange={(open) => {
+              if (!open && action.busy) return;
+              if (!open) setIdentity(null);
+              setIdentityOpen(open);
+            }}
+            footer={
+              <>
+                <Button
+                  variant="outline"
+                  disabled={action.busy}
+                  onClick={() => {
+                    setIdentity(null);
+                    setIdentityOpen(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+                {locked ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={action.busy}
+                    onClick={() => void action.run(() => api('/trial/cancel', {}))}
+                  >
+                    Stop trial to change configuration
+                  </Button>
+                ) : (
+                  <Button type="submit" form="brand-context-form" disabled={action.busy}>
+                    Save configuration
+                  </Button>
+                )}
+              </>
+            }
           >
-            Stop trial to change configuration
-          </Button>
-        ) : (
-          <Button disabled={action.busy}>Save configuration</Button>
+            <Failure error={action.error} />
+            <form
+              id="brand-context-form"
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void action.run(async () => {
+                  await api(
+                    '/project',
+                    { ...value, expectedContextVersion: data.project?.contextVersion },
+                    'PATCH',
+                  );
+                  setIdentity(null);
+                  setIdentityOpen(false);
+                });
+              }}
+            >
+              <IdentityFields value={value} set={setIdentity} disabled={locked} />
+              <p className="text-sm text-muted-foreground">
+                Future checks start a new comparison baseline when names, domains or competitors
+                change. Saved evidence stays unchanged.
+              </p>
+            </form>
+          </WorkspaceModal>
+        </div>
+        <p className="text-sm">
+          {data.project.brandName}{' '}
+          <span className="text-muted-foreground">· {data.project.canonicalDomain}</span>
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {data.project.competitors.length
+            ? data.project.competitors.map((competitor) => competitor.name).join(' · ')
+            : 'No competitors added'}
+        </p>
+        {locked && (
+          <p className="text-xs text-muted-foreground">
+            Brand changes are locked during the trial. Open Edit for the available options.
+          </p>
         )}
-      </form>
+      </section>
       <section id="subscription" className={`${box} scroll-mt-20 space-y-4`}>
         <h2 className="text-lg font-medium">Monitoring and billing</h2>
         <p className="text-sm">

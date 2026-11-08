@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link, useOutletContext } from 'react-router';
+import { Link, useOutletContext, useSearchParams } from 'react-router';
 import {
   ChevronDown,
   FolderOpen,
@@ -29,6 +29,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/pop
 import { api, useResource } from './api';
 import { GeoMonitor } from './GeoWorkspace';
 import { WorkspaceHeading } from './WorkspaceHeading';
+import { ActiveFilters, ChoiceButtons, ChoiceList, WorkspaceModal } from './WorkspaceControls';
 import type { WorkspaceContext } from './Workspace';
 import {
   geoSurfaces,
@@ -44,7 +45,6 @@ const time = (value: string) =>
   new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const status = (prompt: V2Question) =>
   prompt.archivedAt ? 'Archived' : prompt.enabled ? 'Active' : 'Paused';
-const field = 'h-10 min-w-0 rounded-lg border bg-card px-3 text-sm';
 
 function EngineLink({
   engine,
@@ -122,14 +122,39 @@ export function PromptWorkspace({
   const [captureError, setCaptureError] = useState<Error | null>(null);
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('Active');
-  const [groupFilter, setGroupFilter] = useState('all');
-  const [groupBy, setGroupBy] = useState('none');
+  const [params, setParams] = useSearchParams();
+  const search = params.get('search') ?? '';
+  const filterValue = params.get('status') ?? 'Active';
+  const filter = ['Active', 'Paused', 'Archived', 'All'].includes(filterValue)
+    ? filterValue
+    : 'Active';
+  const groupFilter = params.get('group') ?? 'all';
+  const groupBy = params.get('groupBy') === 'group' ? 'group' : 'none';
+  function updateFilters(values: Record<string, string>, replace = false) {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(values)) {
+      if (
+        !value ||
+        (key === 'status' && value === 'Active') ||
+        (key === 'group' && value === 'all') ||
+        (key === 'groupBy' && value === 'none')
+      )
+        next.delete(key);
+      else next.set(key, value);
+    }
+    next.delete('cursor');
+    setParams(next, { replace });
+  }
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draftFilters, setDraftFilters] = useState({ group: 'all', groupBy: 'none' });
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const [draftScope, setDraftScope] = useState('all');
+  const [manageOpen, setManageOpen] = useState(false);
   const [monitorSet, setMonitorSet] = useState('all');
   const [promptOpen, setPromptOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
   const groupReturnFocus = useRef<HTMLElement | null>(null);
+  const groupCreateTrigger = useRef<HTMLButtonElement | null>(null);
   const [editing, setEditing] = useState<GeoPromptSet | null>(null);
   const [text, setText] = useState('');
   const [name, setName] = useState('');
@@ -204,11 +229,17 @@ export function PromptWorkspace({
     setName(group?.name ?? '');
     setPromptIds(group?.promptIds ?? []);
     setError(null);
+    setManageOpen(false);
     setGroupOpen(true);
   }
   const actions = (
     <div className="flex flex-wrap gap-2">
-      <Dialog open={promptOpen} onOpenChange={setPromptOpen}>
+      <Dialog
+        open={promptOpen}
+        onOpenChange={(open) => {
+          if (open || !pending.current) setPromptOpen(open);
+        }}
+      >
         {data.canScan && (
           <DialogTrigger asChild>
             <Button
@@ -221,16 +252,18 @@ export function PromptWorkspace({
             </Button>
           </DialogTrigger>
         )}
-        <DialogContent className="workspace-theme max-h-[85dvh] overflow-y-auto">
-          <DialogTitle>Add prompt</DialogTitle>
-          <DialogDescription>
-            {promptLimit === undefined
-              ? 'Your verified plan determines the active prompt limit.'
-              : `Your plan allows ${String(promptLimit)} active prompts.`}{' '}
-            New prompts join the next UTC day's checks.
-          </DialogDescription>
+        <DialogContent className="workspace-theme workspace-modal flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden bg-card p-0 sm:max-w-[560px]">
+          <header className="shrink-0 space-y-1 border-b px-5 py-4 pr-14">
+            <DialogTitle>Add prompt</DialogTitle>
+            <DialogDescription>
+              {promptLimit === undefined
+                ? 'Your verified plan determines the active prompt limit.'
+                : `Your plan allows ${String(promptLimit)} active prompts.`}{' '}
+              New prompts join the next UTC day's checks.
+            </DialogDescription>
+          </header>
           <form
-            className="space-y-4"
+            className="flex min-h-0 flex-col overflow-hidden"
             onSubmit={(event) => {
               event.preventDefault();
               void mutate(async () => {
@@ -240,32 +273,42 @@ export function PromptWorkspace({
               });
             }}
           >
-            <label className="block space-y-2 text-sm">
-              Prompt
-              <Textarea
-                required
-                minLength={10}
-                maxLength={500}
-                value={text}
-                onChange={(event) => {
-                  setText(event.target.value);
-                }}
-              />
-            </label>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error.message}
-              </p>
-            )}
-            <Button disabled={busy}>Save prompt</Button>
+            <div className="min-h-0 space-y-4 overflow-y-auto p-5">
+              <label className="block space-y-2 text-sm">
+                Prompt
+                <Textarea
+                  required
+                  minLength={10}
+                  maxLength={500}
+                  value={text}
+                  onChange={(event) => {
+                    setText(event.target.value);
+                  }}
+                />
+              </label>
+              {error && (
+                <p role="alert" className="text-sm text-destructive">
+                  {error.message}
+                </p>
+              )}
+            </div>
+            <footer className="flex shrink-0 justify-end border-t px-5 py-4">
+              <Button disabled={busy}>Save prompt</Button>
+            </footer>
           </form>
         </DialogContent>
       </Dialog>
-      <Dialog open={groupOpen} onOpenChange={setGroupOpen}>
+      <Dialog
+        open={groupOpen}
+        onOpenChange={(open) => {
+          if (open || !pending.current) setGroupOpen(open);
+        }}
+      >
         {data.canScan && (
           <DialogTrigger asChild>
             <Button
               variant="outline"
+              ref={groupCreateTrigger}
               onClick={() => {
                 editGroup(null);
               }}
@@ -276,20 +319,25 @@ export function PromptWorkspace({
           </DialogTrigger>
         )}
         <DialogContent
-          className="workspace-theme max-h-[85dvh] overflow-y-auto"
+          className="workspace-theme workspace-modal flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden bg-card p-0 sm:max-w-[560px]"
           onCloseAutoFocus={(event) => {
-            if (groupReturnFocus.current?.isConnected) {
+            const target = groupReturnFocus.current?.isConnected
+              ? groupReturnFocus.current
+              : groupCreateTrigger.current;
+            if (target) {
               event.preventDefault();
-              groupReturnFocus.current.focus();
+              target.focus();
             }
           }}
         >
-          <DialogTitle>{editing ? 'Edit group' : 'Create group'}</DialogTitle>
-          <DialogDescription>
-            Group active prompts without changing their saved history.
-          </DialogDescription>
+          <header className="shrink-0 space-y-1 border-b px-5 py-4 pr-14">
+            <DialogTitle>{editing ? 'Edit group' : 'Create group'}</DialogTitle>
+            <DialogDescription>
+              Group active prompts without changing their saved history.
+            </DialogDescription>
+          </header>
           <form
-            className="space-y-4"
+            className="flex min-h-0 flex-col overflow-hidden"
             onSubmit={(event) => {
               event.preventDefault();
               void mutate(async () => {
@@ -303,109 +351,80 @@ export function PromptWorkspace({
               });
             }}
           >
-            <label className="block space-y-2 text-sm">
-              Group name
-              <Input
-                required
-                maxLength={100}
-                value={name}
-                onChange={(event) => {
-                  setName(event.target.value);
-                }}
-              />
-            </label>
-            <fieldset className="space-y-3">
-              <legend className="mb-3 text-sm font-medium">Active prompts</legend>
-              {active.map((prompt) => (
-                <label className="flex items-start gap-3 text-sm" key={prompt.id}>
-                  <input
-                    className="mt-1 size-4 shrink-0 accent-primary"
-                    type="checkbox"
-                    checked={promptIds.includes(prompt.id)}
-                    onChange={(event) => {
-                      setPromptIds(
-                        event.target.checked
-                          ? [...promptIds, prompt.id]
-                          : promptIds.filter((id) => id !== prompt.id),
-                      );
-                    }}
-                  />
-                  <span className="break-words">{prompt.text}</span>
-                </label>
-              ))}
-            </fieldset>
-            {retired.map((id) => (
-              <div key={id} className="space-y-2 rounded-lg border p-3 text-sm">
-                <p>Inactive member: {prompts.find((prompt) => prompt.id === id)?.text ?? id}</p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setPromptIds(promptIds.filter((value) => value !== id));
+            <div className="min-h-0 space-y-4 overflow-y-auto p-5">
+              <label className="block space-y-2 text-sm">
+                Group name
+                <Input
+                  required
+                  maxLength={100}
+                  value={name}
+                  onChange={(event) => {
+                    setName(event.target.value);
                   }}
-                >
-                  Remove inactive member
-                </Button>
-              </div>
-            ))}
-            {retired.length > 0 && (
-              <p className="text-sm text-muted-foreground">
-                Remove inactive members before saving. Their saved answers stay available.
-              </p>
-            )}
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error.message}
-              </p>
-            )}
-            <Button
-              disabled={
-                busy ||
-                !promptIds.length ||
-                retired.length > 0 ||
-                promptIds.length > (promptLimit ?? 30)
-              }
-            >
-              Save group
-            </Button>
+                />
+              </label>
+              <fieldset className="space-y-3">
+                <legend className="mb-3 text-sm font-medium">Active prompts</legend>
+                {active.map((prompt) => (
+                  <label className="flex items-start gap-3 text-sm" key={prompt.id}>
+                    <input
+                      className="mt-1 size-4 shrink-0 accent-primary"
+                      type="checkbox"
+                      checked={promptIds.includes(prompt.id)}
+                      onChange={(event) => {
+                        setPromptIds(
+                          event.target.checked
+                            ? [...promptIds, prompt.id]
+                            : promptIds.filter((id) => id !== prompt.id),
+                        );
+                      }}
+                    />
+                    <span className="break-words">{prompt.text}</span>
+                  </label>
+                ))}
+              </fieldset>
+              {retired.map((id) => (
+                <div key={id} className="space-y-2 rounded-lg border p-3 text-sm">
+                  <p>Inactive member: {prompts.find((prompt) => prompt.id === id)?.text ?? id}</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setPromptIds(promptIds.filter((value) => value !== id));
+                    }}
+                  >
+                    Remove inactive member
+                  </Button>
+                </div>
+              ))}
+              {retired.length > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Remove inactive members before saving. Their saved answers stay available.
+                </p>
+              )}
+              {error && (
+                <p role="alert" className="text-sm text-destructive">
+                  {error.message}
+                </p>
+              )}
+            </div>
+            <footer className="flex shrink-0 justify-end border-t px-5 py-4">
+              <Button
+                disabled={
+                  busy ||
+                  !promptIds.length ||
+                  retired.length > 0 ||
+                  promptIds.length > (promptLimit ?? 30)
+                }
+              >
+                Save group
+              </Button>
+            </footer>
           </form>
         </DialogContent>
       </Dialog>
     </div>
-  );
-  const groupChoices = (
-    <>
-      <select
-        aria-label="Prompt group"
-        className={field}
-        value={groupFilter}
-        onChange={(event) => {
-          setGroupFilter(event.target.value);
-        }}
-        disabled={!groups.data || Boolean(groups.error)}
-      >
-        <option value="all">All groups</option>
-        <option value="ungrouped">Ungrouped</option>
-        {groups.data?.map((group) => (
-          <option key={group.id} value={group.id}>
-            {group.name}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label="Group by"
-        className={field}
-        value={groupBy}
-        onChange={(event) => {
-          setGroupBy(event.target.value);
-        }}
-        disabled={!groups.data || Boolean(groups.error)}
-      >
-        <option value="none">Group by: None</option>
-        <option value="group">Group by: Prompt group</option>
-      </select>
-    </>
   );
   const content = (
     <div className="space-y-2">
@@ -453,73 +472,154 @@ export function PromptWorkspace({
             placeholder="Search prompts…"
             value={search}
             onChange={(event) => {
-              setSearch(event.target.value);
+              updateFilters({ search: event.target.value }, true);
             }}
           />
         </label>
-        <select
-          aria-label="Prompt status"
-          className={field}
+        <ChoiceButtons
+          label="Prompt status"
           value={filter}
-          onChange={(event) => {
-            setFilter(event.target.value);
+          onChange={(value) => {
+            updateFilters({ status: value });
           }}
-        >
-          {['Active', 'Paused', 'Archived', 'All'].map((value) => (
-            <option key={value}>{value}</option>
-          ))}
-        </select>
+          options={['Active', 'Paused', 'Archived', 'All'].map((value) => ({
+            value,
+            label: value,
+          }))}
+        />
         {showGroups && (
-          <>
-            <div className="hidden gap-2 md:flex">{groupChoices}</div>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button className="md:hidden" variant="outline" size="sm">
-                  <SlidersHorizontal className="size-4" aria-hidden="true" />
-                  Filters
+          <WorkspaceModal
+            title="Prompt filters"
+            trigger={
+              <Button variant="outline" size="sm" disabled={!groups.data || Boolean(groups.error)}>
+                <SlidersHorizontal className="size-4" aria-hidden="true" />
+                Filters
+              </Button>
+            }
+            open={filtersOpen}
+            onOpenChange={(open) => {
+              if (open) setDraftFilters({ group: groupFilter, groupBy });
+              setFiltersOpen(open);
+            }}
+            footer={
+              <>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setDraftFilters({ group: 'all', groupBy: 'none' });
+                  }}
+                >
+                  Reset
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                aria-label="Prompt filters"
-                className="workspace-theme grid max-w-[calc(100vw-2rem)] gap-3"
-              >
-                {groupChoices}
-              </PopoverContent>
-            </Popover>
-          </>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setFiltersOpen(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    updateFilters(draftFilters);
+                    setFiltersOpen(false);
+                  }}
+                >
+                  Apply filters
+                </Button>
+              </>
+            }
+          >
+            <ChoiceList
+              label="Prompt group"
+              value={draftFilters.group}
+              onChange={(group) => {
+                setDraftFilters({ ...draftFilters, group });
+              }}
+              searchable
+              options={[
+                { value: 'all', label: 'All groups' },
+                { value: 'ungrouped', label: 'Ungrouped' },
+                ...(groups.data ?? []).map((group) => ({ value: group.id, label: group.name })),
+              ]}
+            />
+            <ChoiceButtons
+              label="Group by"
+              value={draftFilters.groupBy}
+              onChange={(groupBy) => {
+                setDraftFilters({ ...draftFilters, groupBy });
+              }}
+              options={[
+                { value: 'none', label: 'None' },
+                { value: 'group', label: 'Prompt group' },
+              ]}
+            />
+          </WorkspaceModal>
         )}
         {settings.data?.configured && (
-          <div className="flex min-w-0 max-w-full flex-1 basis-48 items-center gap-1 md:max-w-64">
-            <label className="sr-only" htmlFor="monitoring-scope">
-              Monitoring scope
-            </label>
-            <select
-              id="monitoring-scope"
-              className={`${field} min-w-0 flex-1`}
-              value={selectedSet?.id ?? 'all'}
-              onChange={(event) => {
-                setMonitorSet(event.target.value);
-              }}
-              disabled={groups.loading || Boolean(groups.error)}
-            >
-              <option value="all">Run: All active</option>
-              {groups.data?.map((group) => (
-                <option key={group.id} value={group.id}>
-                  Run: {group.name}
-                </option>
-              ))}
-            </select>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button size="icon" variant="ghost" aria-label="Monitoring scope help">
-                  <Info className="size-4" aria-hidden="true" />
+          <WorkspaceModal
+            title="Monitoring scope"
+            description="Search and table filters do not change which prompts a check runs. Choosing a scope does not start monitoring."
+            trigger={
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={groups.loading || Boolean(groups.error)}
+                aria-label="Choose monitoring scope"
+              >
+                Run: {selectedSet?.name ?? 'All active'} ·{' '}
+                {
+                  (selectedSet
+                    ? active.filter((prompt) => selectedSet.promptIds.includes(prompt.id))
+                    : active
+                  ).length
+                }{' '}
+                prompts
+              </Button>
+            }
+            open={scopeOpen}
+            onOpenChange={(open) => {
+              if (open) setDraftScope(selectedSet?.id ?? 'all');
+              setScopeOpen(open);
+            }}
+            footer={
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setScopeOpen(false);
+                  }}
+                >
+                  Cancel
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent aria-label="Monitoring scope" className="workspace-theme text-sm">
-                Search and table filters do not change which prompts a check runs.
-              </PopoverContent>
-            </Popover>
-          </div>
+                <Button
+                  onClick={() => {
+                    setMonitorSet(draftScope);
+                    setScopeOpen(false);
+                  }}
+                >
+                  Use this scope
+                </Button>
+              </>
+            }
+          >
+            <ChoiceList
+              label="Prompts to monitor"
+              value={draftScope}
+              onChange={setDraftScope}
+              options={[
+                { value: 'all', label: `All active · ${String(active.length)} prompts` },
+                ...(groups.data ?? []).map((group) => ({
+                  value: group.id,
+                  label: `${group.name} · ${String(active.filter((prompt) => group.promptIds.includes(prompt.id)).length)} active prompts`,
+                })),
+              ]}
+            />
+            <p className="text-sm text-muted-foreground">
+              {settings.data.engines.length} selected engines ·{' '}
+              {settings.data.engines.map((engine) => geoSurfaces[engine].label).join(' · ')}
+            </p>
+          </WorkspaceModal>
         )}
         <Tooltip>
           <TooltipTrigger asChild>
@@ -536,6 +636,32 @@ export function PromptWorkspace({
           <TooltipContent>Refresh saved captures</TooltipContent>
         </Tooltip>
       </div>
+      <ActiveFilters
+        items={[
+          ...(groupFilter !== 'all'
+            ? [
+                {
+                  key: 'group',
+                  label: `Group: ${groupFilter === 'ungrouped' ? 'Ungrouped' : (groups.data?.find((group) => group.id === groupFilter)?.name ?? 'Unavailable')}`,
+                  onRemove: () => {
+                    updateFilters({ group: 'all' });
+                  },
+                },
+              ]
+            : []),
+          ...(groupBy !== 'none'
+            ? [
+                {
+                  key: 'groupBy',
+                  label: 'Grouped by prompt group',
+                  onRemove: () => {
+                    updateFilters({ groupBy: 'none' });
+                  },
+                },
+              ]
+            : []),
+        ]}
+      />
       {observations.loading && (
         <p role="status" className="text-xs text-muted-foreground">
           Loading saved captures…
@@ -820,11 +946,18 @@ export function PromptWorkspace({
         </Button>
       )}
       {groups.data && groups.data.length > 0 && (
-        <details className="rounded-xl border bg-card p-4">
-          <summary className="cursor-pointer text-sm font-medium">
-            Manage prompt groups · {groups.data.length}
-          </summary>
-          <div className="mt-3 divide-y">
+        <WorkspaceModal
+          title="Manage prompt groups"
+          trigger={<Button variant="outline">Manage prompt groups · {groups.data.length}</Button>}
+          open={manageOpen}
+          onOpenChange={setManageOpen}
+        >
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error.message}
+            </p>
+          )}
+          <div className="divide-y">
             {groups.data.map((group) => (
               <div
                 key={group.id}
@@ -857,7 +990,7 @@ export function PromptWorkspace({
                           'DELETE',
                         );
                         if (monitorSet === group.id) setMonitorSet('all');
-                        if (groupFilter === group.id) setGroupFilter('all');
+                        if (groupFilter === group.id) updateFilters({ group: 'all' });
                         await groups.reload();
                       })
                     }
@@ -868,14 +1001,15 @@ export function PromptWorkspace({
               </div>
             ))}
           </div>
-        </details>
+        </WorkspaceModal>
       )}
-      <details className="rounded-xl border bg-card p-4">
-        <summary className="cursor-pointer text-sm font-medium">
-          Previous Perplexity answers
-        </summary>
-        <div className="mt-4 space-y-4">{legacy}</div>
-      </details>
+      <WorkspaceModal
+        title="Previous Perplexity answers"
+        trigger={<Button variant="ghost">Previous Perplexity answers</Button>}
+        wide
+      >
+        <div className="space-y-4">{legacy}</div>
+      </WorkspaceModal>
     </div>
   );
   return (

@@ -76,13 +76,13 @@ async function workspace(page: Page) {
 }
 
 async function choose(page: Page, name: string, value: string) {
-  const mobile = (page.viewportSize()?.width ?? 1440) < 768;
-  if (mobile) await page.getByRole('button', { name: 'Filters', exact: true }).click();
-  const filters = mobile
-    ? page.getByRole('dialog', { name: 'Competitor filters' })
-    : page.getByLabel('Competitor filters', { exact: true });
-  await filters.getByLabel(name, { exact: true }).selectOption(value);
-  if (mobile) await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  const filters = page.getByRole('dialog', { name: 'Filters', exact: true });
+  await filters
+    .getByRole('group', { name, exact: true })
+    .locator(`input[value="${value}"]`)
+    .check();
+  await filters.getByRole('button', { name: 'Apply filters', exact: true }).click();
 }
 
 test('competitors show compact comparisons, preserve saved context, and only refresh saved evidence', async ({
@@ -108,7 +108,7 @@ test('competitors show compact comparisons, preserve saved context, and only ref
   await expect(first.locator('[data-label="Competitors"]')).toContainText('Unclear');
   await expect(table.getByText("No competitors in this saved answer's context")).toBeVisible();
   await expect(page.getByText('Context version', { exact: false })).toHaveCount(0);
-  const details = first.getByRole('button', { name: /^Comparison details:/ });
+  const details = first.getByRole('button', { name: 'Comparison details', exact: true });
   await details.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog', { name: 'Comparison details', exact: true })).toContainText(
@@ -127,7 +127,10 @@ test('competitors show compact comparisons, preserve saved context, and only ref
   await expect.poll(() => reads.length).toBe(before + 2);
   await choose(page, 'Engine', 'perplexity');
   await expect.poll(() => reads.some((path) => path.includes('engine=perplexity'))).toBe(true);
-  await page.getByLabel('Period', { exact: true }).selectOption('14');
+  await page
+    .getByRole('group', { name: 'Period', exact: true })
+    .getByRole('button', { name: '14 days', exact: true })
+    .click();
   await expect(page).toHaveURL(/days=14/u);
   expect(writes).toEqual([]);
 });
@@ -164,10 +167,17 @@ test('comparison pagination and answer navigation preserve period, engine, promp
   await expect(page).not.toHaveURL(/cursor=/u);
   await page.getByLabel('Search comparisons').fill('');
   await expect(page.getByRole('table').getByRole('row')).toHaveCount(3);
-  await page.getByLabel('Period', { exact: true }).selectOption('30');
+  await page
+    .getByRole('group', { name: 'Period', exact: true })
+    .getByRole('button', { name: '30 days', exact: true })
+    .click();
   await expect(page).toHaveURL(/days=30/u);
   await page.goBack();
-  await expect(page.getByLabel('Period', { exact: true })).toHaveValue('14');
+  await expect(
+    page
+      .getByRole('group', { name: 'Period', exact: true })
+      .getByRole('button', { name: '14 days', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
   expect(writes.filter((path) => /runs|analyses|page-checks|scans/u.test(path))).toEqual([]);
 });
 
@@ -242,7 +252,7 @@ test('competitor tables, long names and filter popovers fit desktop and mobile',
       const filters = page.getByRole('button', { name: 'Filters', exact: true });
       await filters.focus();
       await page.keyboard.press('Enter');
-      await expect(page.getByRole('dialog', { name: 'Competitor filters' })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Filters', exact: true })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -250,5 +260,35 @@ test('competitor tables, long names and filter popovers fit desktop and mobile',
       await expect(filters).toBeFocused();
     }
   }
+  expect(writes).toEqual([]);
+});
+
+test('advanced comparison filters apply atomically and cancellation preserves the current scope', async ({
+  page,
+}) => {
+  const { reads, writes } = await workspace(page);
+  await page.goto('/app/competitors?days=14&engine=perplexity');
+  await expect(page.getByRole('table')).toBeVisible();
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  const filters = page.getByRole('dialog', { name: 'Filters', exact: true });
+  const before = reads.length;
+  await filters
+    .getByRole('group', { name: 'Engine', exact: true })
+    .locator('input[value="openai_web_search"]')
+    .check();
+  await expect(page).toHaveURL(/engine=perplexity/);
+  expect(reads.length).toBe(before);
+  await filters.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  await expect(
+    filters
+      .getByRole('group', { name: 'Engine', exact: true })
+      .locator('input[value="perplexity"]'),
+  ).toBeChecked();
+  await filters.getByRole('button', { name: 'Reset', exact: true }).click();
+  await expect(page).toHaveURL(/engine=perplexity/);
+  await filters.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect(page).not.toHaveURL(/engine=/);
+  await expect(page).toHaveURL(/days=14/);
   expect(writes).toEqual([]);
 });

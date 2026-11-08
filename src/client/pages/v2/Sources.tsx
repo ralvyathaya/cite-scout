@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useOutletContext, useSearchParams } from 'react-router';
-import { ChevronDown, Info, RefreshCw, Search, SlidersHorizontal } from 'lucide-react';
+import { Info, RefreshCw, Search, SlidersHorizontal } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
@@ -14,6 +14,7 @@ import type { GeoSourceOpportunity } from '../../../shared/geo-actions';
 import type { WorkspaceContext } from './Workspace';
 import { ApiError, api, useResource } from './api';
 import { WorkspaceHeading } from './WorkspaceHeading';
+import { ActiveFilters, ChoiceButtons, ChoiceList, WorkspaceModal } from './WorkspaceControls';
 
 const field = 'h-10 min-w-0 max-w-full rounded-lg border bg-card px-2 text-sm';
 const cell = 'min-w-0 break-words px-3 py-2';
@@ -130,7 +131,6 @@ function SourceEvidence({
   const ids = Array.from(new Set(source.observationIds));
   return (
     <div className="space-y-3 p-3 sm:p-4">
-      <h3 className="text-sm font-semibold">Source evidence</h3>
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
         <span>{source.returnedResults} answers with search results</span>
         <span>{source.answerReferences} answers with references</span>
@@ -189,12 +189,13 @@ export function GeoSources() {
   const query = scope.toString();
   const sources = useResource<GeoSourceOpportunity[]>(`/geo/sources?${query}`);
   const [cache] = useState<AnswerCache>(() => new Map());
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const search = params.get('q') ?? '';
   const domainFilter = params.get('domain') ?? '';
   const owner = params.get('owner') ?? 'all';
   const sort = params.get('sort') ?? (view === 'pages' ? 'referenced' : 'answers');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draft, setDraft] = useState({ engine: 'all', promptId: 'all', owner: 'all', sort });
   const roles = Object.entries(ownershipLabels).filter(
     ([key]) => view === 'domains' || key !== 'mixed',
   );
@@ -248,89 +249,128 @@ export function GeoSources() {
     else next.set(key, value);
     if (key !== 'page') next.delete('page');
     if (key === 'view') next.delete('sort');
-    setExpanded(null);
     setParams(next, { replace });
   }
-  const moreFilters = (
-    <>
-      <label className="min-w-0 text-xs">
-        <span className="sr-only">Engine</span>
-        <select
-          aria-label="Engine"
-          className={field}
-          value={scope.get('engine') ?? 'all'}
-          onChange={(event) => {
-            update('engine', event.target.value);
+  function applyFilters() {
+    const next = new URLSearchParams(window.location.search);
+    for (const [key, value] of Object.entries(draft)) {
+      if (
+        !value ||
+        value === 'all' ||
+        (key === 'sort' && value === (view === 'pages' ? 'referenced' : 'answers'))
+      )
+        next.delete(key);
+      else next.set(key, value);
+    }
+    next.delete('page');
+    setParams(next);
+    setFiltersOpen(false);
+  }
+  const filterDialog = (
+    <WorkspaceModal
+      title="Sources filters"
+      trigger={
+        <Button variant="outline">
+          <SlidersHorizontal className="size-4" aria-hidden="true" />
+          Filters
+        </Button>
+      }
+      open={filtersOpen}
+      onOpenChange={(open) => {
+        if (open)
+          setDraft({
+            engine: scope.get('engine') ?? 'all',
+            promptId: scope.get('promptId') ?? 'all',
+            owner,
+            sort,
+          });
+        setFiltersOpen(open);
+      }}
+      footer={
+        <>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setDraft({
+                engine: 'all',
+                promptId: 'all',
+                owner: 'all',
+                sort: view === 'pages' ? 'referenced' : 'answers',
+              });
+            }}
+          >
+            Reset
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setFiltersOpen(false);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button onClick={applyFilters}>Apply</Button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        <ChoiceList
+          label="Engine"
+          value={draft.engine}
+          onChange={(engine) => {
+            setDraft({ ...draft, engine });
           }}
-        >
-          <option value="all">All engines</option>
-          {Object.entries(geoSurfaces).map(([engine, surface]) => (
-            <option key={engine} value={engine}>
-              {surface.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="min-w-0 text-xs">
-        <span className="sr-only">Prompt</span>
-        <select
-          aria-label="Prompt"
-          className={`${field} md:max-w-48`}
-          value={scope.get('promptId') ?? 'all'}
-          onChange={(event) => {
-            update('promptId', event.target.value);
+          options={[
+            { value: 'all', label: 'All engines' },
+            ...Object.entries(geoSurfaces).map(([value, surface]) => ({
+              value,
+              label: surface.label,
+            })),
+          ]}
+        />
+        <ChoiceList
+          label="Prompt"
+          value={draft.promptId}
+          onChange={(promptId) => {
+            setDraft({ ...draft, promptId });
           }}
-        >
-          <option value="all">All prompts</option>
-          {data.project?.questions.map((prompt) => (
-            <option key={prompt.id} value={prompt.id}>
-              {prompt.text}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="min-w-0 text-xs">
-        <span className="sr-only">Ownership</span>
-        <select
-          aria-label="Ownership"
-          className={field}
-          value={roles.some(([key]) => key === owner) ? owner : 'all'}
-          onChange={(event) => {
-            update('owner', event.target.value);
+          searchable
+          options={[
+            { value: 'all', label: 'All prompts' },
+            ...(data.project?.questions ?? []).map((prompt) => ({
+              value: prompt.id,
+              label: prompt.text,
+            })),
+          ]}
+        />
+        <ChoiceList
+          label="Ownership"
+          value={draft.owner}
+          onChange={(owner) => {
+            setDraft({ ...draft, owner });
           }}
-        >
-          <option value="all">All owners</option>
-          {roles.map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="min-w-0 text-xs">
-        <span className="sr-only">Sort sources</span>
-        <select
-          aria-label="Sort sources"
-          className={field}
-          value={
-            ['answers', 'name', view === 'pages' ? 'referenced' : 'pages'].includes(sort)
-              ? sort
-              : view === 'pages'
-                ? 'referenced'
-                : 'answers'
-          }
-          onChange={(event) => {
-            update('sort', event.target.value);
+          options={[
+            { value: 'all', label: 'All owners' },
+            ...roles.map(([value, label]) => ({ value, label })),
+          ]}
+        />
+        <ChoiceList
+          label="Sort sources"
+          value={draft.sort}
+          onChange={(sort) => {
+            setDraft({ ...draft, sort });
           }}
-        >
-          <option value={view === 'pages' ? 'referenced' : 'pages'}>
-            {view === 'pages' ? 'Most referenced' : 'Most pages'}
-          </option>
-          <option value="answers">Most answers</option>
-          <option value="name">{view === 'pages' ? 'Page A–Z' : 'Domain A–Z'}</option>
-        </select>
-      </label>
-    </>
+          options={[
+            {
+              value: view === 'pages' ? 'referenced' : 'pages',
+              label: view === 'pages' ? 'Most referenced' : 'Most pages',
+            },
+            { value: 'answers', label: 'Most answers' },
+            { value: 'name', label: view === 'pages' ? 'Page A–Z' : 'Domain A–Z' },
+          ]}
+        />
+      </div>
+    </WorkspaceModal>
   );
   const returnTo = location.pathname + location.search;
   return (
@@ -385,40 +425,15 @@ export function GeoSources() {
             }}
           />
         </label>
-        <label>
-          <span className="sr-only">Period</span>
-          <select
-            aria-label="Period"
-            className={field}
-            value={days}
-            onChange={(event) => {
-              update('days', event.target.value);
-            }}
-          >
-            {['7', '14', '30'].map((value) => (
-              <option key={value} value={value}>
-                Last {value} days
-              </option>
-            ))}
-          </select>
-        </label>
-        <div aria-label="Sources filters" className="hidden flex-wrap gap-2 md:flex">
-          {moreFilters}
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="md:hidden">
-              <SlidersHorizontal className="size-4" aria-hidden="true" />
-              Filters
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            aria-label="Sources filters"
-            className="workspace-theme grid max-w-[calc(100vw-2rem)] gap-3"
-          >
-            {moreFilters}
-          </PopoverContent>
-        </Popover>
+        <ChoiceButtons
+          label="Period"
+          value={days}
+          onChange={(value) => {
+            update('days', value);
+          }}
+          options={['7', '14', '30'].map((value) => ({ value, label: `${value} days` }))}
+        />
+        {filterDialog}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -428,7 +443,6 @@ export function GeoSources() {
               disabled={refreshing || sources.loading}
               onClick={() => {
                 setRefreshing(true);
-                setExpanded(null);
                 cache.clear();
                 void sources.reload().finally(() => {
                   setRefreshing(false);
@@ -444,19 +458,74 @@ export function GeoSources() {
           <TooltipContent>Refresh saved sources</TooltipContent>
         </Tooltip>
 
-        {domainFilter && (
-          <span className="flex min-w-0 items-center gap-2 text-xs">
-            Domain: <span className="break-all">{domainFilter}</span>
-            <button
-              className="min-h-8 text-primary underline"
-              onClick={() => {
-                update('domain', '');
-              }}
-            >
-              Clear domain filter
-            </button>
-          </span>
-        )}
+        <ActiveFilters
+          items={[
+            ...(scope.get('engine')
+              ? [
+                  {
+                    key: 'engine',
+                    label: geoSurfaces[scope.get('engine') as GeoEngine].label,
+                    onRemove: () => {
+                      update('engine', '');
+                    },
+                  },
+                ]
+              : []),
+            ...(scope.get('promptId')
+              ? [
+                  {
+                    key: 'promptId',
+                    label:
+                      data.project?.questions.find((prompt) => prompt.id === scope.get('promptId'))
+                        ?.text ?? 'Selected prompt',
+                    onRemove: () => {
+                      update('promptId', '');
+                    },
+                  },
+                ]
+              : []),
+            ...(owner !== 'all' && roles.some(([key]) => key === owner)
+              ? [
+                  {
+                    key: 'owner',
+                    label: ownershipLabels[owner as keyof typeof ownershipLabels],
+                    onRemove: () => {
+                      update('owner', '');
+                    },
+                  },
+                ]
+              : []),
+            ...(params.get('sort')
+              ? [
+                  {
+                    key: 'sort',
+                    label:
+                      sort === 'name'
+                        ? 'A–Z'
+                        : sort === 'pages'
+                          ? 'Most pages'
+                          : sort === 'referenced'
+                            ? 'Most referenced'
+                            : 'Most answers',
+                    onRemove: () => {
+                      update('sort', '');
+                    },
+                  },
+                ]
+              : []),
+            ...(domainFilter
+              ? [
+                  {
+                    key: 'domain',
+                    label: `Domain: ${domainFilter}`,
+                    onRemove: () => {
+                      update('domain', '');
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
       </div>
       <div className="overflow-hidden rounded-b-xl border bg-card">
         {sources.loading ? (
@@ -514,64 +583,52 @@ export function GeoSources() {
             <tbody>
               {view === 'pages'
                 ? pages.slice(start, start + 25).map((source) => (
-                    <Fragment key={source.url}>
-                      <tr className="border-t align-top hover:bg-muted/10">
-                        <th scope="row" className={`${cell} font-normal`}>
-                          <div className="flex min-w-0 items-start gap-2">
-                            <SourceIcon url={source.url} />
-                            <div className="min-w-0">
-                              <SafeSource url={source.url}>
-                                {source.title ?? source.domain}
-                              </SafeSource>
-                              <p className="mt-1 break-all text-xs text-muted-foreground">
-                                {source.url.replace(/^https?:\/\//u, '')}
-                              </p>
-                            </div>
+                    <tr key={source.url} className="border-t align-top hover:bg-muted/10">
+                      <th scope="row" className={`${cell} font-normal`}>
+                        <div className="flex min-w-0 items-start gap-2">
+                          <SourceIcon url={source.url} />
+                          <div className="min-w-0">
+                            <SafeSource url={source.url}>
+                              {source.title ?? source.domain}
+                            </SafeSource>
+                            <p className="mt-1 break-all text-xs text-muted-foreground">
+                              {source.url.replace(/^https?:\/\//u, '')}
+                            </p>
                           </div>
-                        </th>
-                        <td className={cell} data-label="Ownership">
-                          <Badge variant="outline">{ownershipLabels[source.role]}</Badge>
-                        </td>
-                        <td className={cell} data-label="Answers">
-                          {source.observations}
-                        </td>
-                        <td className={cell} data-label="Referenced">
-                          {source.answerReferences}
-                        </td>
-                        <td className={cell} data-label="Engines">
-                          <Engines engines={source.engines} />
-                        </td>
-                        <td className={cell}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            aria-expanded={expanded === source.url}
-                            aria-controls={`source-${encodeURIComponent(source.url)}`}
-                            onClick={() => {
-                              setExpanded(expanded === source.url ? null : source.url);
-                            }}
-                          >
-                            <ChevronDown
-                              className={`size-4 ${expanded === source.url ? 'rotate-180' : ''}`}
-                              aria-hidden="true"
-                            />
-                            View evidence
-                          </Button>
-                        </td>
-                      </tr>
-                      {expanded === source.url && (
-                        <tr className="source-evidence border-t bg-muted/15">
-                          <td colSpan={6} id={`source-${encodeURIComponent(source.url)}`}>
-                            <SourceEvidence
-                              source={source}
-                              cache={cache}
-                              query={query}
-                              returnTo={returnTo}
-                            />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
+                        </div>
+                      </th>
+                      <td className={cell} data-label="Ownership">
+                        <Badge variant="outline">{ownershipLabels[source.role]}</Badge>
+                      </td>
+                      <td className={cell} data-label="Answers">
+                        {source.observations}
+                      </td>
+                      <td className={cell} data-label="Referenced">
+                        {source.answerReferences}
+                      </td>
+                      <td className={cell} data-label="Engines">
+                        <Engines engines={source.engines} />
+                      </td>
+                      <td className={cell}>
+                        <WorkspaceModal
+                          title="Source evidence"
+                          description={source.title ?? source.domain}
+                          wide
+                          trigger={
+                            <Button variant="ghost" size="sm">
+                              View evidence
+                            </Button>
+                          }
+                        >
+                          <SourceEvidence
+                            source={source}
+                            cache={cache}
+                            query={query}
+                            returnTo={returnTo}
+                          />
+                        </WorkspaceModal>
+                      </td>
+                    </tr>
                   ))
                 : domains.slice(start, start + 25).map((domain) => {
                     const next = new URLSearchParams(params);

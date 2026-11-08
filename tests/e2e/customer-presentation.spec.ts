@@ -325,23 +325,34 @@ test('workspace and public pages keep consistent local fonts, including portals'
   });
   await page.goto('/app/settings');
   const heading = page.getByRole('heading', { name: 'Settings', exact: true });
-  await expect(heading).toHaveCSS('font-family', /Newsreader/);
-  await expect(heading).toHaveCSS('font-weight', '400');
+  await expect(heading).toHaveCSS('font-family', /Switzer/);
+  await expect(heading).toHaveCSS('font-weight', '500');
   expect(
     await page.evaluate(async () => {
       const faces = await Promise.all([
         document.fonts.load('400 16px Switzer'),
         document.fonts.load('italic 400 16px Switzer'),
-        document.fonts.load('400 32px Newsreader'),
       ]);
       return faces.every(
         (loaded) => loaded.length > 0 && loaded.every((font) => font.status === 'loaded'),
       );
     }),
   ).toBe(true);
-  await page.getByRole('combobox', { name: 'Language' }).click();
-  await expect(page.getByRole('listbox')).toHaveCSS('font-family', /Switzer/);
+  const editBrand = page.getByRole('button', { name: 'Edit brand and competitors', exact: true });
+  await editBrand.click();
+  const dialog = page.getByRole('dialog', { name: 'Brand and competitors', exact: true });
+  await expect(dialog).toHaveCSS('font-family', /Switzer/);
+  await expect(dialog.getByRole('heading')).toHaveCSS('font-family', /Switzer/);
+  await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCSS(
+    'background-color',
+    /^(?:rgba\(0, 0, 0, 0\.5\)|oklab\(0 0 0 \/ 0\.5\))$/,
+  );
+  await dialog.getByLabel('Company name', { exact: true }).fill('Unsaved company');
   await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(editBrand).toBeFocused();
+  await page.goto('/');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCSS('font-family', /Newsreader/);
   await page.goto('/login');
   await expect(page.getByRole('heading', { level: 1 })).toHaveCSS('font-family', /Switzer/);
   expect(remoteFonts).toEqual([]);

@@ -242,9 +242,10 @@ test('staging owner onboarding saves a project without launching a legacy baseli
     page.getByRole('link', { name: 'Review monitoring settings', exact: true }),
   ).toBeVisible();
   await page.getByText('Monitoring details', { exact: true }).click();
-  await page.locator('summary').filter({ hasText: 'Monitoring setup' }).click();
+  await expect(page.getByRole('heading', { name: /Monitoring setup/ })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Configure engines', exact: true })).toBeVisible();
   await expect(page.getByText(/Legacy Perplexity workspace/)).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: 'Monitor Prompts', exact: true })).toBeDisabled();
   await expect(
     page.getByText('Save monitoring engines and configuration in Settings.'),
@@ -432,6 +433,10 @@ test('automatic onboarding fills an editable draft and preserves edits before ex
   await page.screenshot({ path: testInfo.outputPath('onboarding-suggested.png'), fullPage: true });
   await page.getByText('Why these suggestions?', { exact: true }).click();
   await expect(page.getByText(/Brand evidence from the homepage/)).toBeVisible();
+  await page
+    .getByRole('dialog', { name: 'Why these suggestions?' })
+    .getByRole('button', { name: 'Close', exact: true })
+    .click();
   await page.getByLabel('Company name', { exact: true }).fill('Edited CedarFlow');
   await page.getByLabel('Competitor 1 name', { exact: true }).fill('Chosen Rival');
   await page

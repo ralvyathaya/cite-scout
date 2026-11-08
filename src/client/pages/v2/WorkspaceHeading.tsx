@@ -39,8 +39,8 @@ export function WorkspaceHeading({
   return (
     <header className="flex min-w-0 flex-wrap items-start justify-between gap-3">
       <div className="min-w-0 max-w-3xl space-y-1.5">
-        <h1 className="flex items-center gap-3 break-words text-2xl font-semibold tracking-tight">
-          <Icon className="size-5 shrink-0 text-primary" aria-hidden="true" />
+        <h1 className="flex items-center gap-3 break-words text-2xl font-medium">
+          <Icon className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
           {title}
         </h1>
         {description && (

@@ -49,6 +49,37 @@ test('dashboard keeps monitoring and all four summaries above the desktop fold',
   }
 });
 
+test('overview filters do not silently change the scope of a new monitoring check', async ({
+  page,
+}) => {
+  const fixture = new GeoFixtureWorkspace();
+  const submitted: unknown[] = [];
+  await page.route('**/api/v2/**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname.replace('/api/v2', '') + url.search;
+    if (request.method() !== 'GET') {
+      submitted.push(request.postDataJSON());
+      await route.fulfill({
+        status: 503,
+        json: { error: { message: 'Synthetic check intercepted' } },
+      });
+      return;
+    }
+    await route.fulfill({ json: { data: await fixture.request(path) } });
+  });
+  await page.goto('/app/overview?days=14&engine=perplexity&promptId=fixture-prompt-0');
+  await expect(page.getByRole('button', { name: 'Remove Perplexity filter' })).toBeVisible();
+  expect(submitted).toEqual([]);
+  await page.getByRole('button', { name: 'Monitor Prompts', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText('Synthetic check intercepted');
+  expect(submitted).toHaveLength(1);
+  expect(submitted[0]).toMatchObject({
+    engines: ['perplexity', 'google_aio', 'chatgpt_search', 'bing_copilot'],
+  });
+  expect(submitted[0]).not.toHaveProperty('promptIds');
+});
+
 for (const state of ['new owner', 'quota reached', 'inactive prompts'] as const) {
   test(`${state} keeps the monitoring reason, next step and saved evidence accessible`, async ({
     page,

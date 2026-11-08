@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
   Link,
   Navigate,
@@ -50,6 +50,7 @@ import {
 import { ApiError, api, useResource } from './api';
 import { fixtureMode } from './geo-fixture-mode';
 import { WorkspaceHeading } from './WorkspaceHeading';
+import { WorkspaceModal, ChoiceButtons, ChoiceList, ActiveFilters } from './WorkspaceControls';
 import { GeoFollowUpDialog } from './GeoFollowUpDialog';
 import { actionCopy } from './action-copy';
 import { AnswerMarkdown } from '../../components/AnswerMarkdown';
@@ -249,39 +250,122 @@ function useEvidenceFilter() {
 }
 function EvidenceFilters({ filter }: { filter: ReturnType<typeof useEvidenceFilter> }) {
   const { data } = useOutletContext<WorkspaceContext>();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState({
+    engine: filter.engine ?? 'all',
+    promptId: filter.promptId || 'all',
+  });
+  const engineOptions = [
+    { value: 'all', label: 'All engines' },
+    ...engines.map((value) => ({ value, label: geoSurfaces[value].label })),
+  ];
+  const promptOptions = [
+    { value: 'all', label: 'All prompts' },
+    ...(data.project?.questions ?? []).map((q) => ({ value: q.id, label: q.text })),
+  ];
+  function changeOpen(value: boolean) {
+    if (value) setDraft({ engine: filter.engine ?? 'all', promptId: filter.promptId || 'all' });
+    setOpen(value);
+  }
+  function apply() {
+    const next = new URLSearchParams(filter.params);
+    for (const [key, value] of Object.entries(draft)) {
+      if (value === 'all') next.delete(key);
+      else next.set(key, value);
+    }
+    next.delete('cursor');
+    next.delete('observation');
+    filter.setParams(next);
+    setOpen(false);
+  }
   return (
-    <div
-      className="grid gap-3 rounded-xl border bg-card p-3 sm:grid-cols-3"
-      aria-label="Evidence filters"
-    >
-      <Choice
-        label="Period"
-        value={filter.days}
-        set={(value) => {
-          filter.set('days', value);
-        }}
-        options={['7', '14', '30'].map((value) => ({ value, label: `Last ${value} days` }))}
-      />
-      <Choice
-        label="Engine"
-        value={filter.engine ?? 'all'}
-        set={(value) => {
-          filter.set('engine', value);
-        }}
-        options={[
-          { value: 'all', label: 'All engines' },
-          ...engines.map((value) => ({ value, label: geoSurfaces[value].label })),
-        ]}
-      />
-      <Choice
-        label="Prompt"
-        value={filter.promptId || 'all'}
-        set={(value) => {
-          filter.set('promptId', value);
-        }}
-        options={[
-          { value: 'all', label: 'All prompts' },
-          ...(data.project?.questions ?? []).map((q) => ({ value: q.id, label: q.text })),
+    <div className="space-y-2" aria-label="Evidence filters">
+      <div className="flex flex-wrap items-center gap-2">
+        <ChoiceButtons
+          label="Period"
+          value={filter.days}
+          onChange={(value) => {
+            filter.set('days', value);
+          }}
+          options={['7', '14', '30'].map((value) => ({ value, label: `${value} days` }))}
+        />
+        <WorkspaceModal
+          title="Filters"
+          trigger={
+            <Button variant="outline">
+              <SlidersHorizontal className="size-4" aria-hidden="true" />
+              Filters
+            </Button>
+          }
+          open={open}
+          onOpenChange={changeOpen}
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setDraft({ engine: 'all', promptId: 'all' });
+                }}
+              >
+                Reset
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setOpen(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button onClick={apply}>Apply filters</Button>
+            </>
+          }
+        >
+          <ChoiceList
+            label="Engine"
+            value={draft.engine}
+            onChange={(engine) => {
+              setDraft({ ...draft, engine });
+            }}
+            options={engineOptions}
+          />
+          <ChoiceList
+            label="Prompt"
+            value={draft.promptId}
+            onChange={(promptId) => {
+              setDraft({ ...draft, promptId });
+            }}
+            options={promptOptions}
+            searchable
+          />
+        </WorkspaceModal>
+      </div>
+      <ActiveFilters
+        items={[
+          ...(filter.engine
+            ? [
+                {
+                  key: 'engine',
+                  label: geoSurfaces[filter.engine].label,
+                  onRemove: () => {
+                    filter.set('engine', 'all');
+                  },
+                },
+              ]
+            : []),
+          ...(filter.promptId
+            ? [
+                {
+                  key: 'promptId',
+                  label:
+                    promptOptions.find((option) => option.value === filter.promptId)?.label ??
+                    'Selected prompt',
+                  onRemove: () => {
+                    filter.set('promptId', 'all');
+                  },
+                },
+              ]
+            : []),
         ]}
       />
     </div>
@@ -427,7 +511,7 @@ export function GeoMonitor({
   const runDetails = runId && (
     <details
       className="space-y-3 rounded-lg border bg-card p-3"
-      open={params.get('geoRun') ? true : undefined}
+      open={showRun || params.get('geoRun') ? true : undefined}
     >
       <summary className="cursor-pointer text-sm font-medium">
         {selectedRun
@@ -481,6 +565,7 @@ export function GeoMonitor({
       >
         <div className="min-w-0 flex-1 basis-72">
           <p id="geo-monitor-status" className={small}>
+            {!reason && `${String(promptIds?.length ?? active.length)} active prompts · `}
             {reason ??
               (data.plan
                 ? `${String(scopeEngines.length)} engines · one check per prompt and engine per UTC day`
@@ -526,15 +611,27 @@ export function GeoMonitor({
       <ErrorNotice error={history.error} />
       {showRun && runDetails}
       {children}
-      <details className="rounded-lg border bg-card p-3">
-        <summary className="cursor-pointer text-sm font-medium">Monitoring details</summary>
+      <WorkspaceModal
+        title="Monitoring details"
+        trigger={
+          <Button variant="outline" size="sm">
+            Monitoring details
+          </Button>
+        }
+        wide
+      >
         <div className="mt-3 space-y-3">
           {!showRun && runDetails}
+          <p className={small}>
+            Saved observations include captures without an AI answer; failed requests are excluded.
+            Classification coverage counts complete, usable classifications. View filters do not
+            change the prompts and configured engines used for a new check.
+          </p>
           <div className="grid items-start gap-3 md:grid-cols-2">
-            <details className="rounded-lg border bg-card px-4 py-3">
-              <summary className="cursor-pointer text-sm font-medium">
+            <section className="rounded-lg border bg-card px-4 py-3">
+              <h3 className="cursor-pointer text-sm font-medium">
                 Monitoring setup · {scopeEngines.length} selected engines
-              </summary>
+              </h3>
               <p className={`mt-3 ${small}`}>
                 {scopeEngines.map((engine) => geoSurfaces[engine].label).join(' · ') ||
                   'No engines selected'}
@@ -575,12 +672,12 @@ export function GeoMonitor({
                   </Link>
                 </li>
               </ol>
-            </details>
-            <details className="space-y-3 rounded-lg border bg-card px-4 py-3">
-              <summary className="cursor-pointer text-sm font-medium">
+            </section>
+            <section className="space-y-3 rounded-lg border bg-card px-4 py-3">
+              <h3 className="cursor-pointer text-sm font-medium">
                 Recent checks · daily schedule{' '}
                 {settings.data?.dailyEnabled ? 'enabled' : 'disabled'}
-              </summary>
+              </h3>
               <p className={small}>
                 Latest ten runs and seven daily outcomes · UTC schedule. Opening a saved check does
                 not start a provider call.
@@ -612,10 +709,10 @@ export function GeoMonitor({
               {history.data && !history.data.runs.length && !history.data.dailyOutcomes.length && (
                 <p className={small}>No monitoring outcomes recorded yet.</p>
               )}
-            </details>
+            </section>
           </div>
         </div>
-      </details>
+      </WorkspaceModal>
     </div>
   );
 }
@@ -655,9 +752,7 @@ function ObservationProof({
         <CaptureBadge quality={capture.quality} />
       </div>
       <div className="rounded-lg border bg-muted/20 p-3">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Prompt sent to provider
-        </p>
+        <p className="text-xs font-medium text-muted-foreground">Prompt sent to provider</p>
         <p className="mt-1 whitespace-pre-wrap break-words text-sm">{context.promptText}</p>
         <p className={`mt-3 ${small}`}>
           {geoSurfaces[observation.engine].label} · requested{' '}
@@ -893,34 +988,44 @@ function TrendChart({
             First eligible answer per UTC day · one comparable series at a time
           </p>
         </div>
-        <Choice
-          label="Metric"
-          value={metric}
-          set={(value) => {
-            setMetric(value as GeoMetric);
-          }}
-          options={Object.entries(metricLabels).map(([value, label]) => ({ value, label }))}
-        />
+        <WorkspaceModal
+          title="Metric & series"
+          trigger={
+            <Button variant="outline" size="sm">
+              {metricLabels[metric]} · Metric & series
+            </Button>
+          }
+        >
+          <ChoiceList
+            label="Metric"
+            value={metric}
+            onChange={(value) => {
+              setMetric(value as GeoMetric);
+            }}
+            options={Object.entries(metricLabels).map(([value, label]) => ({ value, label }))}
+          />
+          {series.length > 0 && (
+            <ChoiceList
+              label="Comparable series"
+              searchable
+              value={activeSeries ?? ''}
+              onChange={setSelectedSeries}
+              options={series.map((value, index) => {
+                const count = samples.filter((sample) => sample.cohort === value).length;
+                const capture = observations.find((observation) =>
+                  samples.some(
+                    (sample) => sample.cohort === value && sample.observationId === observation.id,
+                  ),
+                );
+                return {
+                  value,
+                  label: `Series ${String(index + 1)} · ${capture ? `${geoSurfaces[capture.engine].label} · ${capture.context.promptText}` : (samples.find((sample) => sample.cohort === value)?.day ?? 'Saved context')} · ${String(count)} daily ${count === 1 ? 'sample' : 'samples'}`,
+                };
+              })}
+            />
+          )}
+        </WorkspaceModal>
       </div>
-      {series.length > 0 && (
-        <Choice
-          label="Comparable series"
-          value={activeSeries ?? ''}
-          set={setSelectedSeries}
-          options={series.map((value, index) => {
-            const count = samples.filter((sample) => sample.cohort === value).length;
-            const capture = observations.find((observation) =>
-              samples.some(
-                (sample) => sample.cohort === value && sample.observationId === observation.id,
-              ),
-            );
-            return {
-              value,
-              label: `Series ${String(index + 1)} · ${capture ? `${geoSurfaces[capture.engine].label} · ${capture.context.promptText}` : (samples.find((sample) => sample.cohort === value)?.day ?? 'Saved context')} · ${String(count)} daily ${count === 1 ? 'sample' : 'samples'}`,
-            };
-          })}
-        />
-      )}
       {selected.length ? (
         <>
           <div
@@ -933,14 +1038,14 @@ function TrendChart({
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="day"
-                  tick={{ fontSize: 10 }}
+                  tick={{ fontSize: 12 }}
                   tickFormatter={(day: string) => day.slice(5)}
                   padding={{ left: 8, right: 16 }}
                 />
                 <YAxis
                   domain={[0, 100]}
                   ticks={[0, 100]}
-                  tick={{ fontSize: 10 }}
+                  tick={{ fontSize: 12 }}
                   tickFormatter={(value) => `${String(value)}%`}
                 />
                 <Tooltip />
@@ -962,7 +1067,7 @@ function TrendChart({
                       x={pin.recordedAt.slice(0, 10)}
                       stroke="var(--color-chart-2)"
                       strokeDasharray="4 3"
-                      label={{ value: 'Action', fontSize: 10 }}
+                      label={{ value: 'Action', fontSize: 12 }}
                     />
                   ))}
               </LineChart>
@@ -977,10 +1082,15 @@ function TrendChart({
             {selected.reduce((sum, sample) => sum + sample.value, 0)} of {selected.length} eligible
             daily answers meet this metric. Rates are provisional and require review.
           </p>
-          <details>
-            <summary className="cursor-pointer text-xs font-medium">
-              Inspect daily sample evidence
-            </summary>
+          <WorkspaceModal
+            title="Inspect daily sample evidence"
+            trigger={
+              <Button variant="outline" size="sm">
+                Inspect daily sample evidence
+              </Button>
+            }
+            wide
+          >
             <p className={`mt-2 break-all ${small}`}>Frozen cohort: {activeSeries}</p>
             <ul className="mt-2 space-y-2">
               {selected.map((sample) => (
@@ -995,7 +1105,7 @@ function TrendChart({
                 </li>
               ))}
             </ul>
-          </details>
+          </WorkspaceModal>
         </>
       ) : (
         <Empty>
@@ -1003,8 +1113,15 @@ function TrendChart({
           classification remain available in Answers.
         </Empty>
       )}
-      <details className="border-t pt-3">
-        <summary className="cursor-pointer text-xs font-medium">How this is measured</summary>
+      <WorkspaceModal
+        title="Measurement details"
+        trigger={
+          <Button variant="outline" size="sm">
+            Measurement details
+          </Button>
+        }
+        wide
+      >
         <p className={`mt-3 ${small}`}>
           {trends.method} Measurement {trends.version}. Scope: {trends.captures} captures,{' '}
           {trends.classifiedCaptures} usable complete classifications. Different prompt versions,
@@ -1012,7 +1129,7 @@ function TrendChart({
           comparable series. Pins are annotated only when their affected frozen scope is identified
           on this loaded cohort.
         </p>
-      </details>
+      </WorkspaceModal>
       <ActionPins actions={actions} filter={filter} onPins={collectPins} />
     </section>
   );
@@ -1225,8 +1342,6 @@ export function GeoOverview() {
             </p>
           </div>
         }
-        promptIds={filter.promptId ? [filter.promptId] : undefined}
-        selectedEngines={filter.engine ? [filter.engine] : undefined}
         onComplete={() => {
           void observations.reload();
           void trends.reload();
@@ -1262,20 +1377,20 @@ export function GeoOverview() {
             [
               'Saved observations',
               String(trends.data?.captures ?? '—'),
-              `Selected ${filter.days}-day scope · includes absent AI features; failed captures excluded`,
+              `Selected ${filter.days}-day scope`,
             ],
             [
               'Classification coverage',
               trends.data
                 ? `${String(trends.data.classifiedCaptures)} / ${String(trends.data.captures)}`
                 : '—',
-              'Usable complete classifications / captures',
+              'Complete classifications / captures',
             ],
             [
               'Work to review',
               actions.data ? String(jobs.length) : '—',
               actions.data
-                ? `${String(jobs.filter((a) => a.category === 'owned').length)} Web / Owned · ${String(jobs.filter((a) => a.category === 'earned').length)} Earned Media`
+                ? `${String(jobs.filter((a) => a.category === 'owned').length)} website · ${String(jobs.filter((a) => a.category === 'earned').length)} external`
                 : 'Waiting for saved work',
             ],
             [
@@ -1288,9 +1403,9 @@ export function GeoOverview() {
               'Latest capture in the selected scope',
             ],
           ].map(([label, value, note]) => (
-            <div key={label} className="min-w-0 rounded-xl border bg-card p-4 shadow-sm">
+            <div key={label} className="min-w-0 rounded-xl border bg-card p-4">
               <p className={small}>{label}</p>
-              <p className="mt-2 break-words text-2xl font-semibold tabular-nums tracking-tight">
+              <p className="mt-2 break-words text-2xl font-medium tabular-nums">
                 {label === 'Evidence freshness' && latestCapture ? (
                   <time
                     dateTime={latestCapture}
@@ -1570,14 +1685,19 @@ export function GeoObservations() {
               )}
             </div>
           </div>
-          <details className="rounded-lg border bg-card p-3">
-            <summary className="cursor-pointer text-sm font-medium">
-              Answers by prompt and engine
-            </summary>
+          <WorkspaceModal
+            title="Answers by prompt and engine"
+            trigger={
+              <Button variant="outline" size="sm">
+                Answers by prompt and engine
+              </Button>
+            }
+            wide
+          >
             <div className="mt-3">
               <PromptMatrix observations={observations.data.observations} />
             </div>
-          </details>
+          </WorkspaceModal>
         </>
       ) : (
         <p className={small}>Saved answers are unavailable. Refresh to try again.</p>
@@ -2095,6 +2215,8 @@ export function GeoDiagnoses() {
   const location = useLocation();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterDraft, setFilterDraft] = useState({ status: 'all', type: 'all' });
   const search = params.get('q') ?? '';
   const requestedStatus = params.get('status') ?? 'all';
   const requestedType = params.get('type') ?? 'all';
@@ -2161,44 +2283,6 @@ export function GeoDiagnoses() {
   }
   const field = 'h-10 min-w-0 max-w-full rounded-lg border bg-card px-2 text-sm';
   const cell = 'min-w-0 break-words px-3 py-2';
-  const moreFilters = (
-    <>
-      <label className="min-w-0">
-        <span className="sr-only">Finding status</span>
-        <select
-          aria-label="Finding status"
-          className={field}
-          value={status}
-          onChange={(event) => {
-            update('status', event.target.value);
-          }}
-        >
-          <option value="all">All statuses</option>
-          {Object.entries(statusLabels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="min-w-0">
-        <span className="sr-only">Finding type</span>
-        <select
-          aria-label="Finding type"
-          className={field}
-          value={type}
-          onChange={(event) => {
-            update('type', event.target.value);
-          }}
-        >
-          <option value="all">All finding types</option>
-          <option value="retrieval_problem">Brand discovery</option>
-          <option value="evidence_problem">Product evidence</option>
-          <option value="recommendation_fit_problem">Buyer fit</option>
-        </select>
-      </label>
-    </>
-  );
   return (
     <section className="space-y-3">
       <WorkspaceHeading title="Diagnoses">
@@ -2240,23 +2324,78 @@ export function GeoDiagnoses() {
             }}
           />
         </label>
-        <div className="hidden flex-wrap gap-2 md:flex" aria-label="Diagnosis filters">
-          {moreFilters}
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="md:hidden">
+        <WorkspaceModal
+          title="Diagnosis filters"
+          trigger={
+            <Button variant="outline">
               <SlidersHorizontal className="size-4" aria-hidden="true" />
               Filters
             </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            aria-label="Diagnosis filters"
-            className="workspace-theme grid max-w-[calc(100vw-2rem)] gap-3"
-          >
-            {moreFilters}
-          </PopoverContent>
-        </Popover>
+          }
+          open={filtersOpen}
+          onOpenChange={(open) => {
+            if (open) setFilterDraft({ status, type });
+            setFiltersOpen(open);
+          }}
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setFilterDraft({ status: 'all', type: 'all' });
+                }}
+              >
+                Reset
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setFiltersOpen(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  const next = new URLSearchParams(params);
+                  for (const [key, value] of Object.entries(filterDraft)) {
+                    if (value === 'all') next.delete(key);
+                    else next.set(key, value);
+                  }
+                  next.delete('page');
+                  setExpanded(null);
+                  setParams(next);
+                  setFiltersOpen(false);
+                }}
+              >
+                Apply filters
+              </Button>
+            </>
+          }
+        >
+          <ChoiceList
+            label="Finding status"
+            value={filterDraft.status}
+            onChange={(status) => {
+              setFilterDraft({ ...filterDraft, status });
+            }}
+            options={[
+              { value: 'all', label: 'All statuses' },
+              ...Object.entries(statusLabels).map(([value, label]) => ({ value, label })),
+            ]}
+          />
+          <ChoiceList
+            label="Finding type"
+            value={filterDraft.type}
+            onChange={(type) => {
+              setFilterDraft({ ...filterDraft, type });
+            }}
+            options={[
+              { value: 'all', label: 'All finding types' },
+              ...Object.entries(findingTitles).map(([value, label]) => ({ value, label })),
+            ]}
+          />
+        </WorkspaceModal>
         <ControlTooltip>
           <TooltipTrigger asChild>
             <Button
@@ -2280,6 +2419,32 @@ export function GeoDiagnoses() {
           <TooltipContent>Refresh saved diagnoses</TooltipContent>
         </ControlTooltip>
       </div>
+      <ActiveFilters
+        items={[
+          ...(status !== 'all'
+            ? [
+                {
+                  key: 'status',
+                  label: statusLabels[status] ?? status,
+                  onRemove: () => {
+                    update('status', 'all');
+                  },
+                },
+              ]
+            : []),
+          ...(type !== 'all'
+            ? [
+                {
+                  key: 'type',
+                  label: findingTitles[type as keyof typeof findingTitles],
+                  onRemove: () => {
+                    update('type', 'all');
+                  },
+                },
+              ]
+            : []),
+        ]}
+      />
       <div className="overflow-hidden rounded-b-xl border bg-card">
         {analyses.loading ? (
           <p role="status" className="p-4 text-sm">
@@ -2384,18 +2549,21 @@ export function GeoDiagnoses() {
                       </td>
                       <td className={cell}>
                         <div className="flex flex-wrap items-center gap-x-3">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="px-0 text-xs"
-                            aria-expanded={expanded === row.key}
-                            aria-controls={`diagnosis-${encodeURIComponent(row.key)}`}
-                            onClick={() => {
-                              setExpanded(expanded === row.key ? null : row.key);
+                          <WorkspaceModal
+                            title="Finding details"
+                            wide
+                            trigger={
+                              <Button size="sm" variant="ghost" className="px-0 text-xs">
+                                Details
+                              </Button>
+                            }
+                            open={expanded === row.key}
+                            onOpenChange={(open) => {
+                              setExpanded(open ? row.key : null);
                             }}
                           >
-                            Details
-                          </Button>
+                            <AnalysisCard analysis={row.analysis} returnTo={returnTo} />
+                          </WorkspaceModal>
                           <Link
                             className="inline-flex min-h-8 items-center gap-1 text-xs font-medium text-primary hover:underline"
                             to={`/app/observations/${encodeURIComponent(row.analysis.observationId)}`}
@@ -2407,17 +2575,6 @@ export function GeoDiagnoses() {
                         </div>
                       </td>
                     </tr>
-                    {expanded === row.key && (
-                      <tr className="diagnosis-detail border-t bg-muted/15">
-                        <td
-                          colSpan={5}
-                          id={`diagnosis-${encodeURIComponent(row.key)}`}
-                          className="p-3 sm:p-4"
-                        >
-                          <AnalysisCard analysis={row.analysis} returnTo={returnTo} />
-                        </td>
-                      </tr>
-                    )}
                   </Fragment>
                 );
               })}
@@ -2515,13 +2672,13 @@ export function GeoPlaybook() {
         title="Action Playbook"
         description="Choose a task, record your work and compare follow-up answers. Results need your review; improvements are not guaranteed."
       />
-      <div className="max-w-sm">
-        <Choice
+      <div className="min-w-0">
+        <ChoiceButtons
           label="Action status"
           value={status}
-          set={setStatus}
+          onChange={setStatus}
           options={[
-            { value: 'active', label: 'Suggested & active work' },
+            { value: 'active', label: 'Active' },
             { value: 'completed', label: 'Completed' },
             { value: 'dismissed', label: 'Dismissed' },
             { value: 'all', label: 'All actions' },
@@ -2560,10 +2717,12 @@ export function GeoActionPage() {
   return <GeoActionDetailPage key={actionId} actionId={actionId} />;
 }
 function GeoActionDetailPage({ actionId }: { actionId: string }) {
+  const formId = useId();
   const path = `/geo/actions/${encodeURIComponent(actionId)}`;
   const detail = useResource<GeoActionDetail>(path);
   const mutation = useMutation();
   const [notes, setNotes] = useState<string | null>(null);
+  const [editor, setEditor] = useState<'notes' | 'completion' | 'reopen' | null>(null);
   const [description, setDescription] = useState('');
   const [changeUrl, setChangeUrl] = useState('');
   const [implementedAt, setImplementedAt] = useState('');
@@ -2708,40 +2867,88 @@ function GeoActionDetailPage({ actionId }: { actionId: string }) {
                   </label>
                 ))}
               </fieldset>
-              <form
-                className="space-y-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void mutation.run(async () => {
-                    await patch({ notes: notes ?? action.notes });
-                    setNotes(null);
-                  });
-                }}
-              >
-                <label className="block space-y-2 text-sm">
-                  Work notes
-                  <Textarea
-                    maxLength={2000}
-                    value={notes ?? action.notes}
-                    disabled={action.status === 'completed' || action.status === 'dismissed'}
-                    onChange={(event) => {
-                      setNotes(event.target.value);
-                    }}
-                  />
-                </label>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={
-                    mutation.busy ||
-                    notes === null ||
-                    action.status === 'completed' ||
-                    action.status === 'dismissed'
+              <div className="space-y-2 border-t pt-4">
+                <h3 className="text-sm font-medium">Work notes</h3>
+                <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                  {action.notes || 'No notes yet'}
+                </p>
+                <WorkspaceModal
+                  title="Edit work notes"
+                  trigger={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={action.status === 'completed' || action.status === 'dismissed'}
+                    >
+                      Edit notes
+                    </Button>
+                  }
+                  open={editor === 'notes'}
+                  onOpenChange={(open) => {
+                    if (mutation.busy) return;
+                    setEditor(open ? 'notes' : null);
+                    if (!open) setNotes(null);
+                  }}
+                  footer={
+                    <Button
+                      type="submit"
+                      form={`${formId}-notes`}
+                      variant="outline"
+                      size="sm"
+                      disabled={
+                        mutation.busy ||
+                        notes === null ||
+                        action.status === 'completed' ||
+                        action.status === 'dismissed'
+                      }
+                    >
+                      Save notes
+                    </Button>
                   }
                 >
-                  Save notes
-                </Button>
-              </form>
+                  <ErrorNotice error={mutation.error} />
+                  <form
+                    id={`${formId}-notes`}
+                    className="space-y-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void mutation.run(async () => {
+                        await patch({ notes: notes ?? action.notes });
+                        setNotes(null);
+                        setEditor(null);
+                      });
+                    }}
+                  >
+                    <label className="block space-y-2 text-sm">
+                      Work notes
+                      <Textarea
+                        maxLength={2000}
+                        value={notes ?? action.notes}
+                        disabled={action.status === 'completed' || action.status === 'dismissed'}
+                        onChange={(event) => {
+                          setNotes(event.target.value);
+                        }}
+                      />
+                    </label>
+                    {action.status !== 'completed' && action.status !== 'dismissed' && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={mutation.busy}
+                        onClick={() =>
+                          void mutation.run(async () => {
+                            await patch({ status: 'dismissed', notes: notes ?? action.notes });
+                            setNotes(null);
+                            setEditor(null);
+                          })
+                        }
+                      >
+                        Dismiss action
+                      </Button>
+                    )}
+                  </form>
+                </WorkspaceModal>
+              </div>
             </section>
             {origin && (
               <section className={`${box} space-y-2 text-sm`} aria-label="Follow-up origin">
@@ -2810,104 +3017,139 @@ function GeoActionDetailPage({ actionId }: { actionId: string }) {
               )}
             </details>
             {action.status !== 'completed' && action.status !== 'dismissed' && (
-              <form
-                className={`${box} space-y-4`}
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void mutation.run(async () => {
-                    await api(`${path}/complete`, {
-                      requestId: crypto.randomUUID(),
-                      revision: action.revision,
-                      changeDescription: description,
-                      implementedAt: new Date(implementedAt).toISOString(),
-                      ...(changeUrl ? { changeUrl } : {}),
-                    });
-                    setDescription('');
-                    setChangeUrl('');
-                    setImplementedAt('');
-                    await detail.reload();
-                  });
+              <WorkspaceModal
+                title="Record your work"
+                trigger={<Button variant="outline">Record your work</Button>}
+                open={editor === 'completion'}
+                onOpenChange={(open) => {
+                  if (mutation.busy) return;
+                  setEditor(open ? 'completion' : null);
                 }}
+                footer={
+                  <Button type="submit" form={`${formId}-completion`} disabled={mutation.busy}>
+                    Complete action
+                  </Button>
+                }
               >
-                <h2 className="font-semibold">Record your work</h2>
-                <label className="block space-y-2 text-sm">
-                  Change description
-                  <Textarea
-                    required
-                    minLength={5}
-                    maxLength={2000}
-                    value={description}
-                    onChange={(event) => {
-                      setDescription(event.target.value);
-                    }}
-                  />
-                </label>
-                <label className="block space-y-2 text-sm">
-                  Change URL (optional)
-                  <Input
-                    type="url"
-                    placeholder="https://…"
-                    maxLength={2000}
-                    value={changeUrl}
-                    onChange={(event) => {
-                      setChangeUrl(event.target.value);
-                    }}
-                  />
-                </label>
-                <label className="block space-y-2 text-sm">
-                  When was the work completed?
-                  <Input
-                    required
-                    type="datetime-local"
-                    value={implementedAt}
-                    onChange={(event) => {
-                      setImplementedAt(event.target.value);
-                    }}
-                  />
-                </label>
-                <p className={small}>
-                  This time uses your local timezone. Completing the task saves a record of your
-                  work; it does not run monitoring.
-                </p>
-                <Button disabled={mutation.busy}>Complete action</Button>
-              </form>
+                <ErrorNotice error={mutation.error} />
+                <form
+                  id={`${formId}-completion`}
+                  className="space-y-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void mutation.run(async () => {
+                      await api(`${path}/complete`, {
+                        requestId: crypto.randomUUID(),
+                        revision: action.revision,
+                        changeDescription: description,
+                        implementedAt: new Date(implementedAt).toISOString(),
+                        ...(changeUrl ? { changeUrl } : {}),
+                      });
+                      setDescription('');
+                      setChangeUrl('');
+                      setImplementedAt('');
+                      await detail.reload();
+                      setEditor(null);
+                    });
+                  }}
+                >
+                  <label className="block space-y-2 text-sm">
+                    Change description
+                    <Textarea
+                      required
+                      minLength={5}
+                      maxLength={2000}
+                      value={description}
+                      onChange={(event) => {
+                        setDescription(event.target.value);
+                      }}
+                    />
+                  </label>
+                  <label className="block space-y-2 text-sm">
+                    Change URL (optional)
+                    <Input
+                      type="url"
+                      placeholder="https://…"
+                      maxLength={2000}
+                      value={changeUrl}
+                      onChange={(event) => {
+                        setChangeUrl(event.target.value);
+                      }}
+                    />
+                  </label>
+                  <label className="block space-y-2 text-sm">
+                    When was the work completed?
+                    <Input
+                      required
+                      type="datetime-local"
+                      value={implementedAt}
+                      onChange={(event) => {
+                        setImplementedAt(event.target.value);
+                      }}
+                    />
+                  </label>
+                  <p className={small}>
+                    This time uses your local timezone. Completing the task saves a record of your
+                    work; it does not run monitoring.
+                  </p>
+                </form>
+              </WorkspaceModal>
             )}
             {action.status === 'completed' && (
-              <form
-                className={`${box} space-y-3`}
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void mutation.run(async () => {
-                    await api(`${path}/reopen`, {
-                      requestId: crypto.randomUUID(),
-                      revision: action.revision,
-                      reason: reopenReason,
-                    });
-                    setReopenReason('');
-                    await detail.reload();
-                  });
+              <WorkspaceModal
+                title="Reopen work"
+                trigger={<Button variant="outline">Reopen work</Button>}
+                open={editor === 'reopen'}
+                onOpenChange={(open) => {
+                  if (mutation.busy) return;
+                  setEditor(open ? 'reopen' : null);
                 }}
+                footer={
+                  <Button
+                    type="submit"
+                    form={`${formId}-reopen`}
+                    variant="outline"
+                    disabled={mutation.busy}
+                  >
+                    Reopen action
+                  </Button>
+                }
               >
-                <h2 className="font-semibold">Reopen work</h2>
-                <label className="block space-y-2 text-sm">
-                  Reason for reopening
-                  <Textarea
-                    required
-                    minLength={3}
-                    maxLength={1000}
-                    value={reopenReason}
-                    onChange={(event) => {
-                      setReopenReason(event.target.value);
-                    }}
-                  />
-                </label>
-                <p className={small}>
-                  Your previous completion, changes and notes stay in the work history.
-                </p>
-                <Button variant="outline" disabled={mutation.busy}>
-                  Reopen action
-                </Button>
-              </form>
+                <ErrorNotice error={mutation.error} />
+                <form
+                  id={`${formId}-reopen`}
+                  className="space-y-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void mutation.run(async () => {
+                      await api(`${path}/reopen`, {
+                        requestId: crypto.randomUUID(),
+                        revision: action.revision,
+                        reason: reopenReason,
+                      });
+                      setReopenReason('');
+                      await detail.reload();
+                      setEditor(null);
+                    });
+                  }}
+                >
+                  <label className="block space-y-2 text-sm">
+                    Reason for reopening
+                    <Textarea
+                      required
+                      minLength={3}
+                      maxLength={1000}
+                      value={reopenReason}
+                      onChange={(event) => {
+                        setReopenReason(event.target.value);
+                      }}
+                    />
+                  </label>
+                  <p className={small}>
+                    Your previous completion, changes and notes stay in the work history.
+                  </p>
+                </form>
+              </WorkspaceModal>
             )}
             <section className={`${box} space-y-3`}>
               <h2 className="font-semibold">Follow-up measurement</h2>
@@ -2980,7 +3222,6 @@ function GeoActionDetailPage({ actionId }: { actionId: string }) {
   );
 }
 export function GeoCompetitors() {
-  const { data } = useOutletContext<WorkspaceContext>();
   const filter = useEvidenceFilter();
   const cursor = filter.params.get('cursor');
   const search = filter.params.get('q') ?? '';
@@ -3030,46 +3271,6 @@ export function GeoCompetitors() {
   }
   const field = 'h-10 min-w-0 max-w-full rounded-lg border bg-card px-2 text-sm';
   const cell = 'min-w-0 break-words px-3 py-2';
-  const moreFilters = (
-    <>
-      <label className="min-w-0">
-        <span className="sr-only">Engine</span>
-        <select
-          aria-label="Engine"
-          className={field}
-          value={filter.engine ?? 'all'}
-          onChange={(event) => {
-            update('engine', event.target.value);
-          }}
-        >
-          <option value="all">All engines</option>
-          {engines.map((engine) => (
-            <option key={engine} value={engine}>
-              {geoSurfaces[engine].label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="min-w-0">
-        <span className="sr-only">Prompt</span>
-        <select
-          aria-label="Prompt"
-          className={`${field} md:max-w-56`}
-          value={filter.promptId || 'all'}
-          onChange={(event) => {
-            update('promptId', event.target.value);
-          }}
-        >
-          <option value="all">All prompts</option>
-          {data.project?.questions.map((prompt) => (
-            <option key={prompt.id} value={prompt.id}>
-              {prompt.text}
-            </option>
-          ))}
-        </select>
-      </label>
-    </>
-  );
   return (
     <section className="space-y-3">
       <WorkspaceHeading title="Competitors">
@@ -3111,40 +3312,7 @@ export function GeoCompetitors() {
             }}
           />
         </label>
-        <label>
-          <span className="sr-only">Period</span>
-          <select
-            aria-label="Period"
-            className={field}
-            value={filter.days}
-            onChange={(event) => {
-              update('days', event.target.value);
-            }}
-          >
-            {['7', '14', '30'].map((days) => (
-              <option key={days} value={days}>
-                Last {days} days
-              </option>
-            ))}
-          </select>
-        </label>
-        <div aria-label="Competitor filters" className="hidden flex-wrap gap-2 md:flex">
-          {moreFilters}
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="md:hidden">
-              <SlidersHorizontal className="size-4" aria-hidden="true" />
-              Filters
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            aria-label="Competitor filters"
-            className="workspace-theme grid max-w-[calc(100vw-2rem)] gap-3"
-          >
-            {moreFilters}
-          </PopoverContent>
-        </Popover>
+        <EvidenceFilters filter={filter} />
         <ControlTooltip>
           <TooltipTrigger asChild>
             <Button
@@ -3291,42 +3459,35 @@ export function GeoCompetitors() {
                         View answer
                         <ArrowRight className="size-3 shrink-0" aria-hidden="true" />
                       </Link>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="mt-1 px-0 text-xs text-muted-foreground"
-                            aria-label={`Comparison details: ${observation.context.promptText}`}
-                          >
-                            Details
+                      <WorkspaceModal
+                        title="Comparison details"
+                        trigger={
+                          <Button variant="ghost" size="sm">
+                            Comparison details
                           </Button>
-                        </PopoverTrigger>
-                        <PopoverContent
-                          aria-label="Comparison details"
-                          className="workspace-theme max-w-[calc(100vw-2rem)] space-y-2 break-words text-xs"
-                        >
-                          <p>
-                            AI analysis · Needs review. A competitor appearing here does not
-                            establish displacement.
-                          </p>
-                          <p>
-                            Your brand: {analysisLabels[classification.brandPresence]} ·{' '}
-                            {analysisLabels[classification.brandStance]}
-                          </p>
-                          <p>
-                            Context version {observation.context.contextVersion} ·{' '}
-                            {classification.scope} analysis
-                          </p>
-                          <ul>
-                            {observation.context.competitors.map((competitor) => (
-                              <li key={competitor.id}>
-                                {competitor.name}: {competitor.domain ?? 'Domain not configured'}
-                              </li>
-                            ))}
-                          </ul>
-                        </PopoverContent>
-                      </Popover>
+                        }
+                        wide
+                      >
+                        <p>
+                          AI analysis · Needs review. A competitor appearing here does not establish
+                          displacement.
+                        </p>
+                        <p>
+                          Your brand: {analysisLabels[classification.brandPresence]} ·{' '}
+                          {analysisLabels[classification.brandStance]}
+                        </p>
+                        <p>
+                          Context version {observation.context.contextVersion} ·{' '}
+                          {classification.scope} analysis
+                        </p>
+                        <ul>
+                          {observation.context.competitors.map((competitor) => (
+                            <li key={competitor.id}>
+                              {competitor.name}: {competitor.domain ?? 'Domain not configured'}
+                            </li>
+                          ))}
+                        </ul>
+                      </WorkspaceModal>
                     </div>
                   </td>
                 </tr>
@@ -3473,17 +3634,21 @@ export function GeoBilling() {
               <p className={`mt-4 ${small}`}>
                 Daily and calendar-month limits reset at midnight UTC.
               </p>
-              <details className="mt-4">
-                <summary className="cursor-pointer text-xs font-medium">
-                  How usage is counted
-                </summary>
+              <WorkspaceModal
+                title="Usage details"
+                trigger={
+                  <Button variant="outline" size="sm">
+                    Usage details
+                  </Button>
+                }
+              >
                 <p className={`mt-2 ${small}`}>
                   One check is one prompt on one engine. Manual and scheduled checks share your
                   daily allowance. Requests that were sent or have an uncertain result still count;
                   a failure before dispatch releases its reservation. Reading saved evidence does
                   not use checks.
                 </p>
-              </details>
+              </WorkspaceModal>
               <div className="mt-4 rounded-lg border bg-muted/30 p-3 text-sm" role="status">
                 {allowance.data.enabled
                   ? 'Manual checks are available within your monitoring limits.'
@@ -3550,6 +3715,7 @@ export function GeoBilling() {
   );
 }
 export function GeoSettingsPanel({ onReady }: { onReady: (ready: boolean) => void }) {
+  const formId = useId();
   const { data: workspace } = useOutletContext<WorkspaceContext>();
   const settings = useResource<GeoSettings>('/geo/settings');
   const capabilities = useResource<GeoCapabilities>('/geo/capabilities');
@@ -3559,6 +3725,7 @@ export function GeoSettingsPanel({ onReady }: { onReady: (ready: boolean) => voi
   const mutation = useMutation();
   const [draft, setDraft] = useState<GeoSettingsInput | null>(null);
   const [saved, setSaved] = useState(false);
+  const [open, setOpen] = useState(false);
   const value = draft ?? (settings.data?.engines ? settings.data : null);
   const selectedUnavailable =
     value?.engines.filter((engine) => !capabilities.data?.engines[engine]?.available) ?? [];
@@ -3573,194 +3740,241 @@ export function GeoSettingsPanel({ onReady }: { onReady: (ready: boolean) => voi
         <p role="status">Loading engine availability…</p>
       ) : (
         value && (
-          <form
-            className="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void mutation.run(async () => {
-                await api(
-                  '/geo/settings',
-                  {
-                    engines: value.engines,
-                    dailyEnabled: value.dailyEnabled,
-                    languageCode: value.languageCode,
-                    locationCode: value.locationCode,
-                    device: value.device,
-                  },
-                  'PUT',
-                );
-                setDraft(null);
-                setSaved(true);
-                await settings.reload();
-              });
-            }}
-          >
-            <fieldset className="space-y-3">
-              <legend className="mb-2 text-sm font-medium">Selected AI answer engines</legend>
-              <p className={small}>{value.engines.length} of 4 engine slots selected.</p>
-              <div className="grid gap-3 md:grid-cols-2">
-                {engines
-                  .filter(
-                    (engine) =>
-                      engine !== 'claude_web_search' ||
-                      capabilities.data?.engines[engine]?.enabled === true,
-                  )
-                  .map((engine) => {
-                    const capability = capabilities.data?.engines[engine];
-                    return (
-                      <label
-                        key={engine}
-                        className={`flex items-start gap-3 rounded-lg border p-4 ${value.engines.includes(engine) ? 'border-primary/30 bg-primary/5' : ''}`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="mt-1 size-4 shrink-0 accent-primary"
-                          aria-label={geoSurfaces[engine].label}
-                          checked={value.engines.includes(engine)}
-                          disabled={
-                            !value.engines.includes(engine) &&
-                            (!capability?.available ||
-                              value.engines.length >= 4 ||
-                              Boolean(workspace.plan && !workspace.plan.engines.includes(engine)))
-                          }
-                          onChange={(event) => {
-                            setSaved(false);
-                            setDraft({
-                              ...value,
-                              engines: event.target.checked
-                                ? [...value.engines, engine]
-                                : value.engines.filter((item) => item !== engine),
-                            });
-                          }}
-                        />
-                        <span className="min-w-0">
-                          <span className="block text-sm font-medium">
-                            {geoSurfaces[engine].label}
-                          </span>
-                          <span className={`block ${small}`}>
-                            {capability?.available
-                              ? workspace.plan && !workspace.plan.engines.includes(engine)
-                                ? 'Outside your current plan'
-                                : 'Available for monitoring'
-                              : 'Currently unavailable'}
-                          </span>
-                        </span>
-                      </label>
-                    );
-                  })}
+          <>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1 text-sm">
+                <p>
+                  {settings.data?.engines.map((engine) => geoSurfaces[engine].label).join(' / ')}
+                </p>
+                <p className={small}>
+                  {settings.data?.dailyEnabled
+                    ? 'Daily monitoring enabled'
+                    : 'Daily monitoring disabled'}{' '}
+                  / {settings.data?.languageCode} / {settings.data?.device}
+                </p>
               </div>
-            </fieldset>
-            <p className={small}>
-              Unavailable engines cannot be newly selected. Choose another engine or contact
-              support; saved answers remain available.
-            </p>
-            <details className="text-sm">
-              <summary className="cursor-pointer font-medium">How engine monitoring works</summary>
-              <p className={`mt-2 ${small}`}>
-                Answers are captured through each engine's API and may differ from its consumer app.
-                Prompts are sent without hidden brand or competitor hints. Model and capture details
-                remain available with each saved answer.
-              </p>
-            </details>
-            {selectedUnavailable.length > 0 && (
-              <Empty>
-                Selected but unavailable:{' '}
-                {selectedUnavailable.map((engine) => geoSurfaces[engine].label).join(', ')}. Remove
-                unavailable engines before enabling daily checks, or save with daily monitoring
-                disabled; historical captures stay unchanged.
-              </Empty>
-            )}
-            <label className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 text-sm">
-              <input
-                type="checkbox"
-                className="mt-1 size-4 shrink-0 accent-primary"
-                checked={value.dailyEnabled}
-                onChange={(event) => {
-                  setSaved(false);
-                  setDraft({ ...value, dailyEnabled: event.target.checked });
+              <WorkspaceModal
+                title="Edit monitoring configuration"
+                trigger={
+                  <Button variant="outline" size="sm">
+                    Edit monitoring
+                  </Button>
+                }
+                wide
+                open={open}
+                onOpenChange={(value) => {
+                  if (mutation.busy) return;
+                  if (value) setDraft(null);
+                  setOpen(value);
                 }}
-              />
-              <span>
-                Enable daily monitoring
-                <span className={`mt-1 block ${small}`}>
-                  Runs daily within your monitoring access and usage limits. Manual checks remain
-                  available independently.
-                </span>
-              </span>
-            </label>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Choice
-                label="Language"
-                value={value.languageCode}
-                set={(languageCode) => {
-                  setSaved(false);
-                  setDraft({ ...value, languageCode });
-                }}
-                options={[
-                  { value: 'en', label: 'English (en)' },
-                  ...(value.languageCode === 'en'
-                    ? []
-                    : [
+                footer={
+                  <Button
+                    type="submit"
+                    form={formId}
+                    disabled={
+                      mutation.busy ||
+                      !value.engines.length ||
+                      value.engines.length > 4 ||
+                      (value.dailyEnabled && selectedUnavailable.length > 0) ||
+                      !capabilities.data
+                    }
+                  >
+                    {mutation.busy ? 'Saving…' : 'Save monitoring settings'}
+                  </Button>
+                }
+              >
+                <ErrorNotice error={mutation.error} />
+                <form
+                  id={formId}
+                  className="space-y-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void mutation.run(async () => {
+                      await api(
+                        '/geo/settings',
                         {
-                          value: value.languageCode,
-                          label: `Saved language (${value.languageCode})`,
+                          engines: value.engines,
+                          dailyEnabled: value.dailyEnabled,
+                          languageCode: value.languageCode,
+                          locationCode: value.locationCode,
+                          device: value.device,
                         },
-                      ]),
-                ]}
-              />
-              <Choice
-                label="Market"
-                value={String(value.locationCode)}
-                set={(locationCode) => {
-                  setSaved(false);
-                  setDraft({ ...value, locationCode: Number(locationCode) });
-                }}
-                options={[
-                  { value: '2840', label: 'United States (US)' },
-                  ...(value.locationCode === 2840
-                    ? []
-                    : [
-                        {
-                          value: String(value.locationCode),
-                          label: `Saved market (${String(value.locationCode)})`,
-                        },
-                      ]),
-                ]}
-              />
-              <Choice
-                label="Device"
-                value={value.device}
-                set={(device) => {
-                  setSaved(false);
-                  setDraft({ ...value, device: device as 'desktop' | 'mobile' });
-                }}
-                options={[
-                  { value: 'desktop', label: 'Desktop' },
-                  { value: 'mobile', label: 'Mobile' },
-                ]}
-              />
+                        'PUT',
+                      );
+                      setDraft(null);
+                      setSaved(true);
+                      await settings.reload();
+                      setOpen(false);
+                    });
+                  }}
+                >
+                  <fieldset className="space-y-3">
+                    <legend className="mb-2 text-sm font-medium">Selected AI answer engines</legend>
+                    <p className={small}>{value.engines.length} of 4 engine slots selected.</p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {engines
+                        .filter(
+                          (engine) =>
+                            engine !== 'claude_web_search' ||
+                            capabilities.data?.engines[engine]?.enabled === true,
+                        )
+                        .map((engine) => {
+                          const capability = capabilities.data?.engines[engine];
+                          return (
+                            <label
+                              key={engine}
+                              className={`flex items-start gap-3 rounded-lg border p-4 ${value.engines.includes(engine) ? 'border-primary/30 bg-primary/5' : ''}`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-1 size-4 shrink-0 accent-primary"
+                                aria-label={geoSurfaces[engine].label}
+                                checked={value.engines.includes(engine)}
+                                disabled={
+                                  !value.engines.includes(engine) &&
+                                  (!capability?.available ||
+                                    value.engines.length >= 4 ||
+                                    Boolean(
+                                      workspace.plan && !workspace.plan.engines.includes(engine),
+                                    ))
+                                }
+                                onChange={(event) => {
+                                  setSaved(false);
+                                  setDraft({
+                                    ...value,
+                                    engines: event.target.checked
+                                      ? [...value.engines, engine]
+                                      : value.engines.filter((item) => item !== engine),
+                                  });
+                                }}
+                              />
+                              <span className="min-w-0">
+                                <span className="block text-sm font-medium">
+                                  {geoSurfaces[engine].label}
+                                </span>
+                                <span className={`block ${small}`}>
+                                  {capability?.available
+                                    ? workspace.plan && !workspace.plan.engines.includes(engine)
+                                      ? 'Outside your current plan'
+                                      : 'Available for monitoring'
+                                    : 'Currently unavailable'}
+                                </span>
+                              </span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  </fieldset>
+                  <p className={small}>
+                    Unavailable engines cannot be newly selected. Choose another engine or contact
+                    support; saved answers remain available.
+                  </p>
+                  <details className="text-sm">
+                    <summary className="cursor-pointer font-medium">
+                      How engine monitoring works
+                    </summary>
+                    <p className={`mt-2 ${small}`}>
+                      Answers are captured through each engine's API and may differ from its
+                      consumer app. Prompts are sent without hidden brand or competitor hints. Model
+                      and capture details remain available with each saved answer.
+                    </p>
+                  </details>
+                  {selectedUnavailable.length > 0 && (
+                    <Empty>
+                      Selected but unavailable:{' '}
+                      {selectedUnavailable.map((engine) => geoSurfaces[engine].label).join(', ')}.
+                      Remove unavailable engines before enabling daily checks, or save with daily
+                      monitoring disabled; historical captures stay unchanged.
+                    </Empty>
+                  )}
+                  <label className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-1 size-4 shrink-0 accent-primary"
+                      checked={value.dailyEnabled}
+                      onChange={(event) => {
+                        setSaved(false);
+                        setDraft({ ...value, dailyEnabled: event.target.checked });
+                      }}
+                    />
+                    <span>
+                      Enable daily monitoring
+                      <span className={`mt-1 block ${small}`}>
+                        Runs daily within your monitoring access and usage limits. Manual checks
+                        remain available independently.
+                      </span>
+                    </span>
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <ChoiceList
+                      label="Language"
+                      value={value.languageCode}
+                      onChange={(languageCode) => {
+                        setSaved(false);
+                        setDraft({ ...value, languageCode });
+                      }}
+                      options={[
+                        { value: 'en', label: 'English (en)' },
+                        ...(value.languageCode === 'en'
+                          ? []
+                          : [
+                              {
+                                value: value.languageCode,
+                                label: `Saved language (${value.languageCode})`,
+                              },
+                            ]),
+                      ]}
+                    />
+                    <ChoiceList
+                      label="Market"
+                      value={String(value.locationCode)}
+                      onChange={(locationCode) => {
+                        setSaved(false);
+                        setDraft({ ...value, locationCode: Number(locationCode) });
+                      }}
+                      options={[
+                        { value: '2840', label: 'United States (US)' },
+                        ...(value.locationCode === 2840
+                          ? []
+                          : [
+                              {
+                                value: String(value.locationCode),
+                                label: `Saved market (${String(value.locationCode)})`,
+                              },
+                            ]),
+                      ]}
+                    />
+                    <ChoiceList
+                      label="Device"
+                      value={value.device}
+                      onChange={(device) => {
+                        setSaved(false);
+                        setDraft({ ...value, device: device as 'desktop' | 'mobile' });
+                      }}
+                      options={[
+                        { value: 'desktop', label: 'Desktop' },
+                        { value: 'mobile', label: 'Mobile' },
+                      ]}
+                    />
+                  </div>
+                  <p className={small}>
+                    Language, market and device apply only to engines that support them. Changes
+                    start a new comparison baseline.
+                  </p>
+                  {saved && (
+                    <p role="status" className="text-sm">
+                      Monitoring configuration saved.
+                    </p>
+                  )}
+                </form>
+              </WorkspaceModal>
             </div>
-            <p className={small}>
-              Language, market and device apply only to engines that support them. Changes start a
-              new comparison baseline.
-            </p>
-            <Button
-              disabled={
-                mutation.busy ||
-                !value.engines.length ||
-                value.engines.length > 4 ||
-                (value.dailyEnabled && selectedUnavailable.length > 0) ||
-                !capabilities.data
-              }
-            >
-              {mutation.busy ? 'Saving…' : 'Save monitoring settings'}
-            </Button>
             {saved && (
               <p role="status" className="text-sm">
                 Monitoring configuration saved.
               </p>
             )}
-          </form>
+          </>
         )
       )}
       <p className={small}>

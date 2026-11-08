@@ -48,21 +48,84 @@ for (const draft of ['Synthetic review note: not relevant to our current buyer.'
       });
     });
     await page.goto('/app/playbook/fixture-action-1');
-    const notes = page.getByRole('textbox', { name: 'Work notes', exact: true });
+    await page.getByRole('button', { name: 'Edit notes', exact: true }).click();
+    const editor = page.getByRole('dialog', { name: 'Edit work notes', exact: true });
+    const notes = editor.getByRole('textbox', { name: 'Work notes', exact: true });
     await expect(notes).toHaveValue('Previously saved note.');
     await notes.fill(draft);
-    await page.getByRole('button', { name: 'Dismiss action', exact: true }).click();
-    await expect(page.getByRole('alert')).toHaveText('Notes could not be saved.');
+    await editor.getByRole('button', { name: 'Dismiss action', exact: true }).click();
+    await expect(editor.getByRole('alert')).toHaveText('Notes could not be saved.');
     await expect(notes).toHaveValue(draft);
     await expect(notes).toBeEnabled();
     expect(patches[0]).toMatchObject({ status: 'dismissed', notes: draft });
     fail = false;
-    await page.getByRole('button', { name: 'Dismiss action', exact: true }).click();
-    await expect(notes).toBeDisabled();
+    await editor.getByRole('button', { name: 'Dismiss action', exact: true }).click();
+    await expect(editor).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Edit notes', exact: true })).toBeDisabled();
     await page.reload();
-    await expect(notes).toHaveValue(draft);
-    await expect(notes).toBeDisabled();
+    const saved = (await fixture.request(path)) as GeoActionDetail;
+    expect(saved.action.notes).toBe(draft);
+    await expect(page.getByRole('button', { name: 'Edit notes', exact: true })).toBeDisabled();
     expect(patches).toHaveLength(2);
     expect(collectorPosts).toEqual([]);
   });
 }
+
+test('pending notes stay open through Escape and retain the draft after a failed save', async ({
+  page,
+}) => {
+  const fixture = new GeoFixtureWorkspace();
+  const path = '/geo/actions/fixture-action-1';
+  let release: () => void = () => {
+    throw new Error('Pending request was not initialized.');
+  };
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let fail = true;
+  const paidPosts: string[] = [];
+  await page.route('**/api/v2/**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const current = url.pathname.replace('/api/v2', '') + url.search;
+    if (request.method() === 'POST' && /runs|analyses|page-checks/.test(current))
+      paidPosts.push(current);
+    if (current === path && request.method() === 'PATCH' && fail) {
+      await pending;
+      await route.fulfill({
+        status: 503,
+        json: { error: { message: 'Could not save the note.' } },
+      });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        data: await fixture.request(
+          current,
+          request.method() === 'GET' ? undefined : request.postDataJSON(),
+          request.method(),
+        ),
+      },
+    });
+  });
+  await page.goto('/app/playbook/fixture-action-1');
+  await page.getByRole('button', { name: 'Edit notes', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Edit work notes', exact: true });
+  const notes = dialog.getByRole('textbox', { name: 'Work notes', exact: true });
+  await notes.fill('Keep this review draft until saving succeeds.');
+  await dialog.getByRole('button', { name: 'Save notes', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Save notes', exact: true })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
+  await expect(notes).toHaveValue('Keep this review draft until saving succeeds.');
+  release();
+  await expect(dialog.getByRole('alert')).toHaveText('Could not save the note.');
+  await expect(notes).toHaveValue('Keep this review draft until saving succeeds.');
+  fail = false;
+  await dialog.getByRole('button', { name: 'Save notes', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(((await fixture.request(path)) as GeoActionDetail).action.notes).toBe(
+    'Keep this review draft until saving succeeds.',
+  );
+  expect(paidPosts).toEqual([]);
+});

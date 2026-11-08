@@ -39,9 +39,11 @@ test('monitoring tabs preserve answer scope, browser history and old links witho
     'aria-current',
     'page',
   );
-  await expect(page.getByRole('combobox', { name: 'Period', exact: true })).toContainText(
-    'Last 14 days',
-  );
+  await expect(
+    page
+      .getByRole('group', { name: 'Period', exact: true })
+      .getByRole('button', { name: '14 days', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
   await page.goBack();
   await expect(page).toHaveURL(`/app/observations?${query}&cursor=20`);
   await tabs.getByRole('link', { name: 'Prompts', exact: true }).click();
@@ -86,7 +88,7 @@ test('empty groups hide optional controls, keep a dense table and load native lo
     await expect(page.getByRole('button', { name: 'Create group', exact: true })).toBeVisible();
     await expect(page.getByLabel('Search prompts')).toBeVisible();
     await expect(page.getByLabel('Prompt status')).toBeVisible();
-    await expect(page.getByLabel('Monitoring scope', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Choose monitoring scope' })).toBeVisible();
     await expect(table.locator('img').first()).toBeVisible();
     await expect
       .poll(() =>
@@ -200,9 +202,11 @@ for (const count of [0, 1, 3]) {
     );
     await page.route('**/api/v2/geo/actions', (route) => route.fulfill({ json: { data: [] } }));
     await page.goto('/app/trends');
-    await expect(page.getByRole('combobox', { name: 'Period', exact: true })).toContainText(
-      'Last 7 days',
-    );
+    await expect(
+      page
+        .getByRole('group', { name: 'Period', exact: true })
+        .getByRole('button', { name: '7 days', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
     if (count === 0) {
       await expect(
         page.getByText('No eligible daily samples for this metric.', { exact: false }),
@@ -223,12 +227,13 @@ for (const count of [0, 1, 3]) {
         expect(path?.match(/L/g)?.length).toBe(1);
         expect(path?.match(/M/g)?.length).toBe(2);
       }
-      await page.getByRole('combobox', { name: 'Comparable series' }).click();
-      await page.getByRole('option', { name: /^Series 2/ }).click();
+      await page.getByRole('button', { name: /Metric & series/ }).click();
+      await page.getByRole('radio', { name: /^Series 2/ }).check();
+      await page.keyboard.press('Escape');
       await expect(page.locator('.recharts-line-dot')).toHaveCount(1);
       await expect(page.getByRole('img', { name: /0 of 1 eligible daily samples/ })).toBeVisible();
     }
-    await page.getByText('How this is measured', { exact: true }).click();
+    await page.getByRole('button', { name: 'Measurement details', exact: true }).click();
     await expect(page.getByText('Different prompt versions,', { exact: false })).toBeVisible();
     expect(requests.filter((path) => !path.startsWith('GET '))).toEqual([]);
     await page.evaluate(() => {

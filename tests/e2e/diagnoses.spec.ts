@@ -64,13 +64,13 @@ async function workspace(page: Page) {
 }
 
 async function choose(page: Page, name: string, value: string) {
-  const mobile = (page.viewportSize()?.width ?? 1440) < 768;
-  if (mobile) await page.getByRole('button', { name: 'Filters', exact: true }).click();
-  const filters = mobile
-    ? page.getByRole('dialog', { name: 'Diagnosis filters' })
-    : page.getByLabel('Diagnosis filters', { exact: true });
-  await filters.getByLabel(name, { exact: true }).selectOption(value);
-  if (mobile) await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  const filters = page.getByRole('dialog', { name: 'Diagnosis filters', exact: true });
+  await filters
+    .getByRole('group', { name, exact: true })
+    .locator(`input[value="${value}"]`)
+    .check();
+  await filters.getByRole('button', { name: 'Apply filters', exact: true }).click();
 }
 
 test('diagnoses keep a compact table, filters and pagination without loading every original answer', async ({
@@ -118,7 +118,7 @@ test('finding details keep technical data folded and answer navigation restores 
   const details = row.getByRole('button', { name: 'Details', exact: true });
   await details.focus();
   await page.keyboard.press('Enter');
-  await expect(details).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('dialog', { name: 'Finding details', exact: true })).toBeVisible();
   const card = page.locator('article');
   await expect(card.getByRole('heading', { name: 'Answer analysis', exact: true })).toBeVisible();
   const technical = card.getByText(/^Original answer offsets/u).first();
@@ -129,6 +129,8 @@ test('finding details keep technical data folded and answer navigation restores 
     .click();
   await expect(technical).toBeVisible();
   expect(reads.filter((path) => path.includes('/observations/'))).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(details).toBeFocused();
   await row.getByRole('link', { name: 'View answer', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Answer details', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Back to Diagnoses', exact: true })).toHaveAttribute(
@@ -173,6 +175,7 @@ test('pending, failed, ruled out, unknown and empty findings remain distinct', a
       await expect(
         card.getByText('Failure code: internal_failure_code', { exact: true }),
       ).toBeVisible();
+      await page.keyboard.press('Escape');
     }
   }
   expect(writes).toEqual([]);
@@ -243,16 +246,16 @@ test('diagnoses keep long text, details and keyboard filters usable at desktop a
     const details = table.getByRole('button', { name: 'Details', exact: true }).first();
     await details.focus();
     await page.keyboard.press('Enter');
-    await expect(details).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('dialog', { name: 'Finding details', exact: true })).toBeVisible();
     const savedTable = page.locator('article').getByRole('table');
     await expect(savedTable.locator('thead')).toHaveCSS('position', 'static');
     await expect(savedTable.locator('tbody > tr')).toHaveCSS('display', 'table-row');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
-    await details.focus();
-    await page.keyboard.press('Enter');
-    await expect(details).toHaveAttribute('aria-expanded', 'false');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Finding details', exact: true })).toBeHidden();
+    await expect(details).toBeFocused();
     if (width < 768) {
       const row = table.getByRole('row').nth(1);
       const status = await row.locator('[data-label="Status"]').boundingBox();

@@ -172,12 +172,14 @@ test('opening a filtered observation and returning keeps the evidence scope', as
   await expect(page.getByRole('heading', { name: 'Answer details', exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Observation sections' })).toBeVisible();
   await page.getByRole('link', { name: 'Back to Answers', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Engine', exact: true })).toHaveText(
-    'Perplexity',
-  );
-  await expect(page.getByRole('combobox', { name: 'Period', exact: true })).toHaveText(
-    'Last 30 days',
-  );
+  await expect(
+    page.getByRole('button', { name: 'Remove Perplexity filter', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole('group', { name: 'Period', exact: true })
+      .getByRole('button', { name: '30 days', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
   await expect(page).toHaveURL(/engine=perplexity/);
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Answer details', exact: true })).toBeVisible();

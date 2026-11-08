@@ -342,9 +342,7 @@ function LegacyOverview({ configurationAvailable }: { configurationAvailable: bo
           ) : observation ? (
             <>
               <div className="rounded-lg border bg-muted/20 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Observed prompt
-                </p>
+                <p className="text-xs font-medium text-muted-foreground">Observed prompt</p>
                 <p className="mt-1 whitespace-pre-wrap text-sm">
                   {observation.context?.text ?? observation.questionText}
                 </p>

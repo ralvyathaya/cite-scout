@@ -20,13 +20,20 @@ async function workspace(page: Page, readOnly = false) {
 }
 
 async function selectFilter(page: Page, label: string, value: string) {
-  const mobile = (page.viewportSize()?.width ?? 1440) < 768;
-  if (mobile) await page.getByRole('button', { name: 'Filters', exact: true }).click();
-  const scope = mobile
-    ? page.getByRole('dialog', { name: 'Prompt filters' })
-    : page.locator('[aria-label="Prompt filters"]').first();
-  await scope.getByLabel(label, { exact: true }).selectOption(value);
-  if (mobile) await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Filters', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Prompt filters', exact: true });
+  if (label === 'Group by') {
+    await dialog
+      .getByRole('group', { name: 'Group by', exact: true })
+      .getByRole('button', { name: value === 'group' ? 'Prompt group' : 'None', exact: true })
+      .click();
+  } else {
+    await dialog
+      .getByRole('radio', { name: value === 'ungrouped' ? 'Ungrouped' : 'All groups', exact: true })
+      .check();
+  }
+  await dialog.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect(dialog).toBeHidden();
 }
 
 test('prompt table filters, overlapping groups and ungrouped retain unique counts and monitoring scope', async ({
@@ -55,10 +62,15 @@ test('prompt table filters, overlapping groups and ungrouped retain unique count
   );
   await expect(table.getByRole('rowheader', { name: first.text, exact: true })).toBeVisible();
   await selectFilter(page, 'Group by', 'none');
-  await page.getByLabel('Monitoring scope', { exact: true }).selectOption('fixture-set');
+  await page.getByRole('button', { name: 'Choose monitoring scope', exact: true }).click();
+  const scopeDialog = page.getByRole('dialog', { name: 'Monitoring scope', exact: true });
+  await scopeDialog.getByRole('radio', { name: /Buyer discovery/ }).check();
+  await scopeDialog.getByRole('button', { name: 'Use this scope', exact: true }).click();
   await page.getByLabel('Search prompts').fill('pricing');
   await expect(table.getByRole('rowheader')).toHaveCount(1);
-  await expect(page.getByLabel('Monitoring scope', { exact: true })).toHaveValue('fixture-set');
+  await expect(
+    page.getByRole('button', { name: 'Choose monitoring scope', exact: true }),
+  ).toContainText('Buyer discovery');
   await page.getByLabel('Search prompts').clear();
   await selectFilter(page, 'Prompt group', 'ungrouped');
   await expect(page.getByText('No prompts in this view.', { exact: false })).toBeVisible();
@@ -78,6 +90,13 @@ test('dialogs save prompts and groups, preserve inactive members, and restore ke
   const add = page.getByRole('button', { name: 'Add prompt', exact: true });
   await add.click();
   const promptDialog = page.getByRole('dialog', { name: 'Add prompt', exact: true });
+  const closeTarget = promptDialog.getByRole('button', { name: 'Close', exact: true });
+  await expect
+    .poll(async () => (await closeTarget.boundingBox())?.width ?? 0)
+    .toBeGreaterThanOrEqual(44);
+  await expect
+    .poll(async () => (await closeTarget.boundingBox())?.height ?? 0)
+    .toBeGreaterThanOrEqual(44);
   await promptDialog
     .getByLabel('Prompt', { exact: true })
     .fill('Which onboarding tool fits a growing product team?');
@@ -92,16 +111,18 @@ test('dialogs save prompts and groups, preserve inactive members, and restore ke
   await dialog.getByRole('button', { name: 'Save group' }).click();
   await expect(dialog).toBeHidden();
   await page.getByText('Manage prompt groups · 2', { exact: true }).click();
-  const group = page
-    .locator('details > div > div')
+  const manager = page.getByRole('dialog', { name: 'Manage prompt groups', exact: true });
+  const group = manager
+    .locator('.divide-y > div')
     .filter({ has: page.getByText('New buyers', { exact: true }) });
   const edit = group.getByRole('button', { name: 'Edit group' });
   await edit.click();
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
-  await expect(edit).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Create group', exact: true })).toBeFocused();
   await page.getByRole('button', { name: /Manage prompt: Which onboarding tool fits/ }).click();
   await page.getByRole('menuitem', { name: 'Pause', exact: true }).click();
   await expect(page.getByText('2 shown', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Manage prompt groups · 2', exact: true }).click();
   await edit.click();
   await expect(page.getByText('Inactive member:', { exact: false })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save group' })).toBeDisabled();
@@ -109,10 +130,15 @@ test('dialogs save prompts and groups, preserve inactive members, and restore ke
   await page.getByRole('dialog').getByRole('checkbox').first().check();
   await page.getByRole('button', { name: 'Save group' }).click();
   await expect(page.getByRole('dialog')).toBeHidden();
+  await page.getByRole('button', { name: 'Manage prompt groups · 2', exact: true }).click();
   await group.getByRole('button', { name: 'Delete group' }).click();
+  await manager.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByText('Manage prompt groups · 1', { exact: true })).toBeVisible();
   await selectFilter(page, 'Prompt group', 'ungrouped');
-  await page.getByLabel('Prompt status').selectOption('Paused');
+  await page
+    .getByRole('group', { name: 'Prompt status', exact: true })
+    .getByRole('button', { name: 'Paused', exact: true })
+    .click();
   await expect(page.getByText('1 shown', { exact: false })).toBeVisible();
   expect(writes.some((path) => path.endsWith('/geo/runs') || path.endsWith('/scans'))).toBe(false);
 });
@@ -269,6 +295,106 @@ test('prompt groups and selected engines do not show zero when reads fail', asyn
   const summary = page.getByLabel('Prompt summary and capture legend');
   await expect(summary).toContainText('Groups unavailable');
   await expect(summary).toContainText('Engines unavailable');
-  await expect(page.getByLabel('Group by', { exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Filters', exact: true })).toBeDisabled();
   await expect(page.getByRole('table').getByRole('rowheader')).toHaveCount(2);
 });
+
+test('prompt filter drafts apply atomically, cancel and reset without changing monitoring scope', async ({
+  page,
+}) => {
+  const { writes } = await workspace(page);
+  await page.goto('/app/questions?days=14');
+  const table = page.getByRole('table');
+  const trigger = page.getByRole('button', { name: 'Filters', exact: true });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Prompt filters', exact: true });
+  await dialog.getByRole('radio', { name: 'Ungrouped', exact: true }).check();
+  expect(new URL(page.url()).searchParams.has('group')).toBe(false);
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(trigger).toBeFocused();
+  await expect(table.getByRole('rowheader')).toHaveCount(2);
+  await trigger.click();
+  await dialog.getByRole('radio', { name: 'Ungrouped', exact: true }).check();
+  await dialog.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect(page).toHaveURL(/days=14&group=ungrouped/);
+  await expect(
+    page.getByRole('button', { name: 'Choose monitoring scope', exact: true }),
+  ).toContainText('All active · 2 prompts');
+  await expect(page.getByText('No prompts in this view.', { exact: false })).toBeVisible();
+  await trigger.click();
+  await dialog.getByRole('button', { name: 'Reset', exact: true }).click();
+  await expect(page).toHaveURL(/group=ungrouped/);
+  await dialog.getByRole('button', { name: 'Apply filters', exact: true }).click();
+  await expect(table.getByRole('rowheader')).toHaveCount(2);
+  await expect(page).toHaveURL(/questions\?days=14$/);
+  await page.goBack();
+  await expect(page.getByText('No prompts in this view.', { exact: false })).toBeVisible();
+  expect(writes).toEqual([]);
+});
+
+for (const kind of ['prompt', 'group'] as const) {
+  test(`pending ${kind} save retains its modal and retry draft after dismissal attempts and rejection`, async ({
+    page,
+  }) => {
+    const { writes } = await workspace(page);
+    let rejectSave: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      rejectSave = resolve;
+    });
+    let attempts = 0;
+    await page.route(
+      kind === 'prompt' ? '**/api/v2/questions' : '**/api/v2/geo/prompt-sets',
+      async (route) => {
+        if (route.request().method() !== 'POST') {
+          await route.fallback();
+          return;
+        }
+        attempts++;
+        await pending;
+        await route.fulfill({
+          status: 503,
+          json: { error: { message: 'Please retry this save.' } },
+        });
+      },
+    );
+    await page.goto('/app/questions');
+    await page
+      .getByRole('button', { name: kind === 'prompt' ? 'Add prompt' : 'Create group', exact: true })
+      .click();
+    const dialog = page.getByRole('dialog', {
+      name: kind === 'prompt' ? 'Add prompt' : 'Create group',
+      exact: true,
+    });
+    const draft =
+      kind === 'prompt'
+        ? 'Which buyer workflow fits a growing product team?'
+        : 'Unchanged buyer draft';
+    const input = dialog.getByRole('textbox', {
+      name: kind === 'prompt' ? 'Prompt' : 'Group name',
+      exact: true,
+    });
+    await input.fill(draft);
+    if (kind === 'group') await dialog.getByRole('checkbox').first().check();
+    const save = dialog.getByRole('button', {
+      name: kind === 'prompt' ? 'Save prompt' : 'Save group',
+      exact: true,
+    });
+    await save.click();
+    await expect(save).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(dialog).toBeVisible();
+    await page.mouse.click(8, 8);
+    await expect(dialog).toBeVisible();
+    rejectSave?.();
+    await expect(dialog.getByRole('alert')).toHaveText('Please retry this save.');
+    await expect(input).toHaveValue(draft);
+    await expect(save).toBeEnabled();
+    if (kind === 'group') await expect(dialog.getByRole('checkbox').first()).toBeChecked();
+    expect(attempts).toBe(1);
+    expect(writes.some((path) => /geo\/runs|\/scans|\/analyses/.test(path))).toBe(false);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+  });
+}
