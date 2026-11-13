@@ -9,6 +9,8 @@ product_contract_source: user-approved-audit-2026-10-22
 
 ## Summary
 
+**13 November checkpoint:** the [v1 finalization status](2026-11-13-mvp-v1-finalization.md) separates implemented staging features from the remaining public paid evidence/economics gates. It does not mark this plan or G1–G4 complete.
+
 This is the next implementation plan produced by the approved audit, not permission to execute its changes. The current request ends after delivering audit and planning artifacts. [Audit findings and evidence](../audits/2026-10-22-public-mvp-audit.md) are authoritative prerequisites; reviewed code is `1379ddf`.
 
 The public MVP serves one brand/account for B2B SaaS founders: setup → fixed buyer prompts → saved AI answers/sources → reviewable findings → action → recorded implementation → comparable later measurements. Public paid readiness includes billing, access control, delivery capacity, honest claims and rollback. The current $19 Perplexity offer is not an approved price/entitlement for the full GEO workflow.
