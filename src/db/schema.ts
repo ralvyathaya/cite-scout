@@ -385,6 +385,32 @@ export const rateLimits = sqliteTable(
   (table) => [index('rate_limits_expires_idx').on(table.expiresAt)],
 );
 
+export const onboardingSuggestions = sqliteTable(
+  'onboarding_suggestions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    sourceKey: text('source_key').notNull(),
+    state: text('state', { enum: ['reserved', 'succeeded', 'failed'] }).notNull(),
+    createdAt: timestamp('created_at').notNull(),
+    completedAt: timestamp('completed_at'),
+    providerStartedAt: timestamp('provider_started_at'),
+    model: text('model').notNull(),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    reservedCostMicrousd: integer('reserved_cost_microusd').notNull().default(10000),
+    estimatedCostMicrousd: integer('estimated_cost_microusd'),
+    draftJson: text('draft_json'),
+    errorCode: text('error_code'),
+  },
+  (table) => [
+    index('onboarding_usage_idx').on(table.createdAt, table.userId),
+    uniqueIndex('onboarding_active_source')
+      .on(table.userId, table.sourceKey)
+      .where(sql`${table.state}='reserved'`),
+  ],
+);
+
 export const geoSettings = sqliteTable('geo_settings', {
   projectId: text('project_id')
     .primaryKey()
@@ -464,7 +490,14 @@ export const geoRunItems = sqliteTable(
       .notNull()
       .references(() => geoPromptVersions.id, { onDelete: 'cascade' }),
     engine: text('engine', {
-      enum: ['perplexity', 'openai_web_search', 'google_aio', 'chatgpt_search', 'bing_copilot'],
+      enum: [
+        'perplexity',
+        'openai_web_search',
+        'google_aio',
+        'chatgpt_search',
+        'bing_copilot',
+        'claude_web_search',
+      ],
     }).notNull(),
     status: text('status', {
       enum: [
@@ -516,10 +549,17 @@ export const geoObservations = sqliteTable(
       .notNull()
       .references(() => geoPromptVersions.id, { onDelete: 'cascade' }),
     engine: text('engine', {
-      enum: ['perplexity', 'openai_web_search', 'google_aio', 'chatgpt_search', 'bing_copilot'],
+      enum: [
+        'perplexity',
+        'openai_web_search',
+        'google_aio',
+        'chatgpt_search',
+        'bing_copilot',
+        'claude_web_search',
+      ],
     }).notNull(),
     model: text('model'),
-    status: text('status', { enum: ['complete', 'partial', 'no_feature'] }).notNull(),
+    status: text('status', { enum: ['captured'] }).notNull(),
     contextJson: text('context_json').notNull(),
     captureJson: text('capture_json').notNull(),
     answerText: text('answer_text').notNull(),
@@ -752,6 +792,7 @@ export const schema = {
   scanResults,
   providerCallReservations,
   rateLimits,
+  onboardingSuggestions,
   pilotEnrollments,
   scanRunItems,
   productEvents,

@@ -24,6 +24,7 @@ import {
 } from '@/client/components/ui/dialog';
 import { Button } from '@/client/components/ui/button';
 import { BrandLogo } from '@/client/components/BrandLogo';
+import { FeedbackButton } from '@/client/components/FeedbackButton';
 import { Skeleton } from '@/client/components/ui/skeleton';
 import type { DashboardContext } from './dashboard-context';
 import type { DashboardPayload, LoadState } from './dashboard-view';
@@ -197,6 +198,7 @@ export function AppShell() {
               void fetch('/api/auth/sign-out', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                body: '{}',
               })
                 .then((response) => {
                   if (!response.ok) throw new Error('Could not sign out.');
@@ -263,14 +265,13 @@ export function AppShell() {
               />
               <span className="truncate font-medium">{activePage}</span>
             </div>
-            <a
-              href="mailto:support@cite-scout.com"
+            <FeedbackButton
               className="ml-auto flex min-h-9 shrink-0 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Contact support"
+              ariaLabel="Send feedback"
             >
               <LifeBuoy className="size-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Help & support</span>
-            </a>
+              <span className="hidden sm:inline">Feedback</span>
+            </FeedbackButton>
           </header>
           {!signedOut && state.status === 'onboarding' && (
             <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-amber-50/50 px-4 py-2 text-xs text-amber-900 sm:px-6">

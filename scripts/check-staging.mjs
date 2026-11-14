@@ -6,6 +6,8 @@ import testLimits from '../src/shared/geo-test-limits.json' with { type: 'json' 
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const hostname = 'staging.cite-scout.com';
+const webhookDomain = `${hostname}/api/webhooks/lemonsqueezy`;
+const webhookChildrenDomain = `${webhookDomain}/*`;
 const unprovisionedDatabase = '00000000-0000-0000-0000-000000000000';
 
 function readConfig(path) {
@@ -114,14 +116,14 @@ export function validateStaging(staging, production, allowUnprovisioned = false)
   }
 }
 
-export function validateAccess(application, policies, ownerEmail) {
+export function validateAccess(application, policies, ownerEmail, domain = hostname) {
   if (
     application?.type !== 'self_hosted' ||
-    application.domain !== hostname ||
+    application.domain !== domain ||
     application.options_preflight_bypass === true ||
-    application.self_hosted_domains?.some((domain) => domain !== hostname) ||
+    application.self_hosted_domains?.some((value) => value !== domain) ||
     application.destinations?.some(
-      (destination) => destination.type !== 'public' || destination.uri !== hostname,
+      (destination) => destination.type !== 'public' || destination.uri !== domain,
     )
   ) {
     throw new Error('STAGING_ACCESS_MUST_PROTECT_ENTIRE_HOSTNAME');
@@ -142,7 +144,35 @@ export function validateAccess(application, policies, ownerEmail) {
   }
 }
 
-async function verifyAccess(env) {
+export function validateWebhookAccess(application, policies) {
+  const policy = policies?.[0];
+  const include = policy?.include?.[0];
+  if (
+    application?.type !== 'self_hosted' ||
+    application.domain !== webhookDomain ||
+    application.options_preflight_bypass === true ||
+    application.self_hosted_domains?.some((domain) => domain !== webhookDomain) ||
+    application.destinations?.some(
+      (destination) => destination.type !== 'public' || destination.uri !== webhookDomain,
+    ) ||
+    !Array.isArray(policies) ||
+    policies.length !== 1 ||
+    policy.decision !== 'bypass' ||
+    policy.include?.length !== 1 ||
+    !include ||
+    Object.keys(include).length !== 1 ||
+    !include.everyone ||
+    typeof include.everyone !== 'object' ||
+    Array.isArray(include.everyone) ||
+    Object.keys(include.everyone).length !== 0 ||
+    (policy.exclude?.length ?? 0) !== 0 ||
+    (policy.require?.length ?? 0) !== 0
+  ) {
+    throw new Error('STAGING_WEBHOOK_ACCESS_MUST_BE_EXACT_BYPASS');
+  }
+}
+
+export async function verifyAccess(env, requireWebhook = false) {
   const accountId = env.CLOUDFLARE_ACCOUNT_ID;
   const appId = env.STAGING_ACCESS_APPLICATION_ID;
   const token = env.STAGING_ACCESS_READ_TOKEN;
@@ -157,15 +187,31 @@ async function verifyAccess(env) {
   }
   const base = `https://api.cloudflare.com/client/v4/accounts/${accountId}/access/apps`;
   async function request(path) {
-    const response = await fetch(`${base}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) throw new Error('STAGING_ACCESS_API_UNAVAILABLE_OR_READ_PERMISSION_MISSING');
-    const text = await response.text();
+    let response, text;
+    try {
+      response = await fetch(`${base}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!response.ok) throw new Error(`STAGING_ACCESS_API_HTTP_${response.status}`);
+      text = await response.text();
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('STAGING_')) throw error;
+      throw new Error(
+        error?.name === 'TimeoutError'
+          ? 'STAGING_ACCESS_API_TIMEOUT'
+          : 'STAGING_ACCESS_API_UNAVAILABLE',
+        { cause: error },
+      );
+    }
     if (text.length > 1_000_000) throw new Error('STAGING_ACCESS_RESPONSE_TOO_LARGE');
-    const body = JSON.parse(text);
-    if (body.success !== true || (body.result_info?.total_pages ?? 1) > 1) {
+    let body;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error('STAGING_ACCESS_RESPONSE_INVALID');
+    }
+    if (body?.success !== true || (body.result_info?.total_pages ?? 1) > 1) {
       throw new Error('STAGING_ACCESS_VERIFICATION_INCOMPLETE');
     }
     return body.result;
@@ -176,22 +222,35 @@ async function verifyAccess(env) {
     request('?per_page=1000'),
   ]);
   validateAccess(application, policies, ownerEmail);
-  if (
-    !Array.isArray(applications) ||
-    applications.some(
-      (app) =>
-        app.id !== appId &&
-        [
-          app.domain,
-          ...(app.self_hosted_domains ?? []),
-          ...(app.destinations ?? []).map((d) => d.uri),
-        ]
-          .filter((domain) => typeof domain === 'string')
-          .some((domain) => domain === hostname || domain.startsWith(`${hostname}/`)),
-    )
-  ) {
+  if (!Array.isArray(applications)) {
+    throw new Error('STAGING_ACCESS_VERIFICATION_INCOMPLETE');
+  }
+  const overlapping = applications.filter(
+    (app) =>
+      app.id !== appId &&
+      [
+        app.domain,
+        ...(app.self_hosted_domains ?? []),
+        ...(app.destinations ?? []).map((d) => d.uri),
+      ]
+        .filter((domain) => typeof domain === 'string')
+        .some((domain) => domain === hostname || domain.startsWith(`${hostname}/`)),
+  );
+  const webhook = overlapping.find((app) => app.domain === webhookDomain);
+  const children = overlapping.find((app) => app.domain === webhookChildrenDomain);
+  if (overlapping.length !== Number(Boolean(webhook)) + Number(Boolean(children))) {
     throw new Error('STAGING_ACCESS_OVERLAPPING_APPLICATION_REQUIRES_REVIEW');
   }
+  for (const app of overlapping) {
+    if (!/^[a-f\d-]{36}$/i.test(app.id ?? ''))
+      throw new Error('STAGING_ACCESS_VERIFICATION_INCOMPLETE');
+    const policies = await request(`/${app.id}/policies?per_page=100`);
+    if (app.domain === webhookDomain) validateWebhookAccess(app, policies);
+    else validateAccess(app, policies, ownerEmail, webhookChildrenDomain);
+  }
+  // Access path policies can be inherited by child paths; keep those owner-only.
+  if (webhook && !children) throw new Error('STAGING_WEBHOOK_CHILDREN_OWNER_REQUIRED');
+  if (requireWebhook && !webhook) throw new Error('STAGING_WEBHOOK_ACCESS_REQUIRED');
 }
 
 async function main() {
@@ -206,8 +265,9 @@ async function main() {
         'Usage: node scripts/check-staging.mjs [--config PATH] [--allow-unprovisioned]',
       );
   }
+  const staging = readConfig(configPath);
   validateStaging(
-    readConfig(configPath),
+    staging,
     readConfig(resolve(root, 'wrangler.production.jsonc')),
     allowUnprovisioned,
   );
@@ -222,7 +282,7 @@ async function main() {
   } catch (error) {
     if (error.code !== 'ENOENT') throw new Error('STAGING_ACCESS_ENV_INVALID', { cause: error });
   }
-  await verifyAccess(process.env);
+  await verifyAccess(process.env, staging.vars.BILLING_PLANS_ENABLED === 'true');
   console.log('Staging isolation and owner-only Cloudflare Access checks passed.');
 }
 

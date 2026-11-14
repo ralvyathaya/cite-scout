@@ -15,6 +15,9 @@ export async function fixtureRequest(path: string, body?: unknown, method?: stri
   const mode = fixtureMode();
   if (!mode.enabled)
     throw new Error('Fixture mode is available only on localhost. No live request was made.');
-  workspace ??= new GeoFixtureWorkspace();
+  workspace ??= new GeoFixtureWorkspace(
+    new Date(),
+    new URLSearchParams(window.location.search).get('claudeFixture') === '1',
+  );
   return workspace.request(path.replace(/^\/api\/v2/u, ''), body, method);
 }

@@ -1,4 +1,5 @@
 import { actionCandidates, sourceOpportunities } from '../../../domain/geo-playbooks';
+import { syntheticOnboardingSuggestion } from '../../../shared/onboarding-fixture';
 import {
   buildGeoEvaluation,
   projectGeoClassification,
@@ -71,7 +72,12 @@ export class GeoFixtureWorkspace {
     revision: 1,
   };
   private project: V2ProjectPayload;
-  constructor(private at = new Date()) {
+  constructor(
+    private at = new Date(),
+    private claude = false,
+  ) {
+    if (claude)
+      this.settings.engines = ['perplexity', 'claude_web_search', 'google_aio', 'bing_copilot'];
     this.project = {
       project: {
         id: 'fixture-project',
@@ -93,6 +99,8 @@ export class GeoFixtureWorkspace {
       },
       enrolled: true,
       canScan: true,
+      plan: null,
+      promptLimit: 10,
       internalTestAccess: false,
       trial: null,
       scansEnabled: true,
@@ -142,9 +150,12 @@ export class GeoFixtureWorkspace {
         const id = crypto.randomUUID(),
           itemId = crypto.randomUUID(),
           surface = geoSurfaces[engine];
-        const text = improved
-          ? 'CedarFlow is recommended for a small team. Its buyer page now gives clearer pricing and product evidence. Rival is another option.'
-          : 'Rival is recommended for a small team. Compare pricing, onboarding needs and independent buyer reviews before choosing.';
+        const text =
+          engine === 'claude_web_search'
+            ? '**Rival** is recommended for a small team. Compare [buyer reviews](https://reddit.com/r/tools) before choosing.'
+            : improved
+              ? 'CedarFlow is recommended for a small team. Its buyer page now gives clearer pricing and product evidence. Rival is another option.'
+              : 'Rival is recommended for a small team. Compare pricing, onboarding needs and independent buyer reviews before choosing.';
         const observation: GeoObservation = {
           id,
           projectId: project.id,
@@ -165,7 +176,11 @@ export class GeoFixtureWorkspace {
             surface: surface.surface,
             collector: fixtureCollector(engine),
             ...geoCollectorPolicy(engine, fixtureCollector(engine)),
-            ...(engine === 'openai_web_search' ? { requestedModel: 'fixture-model' } : {}),
+            ...(engine === 'openai_web_search'
+              ? { requestedModel: 'fixture-model' }
+              : engine === 'claude_web_search'
+                ? { requestedModel: 'claude-sonnet-5-5' }
+                : {}),
             languageCode: this.settings.languageCode,
             locationCode: this.settings.locationCode,
             device: this.settings.device,
@@ -187,10 +202,15 @@ export class GeoFixtureWorkspace {
               engine,
               text,
             },
-            model: surface.reportsModel ? 'fixture-model' : null,
+            model:
+              engine === 'claude_web_search'
+                ? 'claude-sonnet-5-5'
+                : surface.reportsModel
+                  ? 'fixture-model'
+                  : null,
             modelReported: surface.reportsModel,
             inlineReferencesAvailable: false,
-            quality: 'complete',
+            quality: engine === 'google_aio' ? 'partial' : 'complete',
             providerRequestId: `fixture-${id}`,
             providerStatus: 'fixture',
             reportedCost: 0,
@@ -200,8 +220,14 @@ export class GeoFixtureWorkspace {
             sources: [
               {
                 id: 'fixture-community',
-                url: 'https://community.example/reviews/onboarding-tools',
-                canonicalUrl: 'https://community.example/reviews/onboarding-tools',
+                url:
+                  engine === 'claude_web_search'
+                    ? 'https://reddit.com/r/tools'
+                    : 'https://community.example/reviews/onboarding-tools',
+                canonicalUrl:
+                  engine === 'claude_web_search'
+                    ? 'https://reddit.com/r/tools'
+                    : 'https://community.example/reviews/onboarding-tools',
                 title: 'Synthetic independent buyer discussion',
                 referenceLevel: 'answer',
               },
@@ -466,9 +492,15 @@ export class GeoFixtureWorkspace {
               this.at.getTime() - Number(url.searchParams.get('days')) * DAY),
       );
     if (route === '/project' && method === 'GET') return this.project;
+    if (route === '/onboarding/suggestions' && method === 'POST')
+      return syntheticOnboardingSuggestion;
     if (route === '/api/billing/status' && method === 'GET')
       return {
         subscription: null,
+        plan: null,
+        plansEnabled: false,
+        checkoutOptions: [],
+        allowance: null,
         checkoutAvailable: false,
         portalAvailable: false,
         availabilityMessage:
@@ -484,7 +516,10 @@ export class GeoFixtureWorkspace {
         updatedAt: this.at.toISOString(),
         replacesQuestionId: null,
       };
-      if ((this.project.project?.questions.filter((q) => !q.archivedAt).length ?? 0) >= 10)
+      if (
+        (this.project.project?.questions.filter((q) => q.enabled && !q.archivedAt).length ?? 0) >=
+        (this.project.promptLimit ?? 10)
+      )
         throw new Error('Fixture prompt limit reached');
       this.project.project?.questions.push(question);
       return question;
@@ -542,8 +577,9 @@ export class GeoFixtureWorkspace {
           (Object.keys(geoSurfaces) as GeoEngine[]).map((engine) => [
             engine,
             {
-              available: true,
-              reason: null,
+              enabled: engine !== 'claude_web_search' || this.claude,
+              available: engine !== 'claude_web_search' || this.claude,
+              reason: engine === 'claude_web_search' && !this.claude ? 'Engine disabled.' : null,
               collector: fixtureCollector(engine),
               requestedModel: engine === 'openai_web_search' ? 'fixture-model' : null,
               nextStep:

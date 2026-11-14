@@ -6,6 +6,7 @@ import { competitors, projects, prompts } from '../../db/schema';
 import { normalizeDomain, normalizeText } from '../../domain/normalization';
 import { createAuth } from '../auth';
 import { readJson, requireSession } from '../http';
+import { activePromptLimit } from '../v2/read-model';
 
 const projectInput = z.object({
   name: z.string().trim().min(1).max(80),
@@ -20,7 +21,7 @@ const projectInput = z.object({
     )
     .max(3)
     .default([]),
-  prompts: z.array(z.string().trim().min(10).max(500)).min(3).max(10),
+  prompts: z.array(z.string().trim().min(10).max(500)).min(3).max(30),
 });
 export const projectRoutes = new Hono<{ Bindings: CloudflareBindings }>();
 projectRoutes.get('/', async (c) => {
@@ -50,6 +51,13 @@ projectRoutes.post('/', async (c) => {
   if (!parsed.success)
     return c.json(
       { error: { code: 'VALIDATION_ERROR', message: 'Check the project details.' } },
+      422,
+    );
+  if (parsed.data.prompts.length > (await activePromptLimit(c.env, session.user.id)))
+    return c.json(
+      {
+        error: { code: 'QUESTION_LIMIT', message: 'Your active prompts exceed this plan’s limit.' },
+      },
       422,
     );
   let canonicalDomain: string;

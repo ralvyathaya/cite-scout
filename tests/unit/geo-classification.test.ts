@@ -3,6 +3,7 @@ import { buildGeoEvaluation, projectGeoClassification } from '../../src/domain/g
 import { evaluateDecision, validateDecision } from '../../src/integrations/decision/client';
 import { diagnoseGeo } from '../../src/domain/geo-diagnosis';
 import { geoSurfaces, type GeoObservation } from '../../src/shared/geo';
+import { geoVersionsV3 } from '../../src/shared/geo-analysis';
 
 const observation: GeoObservation = {
   id: 'o',
@@ -75,6 +76,395 @@ const native = (
   ),
 });
 describe('atomic decision provider contract and grounded diagnosis', () => {
+  it.each([
+    { text: 'Other tools are available.', presence: 'absent', expected: 'absent' },
+    { text: 'A satellite orbits the earth.', presence: 'absent', expected: 'absent' },
+    {
+      text: 'Orbit may identify several unrelated products.',
+      presence: 'absent',
+      expected: 'unknown',
+    },
+    {
+      text: 'The tracked site is https://orbit.example.',
+      presence: 'present',
+      expected: 'present',
+    },
+    {
+      text: '**ORBIT.EXAMPLE** describes a scheduling product.',
+      presence: 'present',
+      expected: 'present',
+    },
+    { text: '[Orbit](https://docs.orbit.example/start)', presence: 'present', expected: 'present' },
+    {
+      text: 'Orbit appears at https://other.example/orbit.',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: 'Orbit at https://orbit.example.evil.test/',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    { text: 'Orbit at https://notorbit.example/', presence: 'present', expected: 'ambiguous' },
+    {
+      text: 'Orbit at https://orbit.example@evil.test/',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: 'Orbit at https://orbit.example)@evil.test/',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: 'Orbit at orbit.example)@evil.test/',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: "Orbit at https://orbit.example'@evil.test/",
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: 'Orbit at https://orbit.example*@evil.test/',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: 'Orbit at https://orbit.example`@evil.test/',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: 'Orbit at https://orbit.example"@evil.test/',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: "Orbit at https://evil.test/?next='https://orbit.example'",
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    { text: "Orbit at orbit.example'@evil.test/", presence: 'present', expected: 'ambiguous' },
+    { text: "Orbit at 'https://orbit.example'", presence: 'present', expected: 'present' },
+    { text: 'Orbit at **https://orbit.example**', presence: 'present', expected: 'present' },
+    {
+      text: 'Orbit at evil.test/redirect?next=https://orbit.example/',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: 'Orbit at ftp://evil.test/?next=https://orbit.example/',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: '[Orbit Docs](https://docs.orbit.example/start)',
+      presence: 'present',
+      expected: 'present',
+    },
+    { text: 'See [Orbit](https://orbit.example).', presence: 'present', expected: 'present' },
+    {
+      text: '[Orbit Docs](https://docs.orbit.example/start),',
+      presence: 'present',
+      expected: 'present',
+    },
+    { text: '**[Orbit](https://orbit.example)**', presence: 'present', expected: 'present' },
+    { text: '**[Orbit](https://orbit.example).**', presence: 'present', expected: 'present' },
+    {
+      text: 'evil.test/next=**[Orbit](https://orbit.example)**',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: "[Orbit](https://orbit.example'@evil.test/).",
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: '**[Orbit](https://evil.test/?next=https://orbit.example)**',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: '[Orbit](https://evil.test/?next=https://orbit.example)',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    {
+      text: 'Orbit at https://evil.test/?next=https://orbit.example',
+      presence: 'present',
+      expected: 'ambiguous',
+    },
+    { text: 'Orbit: contact hello@orbit.example', presence: 'present', expected: 'ambiguous' },
+    { text: 'Orbit at javascript://orbit.example/', presence: 'present', expected: 'ambiguous' },
+    { text: 'Orbit at https://orbit.example:443/help', presence: 'present', expected: 'present' },
+    { text: 'https://orbit.example', presence: 'absent', expected: 'unknown' },
+    { text: 'https://orbit.example', presence: 'unknown', expected: 'unknown' },
+    { text: 'https://orbit.example', presence: 'ambiguous', expected: 'ambiguous' },
+  ])(
+    'uses evaluated identity evidence for weak $presence: $text',
+    ({ text, presence, expected }) => {
+      const captured = { ...observation, capture: { ...observation.capture, answerText: text } };
+      const evaluation = buildGeoEvaluation(captured);
+      const response = native(evaluation, {
+        brand_presence: presence,
+        brand_stance: presence === 'present' ? 'neutral_mention' : 'not_applicable',
+      });
+      const entity = response.answers.brand_presence;
+      if (entity?.type !== 'choice') throw Error('Expected entity choice');
+      entity.confidence = 0.3;
+      const result = validateDecision(response, evaluation, 'clef-flash');
+      const original = structuredClone(result);
+      expect(projectGeoClassification(captured, evaluation, result)).toMatchObject({
+        brandPresence: expected,
+        brandStance:
+          expected === 'present'
+            ? 'neutral_mention'
+            : expected === 'absent'
+              ? 'not_applicable'
+              : 'unknown',
+      });
+      expect(result).toEqual(original);
+    },
+  );
+  it('does not use an owned hostname outside the classifier excerpt to resolve a weak identity', () => {
+    const captured = {
+      ...observation,
+      capture: {
+        ...observation.capture,
+        answerText: `${'Other products. '.repeat(800)} https://orbit.example`,
+      },
+    };
+    const evaluation = buildGeoEvaluation(captured);
+    const response = native(evaluation, { brand_presence: 'present' });
+    const entity = response.answers.brand_presence;
+    if (entity?.type !== 'choice') throw Error('Expected entity choice');
+    entity.confidence = 0.3;
+    const result = validateDecision(response, evaluation, 'clef-flash');
+    expect(projectGeoClassification(captured, evaluation, result)).toMatchObject({
+      scope: 'partial',
+      brandPresence: 'ambiguous',
+    });
+  });
+  it.each([null, 'orbit.example'])(
+    'does not resolve a weak name using source metadata or a missing tracked domain (%s)',
+    (domain) => {
+      const captured: GeoObservation = {
+        ...observation,
+        context: { ...observation.context, brand: { ...observation.context.brand, domain } },
+        capture: {
+          ...observation.capture,
+          answerText: 'Orbit may refer to several products.',
+          sources: [
+            {
+              id: 'source',
+              canonicalUrl: 'https://orbit.example',
+              url: 'https://orbit.example',
+              title: 'Orbit',
+              referenceLevel: 'retrieved',
+            },
+          ],
+        },
+      };
+      const evaluation = buildGeoEvaluation(captured);
+      const response = native(evaluation, { brand_presence: 'present' });
+      const entity = response.answers.brand_presence;
+      if (entity?.type !== 'choice') throw Error('Expected entity choice');
+      entity.confidence = 0.3;
+      const result = validateDecision(response, evaluation, 'clef-flash');
+      expect(projectGeoClassification(captured, evaluation, result).brandPresence).toBe(
+        'ambiguous',
+      );
+    },
+  );
+  it.each([
+    ['present', 'ambiguous'],
+    ['absent', 'unknown'],
+  ])(
+    'preserves policy-3 weak %s entity decisions without editing native evidence',
+    (presence, expected) => {
+      const evaluation = buildGeoEvaluation(observation, [], [], geoVersionsV3);
+      const response = native(evaluation, {
+        brand_presence: presence,
+        brand_stance: 'recommended',
+      });
+      response.answers.brand_presence = {
+        type: 'choice',
+        choice: presence,
+        confidence: 0.35,
+        probabilities: Object.fromEntries(
+          ['present', 'absent', 'ambiguous', 'unknown'].map((label) => [
+            label,
+            label === presence ? 0.7 : 0.1,
+          ]),
+        ),
+      };
+      const result = validateDecision(response, evaluation, 'clef-flash');
+      const before = structuredClone(result);
+      expect(
+        projectGeoClassification(observation, evaluation, result, geoVersionsV3),
+      ).toMatchObject({
+        brandPresence: expected,
+        brandStance: 'unknown',
+      });
+      expect(result).toEqual(before);
+      const previous = {
+        rubric: 'geo-rubric-2',
+        policy: 'geo-policy-2',
+        ownership: 'geo-domain-1',
+      };
+      expect(
+        projectGeoClassification(observation, evaluation, result, previous).brandPresence,
+      ).toBe(presence);
+    },
+  );
+  it('keeps analysis of historical SerpApi Google captures partial without rewriting their saved quality', () => {
+    const historical = {
+      ...observation,
+      context: {
+        ...observation.context,
+        collector: 'serpapi' as const,
+        collectorVersion: 'geo-collector-2' as const,
+      },
+    };
+    const before = structuredClone(historical);
+    const evaluation = buildGeoEvaluation(historical);
+    const result = validateDecision(
+      native(evaluation, { brand_presence: 'absent' }),
+      evaluation,
+      'clef-flash',
+    );
+    expect(evaluation.state.captureCoverage).toBe('unverified');
+    expect(projectGeoClassification(historical, evaluation, result)).toMatchObject({
+      scope: 'partial',
+      brandPresence: 'unknown',
+      brandStance: 'unknown',
+    });
+    expect(historical).toEqual(before);
+    expect(historical.capture.quality).toBe('complete');
+  });
+  it.each([
+    { presence: 'present', confidence: 0.5 },
+    { presence: 'absent', confidence: 1 },
+    { presence: 'ambiguous', confidence: 0 },
+    { presence: 'unknown', confidence: 0 },
+  ])('retains $presence at entity confidence $confidence', ({ presence, confidence }) => {
+    const evaluation = buildGeoEvaluation(observation);
+    const response = native(evaluation, { brand_presence: presence });
+    const entity = response.answers.brand_presence;
+    if (entity?.type !== 'choice') throw Error('Expected entity choice');
+    entity.confidence = confidence;
+    const result = validateDecision(response, evaluation, 'clef-flash');
+    expect(projectGeoClassification(observation, evaluation, result).brandPresence).toBe(presence);
+  });
+  it.each(['no_feature', 'complete'] as const)(
+    'abstains on an empty %s answer without changing native output',
+    (quality) => {
+      const empty = {
+        ...observation,
+        capture: { ...observation.capture, answerText: '', quality },
+      };
+      const evaluation = buildGeoEvaluation(empty);
+      const result = validateDecision(
+        native(evaluation, { brand_presence: 'absent' }),
+        evaluation,
+        'clef-flash',
+      );
+      const before = structuredClone(result);
+      expect(projectGeoClassification(empty, evaluation, result)).toMatchObject({
+        answerQuality: 'unknown',
+        brandPresence: 'unknown',
+        brandStance: 'unknown',
+        scope: 'partial',
+      });
+      expect(result).toEqual(before);
+      expect(evaluation.state.captureQuality).toBe(quality);
+    },
+  );
+  it('does not turn absence in a partial capture or classifier excerpt into whole-answer absence', () => {
+    for (const capture of [
+      { ...observation.capture, quality: 'partial' as const },
+      { ...observation.capture, answerText: 'Other options. '.repeat(1000) },
+    ]) {
+      const partial = { ...observation, capture },
+        evaluation = buildGeoEvaluation(partial);
+      const result = validateDecision(
+        native(evaluation, { brand_presence: 'absent' }),
+        evaluation,
+        'clef-flash',
+      );
+      expect(projectGeoClassification(partial, evaluation, result)).toMatchObject({
+        brandPresence: 'unknown',
+        brandStance: 'unknown',
+        scope: 'partial',
+      });
+    }
+  });
+  it('uses not-applicable stance for known absence and retains explicit positive evidence in partial text', () => {
+    const evaluation = buildGeoEvaluation(observation);
+    const absent = validateDecision(
+      native(evaluation, { brand_presence: 'absent', brand_stance: 'unknown' }),
+      evaluation,
+      'clef-flash',
+    );
+    expect(projectGeoClassification(observation, evaluation, absent).brandStance).toBe(
+      'not_applicable',
+    );
+    const partial = {
+      ...observation,
+      capture: {
+        ...observation.capture,
+        quality: 'partial' as const,
+        answerText: 'Orbit is useful if you need team scheduling.',
+      },
+    };
+    const partialEvaluation = buildGeoEvaluation(partial);
+    const present = validateDecision(
+      native(partialEvaluation, {
+        brand_presence: 'present',
+        brand_stance: 'conditional_recommendation',
+      }),
+      partialEvaluation,
+      'clef-flash',
+    );
+    expect(projectGeoClassification(partial, partialEvaluation, present)).toMatchObject({
+      brandPresence: 'present',
+      brandStance: 'conditional_recommendation',
+      scope: 'partial',
+    });
+  });
+  it('defines conditional recommendations for both brand and competitor while preserving the legacy rubric', () => {
+    const tracked = {
+      ...observation,
+      context: {
+        ...observation.context,
+        competitors: [{ id: 'r', name: 'Rival', domain: 'rival.example' }],
+      },
+    };
+    const evaluation = buildGeoEvaluation(tracked);
+    for (const id of ['brand_stance', 'competitor_0']) {
+      const question = evaluation.questions[id];
+      if (question?.type !== 'choice') throw Error('Expected stance question');
+      expect(question.criteria.conditional_recommendation).toContain('only if');
+    }
+    const legacy = { rubric: 'geo-rubric-1', policy: 'geo-policy-1', ownership: 'geo-domain-1' };
+    const old = buildGeoEvaluation(tracked, [], [], legacy);
+    expect(old.state).not.toHaveProperty('captureQuality');
+    expect(old.questions.brand_stance).not.toEqual(evaluation.questions.brand_stance);
+    const response = validateDecision(
+      native(old, { brand_presence: 'absent', brand_stance: 'unknown' }),
+      old,
+      'clef-flash',
+    );
+    expect(projectGeoClassification(tracked, old, response, legacy)).toMatchObject({
+      brandPresence: 'absent',
+      brandStance: 'unknown',
+      rubricVersion: legacy.rubric,
+      policyVersion: legacy.policy,
+    });
+  });
   it('uses Clef Flash binding by default and preserves native probability, quotes and provenance', async () => {
     const evaluation = buildGeoEvaluation(observation);
     const run = vi

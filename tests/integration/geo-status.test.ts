@@ -1,7 +1,8 @@
+import { seedGeoSubscriber as seed, geoBindings as withBindings } from './geo-fixtures';
 import { Hono } from 'hono';
 import { afterEach, expect, it, vi } from 'vitest';
 import { runScheduledScans } from '../../src/server/cron';
-import { cookie, seed, withBindings } from './fixtures';
+import { cookie } from './fixtures';
 import { v2Routes } from '../../src/server/v2/routes';
 import { createDailyGeoRuns, saveGeoSettings, startGeoRun } from '../../src/server/v2/geo-store';
 import { deleteAccountData } from '../../src/server/account-deletion';

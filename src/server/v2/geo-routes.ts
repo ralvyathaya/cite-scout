@@ -58,14 +58,23 @@ const errors: Record<string, string> = {
   PROMPT_SET_NOT_FOUND: 'This prompt set is unavailable.',
   GEO_RUN_NOT_FOUND: 'This monitoring run is unavailable.',
   GEO_OBSERVATION_NOT_FOUND: 'This observation is unavailable.',
+  GEO_CLAUDE_DISABLED:
+    'Claude monitoring is not enabled or has no request allowance. Saved answers remain available.',
   GEO_SCANS_DISABLED: 'New GEO checks are paused. Saved evidence remains available.',
   GEO_BUDGET_REQUIRED: 'The operator must configure a positive GEO budget before checks can start.',
+  GEO_PRODUCTION_COST_POLICY_REQUIRED:
+    'Monitoring is temporarily unavailable. Contact support; your saved answers remain available.',
   GEO_CONFIGURATION_REQUIRED: 'Save your engines, location and language before monitoring.',
   GEO_DAILY_DISABLED: 'Daily checks are disabled for this project.',
   PAID_ACCESS_REQUIRED: 'A paid subscription is required for GEO checks.',
   PAID_STARTS_NEXT_UTC_DAY:
     'Paid monitoring starts on the next UTC day; your frozen trial follow-up remains available.',
-  INVALID_PROMPT_SELECTION: 'Select one to ten active prompts from this project.',
+  INVALID_PROMPT_SELECTION: 'Select active prompts from this project within your plan limit.',
+  QUESTION_LIMIT:
+    'Your active prompts exceed this plan’s limit. Pause prompts or choose a larger plan.',
+  ENGINE_NOT_IN_PLAN: 'Choose an engine included in your current plan.',
+  GEO_DAILY_PAIR_LIMIT:
+    'These prompts and engines already have a check today. New checks reset at midnight UTC.',
   ENGINE_NOT_SELECTED: 'Choose engines enabled in monitoring settings.',
   GEO_QUOTA_EXCEEDED: 'This check exceeds the available budget. Review Usage or wait for reset.',
   GEO_COOLDOWN_OR_IN_FLIGHT:
@@ -237,6 +246,7 @@ geoRoutes.get('/runs/:id/attempts', async (c) => {
         row.raw === null
           ? null
           : redactProviderData(JSON.parse(row.raw), [
+              c.env.ANTHROPIC_API_KEY,
               c.env.OPENAI_API_KEY,
               c.env.SERPAPI_API_KEY,
               c.env.PERPLEXITY_API_KEY,

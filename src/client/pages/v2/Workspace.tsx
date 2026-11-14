@@ -1,8 +1,7 @@
-import { useEffect, useState, type ReactNode, type SubmitEvent } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
 import {
   BarChart3,
   ListChecks,
-  FileText,
   Stethoscope,
   CheckSquare,
   Globe,
@@ -12,11 +11,9 @@ import {
   Menu,
   LogOut,
   LifeBuoy,
-  ChevronRight,
 } from 'lucide-react';
 import {
   Link,
-  NavLink,
   Navigate,
   Outlet,
   useNavigate,
@@ -27,7 +24,9 @@ import {
 } from 'react-router';
 import { Button } from '../../components/ui/button';
 import { BrandLogo } from '../../components/BrandLogo';
+import { FeedbackButton } from '../../components/FeedbackButton';
 import { WorkspaceHeading } from './WorkspaceHeading';
+import { WorkspaceModal } from './WorkspaceControls';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import {
@@ -40,7 +39,19 @@ import {
 import { highlight } from '../../lib/highlight';
 import { ApiError, api, emitEvent, useInspection, useResource } from './api';
 import { fixtureMode, leaveFixture } from './geo-fixture-mode';
-import { GeoPromptSets, GeoSettingsPanel } from './GeoWorkspace';
+import { GeoSettingsPanel } from './GeoWorkspace';
+import { PromptWorkspace } from './Prompts';
+import {
+  subscriptionLabel,
+  type PlanBillingStatus,
+  billingSelection,
+  billingSelectionQuery,
+} from '../../lib/billing-selection';
+import { SourceIcon } from '../../components/SourceIdentity';
+import { WorkspaceBreadcrumb } from './WorkspaceBreadcrumb';
+import { MonitoringNavigation } from './MonitoringNavigation';
+import { normalizeDomain } from '../../../domain/normalization';
+import type { OnboardingSuggestion } from '../../../shared/onboarding';
 import type { GeoSettings } from '../../../shared/geo';
 import type {
   V2HistoryPayload,
@@ -98,24 +109,30 @@ export function V2Shell() {
   const navigate = useNavigate();
   const action = useAction();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigation = [
     { label: 'Overview', path: '/app/overview', Icon: BarChart3, group: 'Workspace' },
-    { label: 'Prompt Sets', path: '/app/questions', Icon: ListChecks },
-    { label: 'Observations', path: '/app/observations', Icon: FileText },
+    { label: 'Monitoring', path: '/app/questions', Icon: ListChecks },
+    { label: 'Sources', path: '/app/sources', Icon: Globe },
     { label: 'Diagnoses', path: '/app/diagnoses', Icon: Stethoscope, group: 'Improve' },
     { label: 'Action Playbook', path: '/app/playbook', Icon: CheckSquare },
-    { label: 'Sources', path: '/app/sources', Icon: Globe },
     { label: 'Competitors', path: '/app/competitors', Icon: Users },
     { label: 'Billing & usage', path: '/app/billing', Icon: CreditCard, group: 'Account' },
     { label: 'Settings', path: '/app/settings', Icon: Settings },
   ];
-  const activePage =
-    navigation.find((item) => pathname.startsWith(item.path))?.label ?? 'Project setup';
+  const monitoring = ['/app/questions', '/app/observations', '/app/trends'].some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  );
+  const activePage = monitoring
+    ? 'Monitoring'
+    : (navigation.find((item) => pathname.startsWith(item.path))?.label ?? 'Project setup');
   const sidebar = (
     <>
       <Link
-        to="/"
+        to="/app/overview"
+        onClick={() => {
+          setMobileOpen(false);
+        }}
         className="flex h-16 shrink-0 items-center border-b px-5"
         aria-label="CiteScout home"
       >
@@ -126,10 +143,10 @@ export function V2Shell() {
         onClick={() => {
           setMobileOpen(false);
         }}
-        className="mx-4 mb-1 mt-5 flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:border-primary/40"
+        className="mx-4 mb-1 mt-4 flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:border-sidebar-ring/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring"
       >
         <span
-          className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold text-primary"
+          className="flex size-9 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-sm font-semibold text-sidebar-accent-foreground"
           aria-hidden="true"
         >
           {resource.data?.project?.brandName.slice(0, 2).toUpperCase() ?? 'CS'}
@@ -144,45 +161,35 @@ export function V2Shell() {
         </span>
       </Link>
       <nav aria-label="Application" className="min-h-0 flex-1 overflow-y-auto px-3 pb-5">
-        {navigation.map(({ label, path, Icon, group }) => (
-          <div key={path}>
-            {group && (
-              <p className="px-3 pb-2 pt-5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                {group}
-              </p>
-            )}
-            <NavLink
-              to={path}
-              onClick={() => {
-                setMobileOpen(false);
-              }}
-              className={({ isActive }) =>
-                `mb-1 flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${isActive ? 'bg-primary/10 text-primary shadow-[inset_3px_0_0_var(--primary)]' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`
-              }
-            >
-              <Icon className="size-4 shrink-0" aria-hidden="true" />
-              {label}
-            </NavLink>
-          </div>
-        ))}
+        {navigation.map(({ label, path, Icon, group }) => {
+          const current =
+            pathname === path ||
+            pathname.startsWith(`${path}/`) ||
+            (label === 'Monitoring' && monitoring);
+          return (
+            <div key={path}>
+              {group && (
+                <p className="px-3 pb-2 pt-6 text-xs font-medium text-muted-foreground">{group}</p>
+              )}
+              <Link
+                to={path}
+                onClick={() => {
+                  setMobileOpen(false);
+                }}
+                aria-current={current ? 'page' : undefined}
+                className={`mb-1 flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium lg:min-h-9 lg:py-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring ${current ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}
+              >
+                <Icon className="size-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                {label}
+              </Link>
+            </div>
+          );
+        })}
       </nav>
       <div className="border-t p-3">
-        <div className="mb-2 rounded-lg bg-muted/60 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-          {fixture.requested ? (
-            <p className="font-medium text-foreground">Synthetic workspace</p>
-          ) : resource.data?.internalTestAccess ? (
-            <p className="font-medium text-primary">Owner preview</p>
-          ) : null}
-          <p>
-            {resource.data?.canScan ? 'Perplexity subscription active' : 'Saved evidence access'}
-          </p>
-          {resource.data?.internalTestAccess && (
-            <p className="mt-1">GEO preview has a separate allowance.</p>
-          )}
-        </div>
         <Button
           variant="ghost"
-          className="w-full justify-start"
+          className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:border-sidebar-ring focus-visible:ring-sidebar-ring/50"
           size="sm"
           disabled={action.busy}
           onClick={() =>
@@ -194,6 +201,7 @@ export function V2Shell() {
               const response = await fetch('/api/auth/sign-out', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                body: '{}',
               });
               if (!response.ok) throw new Error('Could not sign out.');
               sessionStorage.removeItem('citescout-run');
@@ -208,7 +216,7 @@ export function V2Shell() {
     </>
   );
   if (resource.error instanceof ApiError && resource.error.status === 401)
-    return <Navigate to="/login" replace />;
+    return <Navigate to={`/login${billingSelectionQuery(new URLSearchParams(search))}`} replace />;
   return (
     <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
       <div className="workspace-theme flex min-h-svh bg-background text-foreground">
@@ -237,20 +245,14 @@ export function V2Shell() {
                 <Menu className="size-4" aria-hidden="true" />
               </Button>
             </DialogTrigger>
-            <span className="hidden text-sm text-muted-foreground sm:inline">Workspace</span>
-            <ChevronRight
-              className="hidden size-3 text-muted-foreground sm:inline"
-              aria-hidden="true"
-            />
-            <span className="text-sm font-medium">{activePage}</span>
-            <a
-              href={`mailto:${resource.data?.supportEmail ?? 'support@cite-scout.com'}`}
+            <WorkspaceBreadcrumb activePage={activePage} />
+            <FeedbackButton
               className="ml-auto flex min-h-9 items-center gap-2 text-xs text-muted-foreground"
-              aria-label="Contact support"
+              ariaLabel="Send feedback"
             >
               <LifeBuoy className="size-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Help & support</span>
-            </a>
+              <span className="hidden sm:inline">Feedback</span>
+            </FeedbackButton>
           </header>
           <main
             id="main"
@@ -280,11 +282,14 @@ export function V2Shell() {
             {resource.loading && !resource.data ? (
               <p role="status">Loading your questions…</p>
             ) : resource.data ? (
-              <Outlet
-                context={
-                  { data: resource.data, reload: resource.reload } satisfies WorkspaceContext
-                }
-              />
+              <div>
+                {monitoring && <MonitoringNavigation />}
+                <Outlet
+                  context={
+                    { data: resource.data, reload: resource.reload } satisfies WorkspaceContext
+                  }
+                />
+              </div>
             ) : (
               <Button onClick={() => void resource.reload()}>Retry</Button>
             )}
@@ -296,28 +301,27 @@ export function V2Shell() {
 }
 function TrialStatus({ data }: { data: V2ProjectPayload }) {
   return (
-    <Notice>
-      {data.internalTestAccess
-        ? 'Owner staging validation · daily monitoring off by default'
-        : data.canScan
-          ? 'Perplexity monitoring access · legacy plan & history'
-          : data.trial
-            ? `Pilot · ${data.trial.state}`
-            : 'Founder-assisted pilot'}
-      {data.trial?.followupDueAt && !data.canScan && (
-        <> · Follow-up: {time(data.trial.followupDueAt)}</>
-      )}
-      {data.trial?.expiresAt && !data.canScan && <> · Expires: {time(data.trial.expiresAt)}</>}
-      {!data.scansEnabled && (
-        <span className="block mt-1">
-          Provider checks are currently paused. Your saved evidence remains available.
-        </span>
-      )}
-      <span className="block mt-1">
-        API results may differ from the Perplexity app. A name match is not a recommendation or
-        ranking.
-      </span>
-    </Notice>
+    <WorkspaceModal
+      title="About these results"
+      trigger={
+        <Button variant="ghost" size="sm">
+          About these results
+        </Button>
+      }
+    >
+      <div className="space-y-2 text-sm text-muted-foreground">
+        <p>
+          API results may differ from the Perplexity app. A name match is not a recommendation or
+          ranking.
+        </p>
+        {data.trial?.followupDueAt && !data.canScan && (
+          <p>Trial follow-up: {time(data.trial.followupDueAt)}</p>
+        )}
+        {data.trial?.expiresAt && !data.canScan && (
+          <p>Trial expires: {time(data.trial.expiresAt)}</p>
+        )}
+      </div>
+    </WorkspaceModal>
   );
 }
 interface IdentityDraft {
@@ -329,10 +333,12 @@ function IdentityFields({
   value,
   set,
   disabled,
+  domainReadOnly,
 }: {
   value: IdentityDraft;
   set: (value: IdentityDraft) => void;
   disabled?: boolean;
+  domainReadOnly?: boolean;
 }) {
   return (
     <fieldset disabled={disabled} className="space-y-4">
@@ -353,6 +359,7 @@ function IdentityFields({
           <Input
             required
             placeholder="example.com"
+            readOnly={domainReadOnly}
             value={value.canonicalDomain}
             onChange={(e) => {
               set({ ...value, canonicalDomain: e.target.value });
@@ -422,6 +429,9 @@ function IdentityFields({
 }
 export function V2Onboarding() {
   const { data, reload } = useOutletContext<WorkspaceContext>();
+  const [searchParams] = useSearchParams();
+  const reviewRequested = searchParams.get('review') === '1';
+  const reviewMode = reviewRequested && data.internalTestAccess;
   const navigate = useNavigate();
   const action = useAction();
   const [identity, setIdentity] = useState<IdentityDraft>({
@@ -430,39 +440,123 @@ export function V2Onboarding() {
     competitors: [{ name: '', canonicalDomain: null }],
   });
   const [questions, setQuestions] = useState(['', '', '']);
+  const [websiteReady, setWebsiteReady] = useState(false);
   const [review, setReview] = useState(false);
   const [key] = useState(() => crypto.randomUUID());
-  if (data.project)
-    return <Navigate to={data.internalTestAccess ? '/app/overview' : '/app/questions'} replace />;
-  if (!data.enrolled && !data.canScan && !data.internalTestAccess)
+  const [suggestion, setSuggestion] = useState<OnboardingSuggestion | null>(null);
+  const [reviewFinished, setReviewFinished] = useState(false);
+  const completionHeading = useRef<HTMLHeadingElement>(null);
+  const suggestionRequest = useRef<{ domain: string; id: string } | null>(null);
+  const saveOnly =
+    Boolean(billingSelection(searchParams)) ||
+    reviewMode ||
+    data.internalTestAccess ||
+    (!data.enrolled && !data.canScan);
+  useEffect(() => {
+    if (reviewFinished) completionHeading.current?.focus();
+  }, [reviewFinished]);
+  if (reviewRequested && !reviewMode)
     return (
-      <section className="mx-auto max-w-2xl space-y-5 py-6">
-        <WorkspaceHeading
-          title="Run your first buyer-question baseline"
-          description="Start with a focused set of questions about your market."
-        />
-        <div className={`${box} space-y-5`}>
-          <Notice>
-            The pilot is currently founder-assisted. Bring three real questions you have already
-            checked in Perplexity.
-          </Notice>
+      <Notice>
+        Onboarding review is available only to the staging owner.{' '}
+        <Link className="underline" to="/app/overview">
+          Return to dashboard
+        </Link>
+      </Notice>
+    );
+  if (data.project && !reviewMode)
+    return (
+      <Navigate
+        to={
+          billingSelection(searchParams)
+            ? `/app/billing${billingSelectionQuery(searchParams)}`
+            : saveOnly
+              ? '/app/overview'
+              : '/app/questions'
+        }
+        replace
+      />
+    );
+  if (reviewFinished)
+    return (
+      <section className="mx-auto max-w-3xl space-y-5">
+        <h1
+          ref={completionHeading}
+          tabIndex={-1}
+          className="text-2xl font-semibold tracking-tight outline-none"
+        >
+          Onboarding review complete
+        </h1>
+        <Notice>No project changes were saved and no monitoring check was started.</Notice>
+        <div className="flex flex-wrap gap-3">
           <Button asChild>
-            <a href={`mailto:${data.supportEmail}`}>Contact the founder</a>
+            <Link to="/app/overview">Return to dashboard</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/app/onboarding?review=1" reloadDocument>
+              Start again
+            </Link>
           </Button>
         </div>
       </section>
     );
+  async function prepareWebsite(automatic: boolean) {
+    await action.run(async () => {
+      const domain = normalizeDomain(identity.canonicalDomain);
+      if (automatic && suggestion?.source.domain !== domain) {
+        if (suggestionRequest.current?.domain !== domain)
+          suggestionRequest.current = { domain, id: crypto.randomUUID() };
+        const value = await api<OnboardingSuggestion>('/onboarding/suggestions', {
+          website: identity.canonicalDomain,
+          requestId: suggestionRequest.current.id,
+          ...(reviewMode ? { review: true } : {}),
+        });
+        setSuggestion(value);
+        setIdentity({
+          brandName: value.draft.brandName,
+          canonicalDomain: value.source.domain,
+          competitors: value.draft.competitors.map((item) => ({
+            name: item.name,
+            canonicalDomain: null,
+          })),
+        });
+        setQuestions(value.draft.questions.map((item) => item.text));
+      } else if (suggestion && suggestion.source.domain !== domain) {
+        setSuggestion(null);
+        setIdentity({
+          brandName: '',
+          canonicalDomain: identity.canonicalDomain,
+          competitors: [{ name: '', canonicalDomain: null }],
+        });
+        setQuestions(['', '', '']);
+      }
+      setWebsiteReady(true);
+    });
+  }
   async function submit(e: SubmitEvent) {
     e.preventDefault();
+    if (action.busy) return;
+    if (!websiteReady) {
+      await prepareWebsite(true);
+      return;
+    }
     if (!review) {
       setReview(true);
       return;
     }
+    if (reviewMode) {
+      setReviewFinished(true);
+      return;
+    }
     await action.run(async () => {
       await api('/project', { ...identity, questions, idempotencyKey: key });
-      if (data.internalTestAccess) {
+      if (saveOnly) {
         await reload();
-        await navigate('/app/overview');
+        await navigate(
+          billingSelection(searchParams)
+            ? `/app/billing${billingSelectionQuery(searchParams)}`
+            : '/app/overview',
+        );
         return;
       }
       const result = await api<{ runId: string }>('/scans', {
@@ -476,93 +570,255 @@ export function V2Onboarding() {
   return (
     <section className="mx-auto max-w-3xl space-y-5">
       <WorkspaceHeading
-        title="What do your buyers ask?"
+        title={
+          websiteReady ? 'Set up your website monitoring' : 'Which website do you want to check?'
+        }
         description={
-          data.internalTestAccess
-            ? 'Set up your staging project first. You will choose engines and start monitoring separately.'
-            : 'Define your company, competitors, and three buyer questions before running your first baseline.'
+          !websiteReady
+            ? 'Enter your website to get draft brand, competitor and buyer-question suggestions. Review and edit them before any monitoring check.'
+            : saveOnly
+              ? 'Add your brand, competitors, and questions here. You do not need to check them in another tool first.'
+              : 'Define your company, competitors, and three buyer questions before running your first baseline.'
         }
       />
-      <ol aria-label="Project setup steps" className="grid grid-cols-2 gap-3 text-sm">
+      {billingSelection(searchParams) && !reviewMode && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Your plan choice is saved for Billing. Setup does not purchase a subscription or grant
+          monitoring access.
+        </p>
+      )}
+      {reviewMode && (
+        <div role="status" className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm">
+          <p className="font-semibold">Staging onboarding review</p>
+          <p className="mt-1">
+            Your existing project stays unchanged. Form edits are not applied. Automatic suggestions
+            are saved separately and use the existing staging allowance.
+          </p>
+          <Link className="mt-2 inline-block underline" to="/app/overview">
+            Exit review
+          </Link>
+        </div>
+      )}
+      <ol aria-label="Project setup steps" className="grid grid-cols-3 gap-3 text-sm">
         <li
-          aria-current={!review ? 'step' : undefined}
-          className={`rounded-lg border px-3 py-3 ${!review ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
+          aria-current={!websiteReady ? 'step' : undefined}
+          className={`rounded-lg border px-3 py-3 ${!websiteReady ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
         >
           <span className="block text-xs">Step 1</span>
+          <span className="mt-1 block font-medium">Website</span>
+        </li>
+        <li
+          aria-current={websiteReady && !review ? 'step' : undefined}
+          className={`rounded-lg border px-3 py-3 ${websiteReady && !review ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
+        >
+          <span className="block text-xs">Step 2</span>
           <span className="mt-1 block font-medium">Project & questions</span>
         </li>
         <li
           aria-current={review ? 'step' : undefined}
           className={`rounded-lg border px-3 py-3 ${review ? 'border-primary/30 bg-primary/5 text-primary' : 'bg-card text-muted-foreground'}`}
         >
-          <span className="block text-xs">Step 2</span>
+          <span className="block text-xs">Step 3</span>
           <span className="mt-1 block font-medium">
-            {data.internalTestAccess ? 'Review & save' : 'Review & run'}
+            {reviewMode ? 'Review only' : saveOnly ? 'Review & save' : 'Review & run'}
           </span>
         </li>
       </ol>
-      <TrialStatus data={data} />
+      {websiteReady &&
+        !reviewMode &&
+        (data.enrolled || data.canScan || data.internalTestAccess) && <TrialStatus data={data} />}
       <form onSubmit={(e) => void submit(e)} className={`${box} space-y-6`}>
-        <section className="space-y-4" aria-labelledby="project-identity-heading">
-          <div className="space-y-1">
-            <h2 id="project-identity-heading" className="font-semibold">
-              Company & competitors
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              These names and domains provide context for your saved evidence.
-            </p>
-          </div>
-          <IdentityFields value={identity} set={setIdentity} disabled={review} />
-        </section>
-        <section className="space-y-4 border-t pt-5" aria-labelledby="buyer-questions-heading">
-          <div className="space-y-1">
-            <h2 id="buyer-questions-heading" className="font-semibold">
-              Three buyer questions
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Use questions a buyer would ask when comparing options.
-              {data.internalTestAccess
-                ? ' Saving creates your project without calling a provider.'
-                : ' All three questions will be checked.'}
-            </p>
-          </div>
-          {questions.map((q, index) => (
-            <label key={index} className="block space-y-2 rounded-lg bg-muted/40 p-3 text-sm">
-              Buyer question {index + 1}
-              <Textarea
+        {!websiteReady ? (
+          <div className="space-y-3">
+            <label className="block space-y-2 text-sm" htmlFor="onboarding-website">
+              Website to monitor
+              <Input
+                id="onboarding-website"
                 required
-                minLength={10}
-                maxLength={500}
-                disabled={review}
-                value={q}
-                placeholder="Which customer onboarding tools work for a small B2B SaaS team?"
+                maxLength={253}
+                disabled={action.busy}
+                inputMode="url"
+                autoComplete="url"
+                placeholder="yourwebsite.com"
+                aria-describedby="onboarding-website-help"
+                value={identity.canonicalDomain}
                 onChange={(e) => {
-                  setQuestions(questions.map((text, i) => (i === index ? e.target.value : text)));
+                  setIdentity({ ...identity, canonicalDomain: e.target.value });
                 }}
               />
-              {identity.brandName.length > 1 &&
-                q.toLowerCase().includes(identity.brandName.toLowerCase()) && (
-                  <span className="text-muted-foreground">
-                    Naming your brand may encourage a mention. Keep it if that reflects a real buyer
-                    question.
-                  </span>
-                )}
             </label>
-          ))}
-        </section>
-        {review && (
-          <Notice>
-            {data.internalTestAccess
-              ? 'Save these three questions for GEO validation. Daily monitoring stays off. Review provider setup and quota before starting a manual check.'
-              : 'We will save a baseline, then re-check successful questions 72 hours after baseline processing finishes. Your trial ends after 14 days. Questions stay fixed during the trial. No card required.'}
-          </Notice>
+            <p id="onboarding-website-help" className="text-sm text-muted-foreground">
+              We read the public homepage and send a short text excerpt to OpenAI to draft setup
+              suggestions. This does not start an AI visibility check.
+            </p>
+            {suggestion && (
+              <p className="text-sm text-muted-foreground">
+                Your edits are kept for the same website. Changing the website starts a new draft.
+              </p>
+            )}
+          </div>
+        ) : (
+          <>
+            {suggestion && (
+              <section
+                className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm"
+                aria-label="Suggested setup"
+              >
+                <p className="font-semibold">
+                  {suggestion.synthetic
+                    ? 'Synthetic example — no website or AI request was made'
+                    : 'Draft suggestions — review before saving'}
+                </p>
+                <p>
+                  {suggestion.draft.category} · Based on{' '}
+                  <a
+                    className="inline-flex min-w-0 items-start gap-2 break-all underline"
+                    href={suggestion.source.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {suggestion.source.domain}
+                  </a>
+                  . {suggestion.cached ? 'Saved draft, generated ' : 'Generated '}
+                  <time dateTime={suggestion.generatedAt}>{time(suggestion.generatedAt)}</time>.
+                </p>
+                <p>
+                  Competitors are inferred candidates, not independently verified. These suggestions
+                  are not monitoring results.
+                </p>
+                <WorkspaceModal
+                  title="Why these suggestions?"
+                  trigger={
+                    <Button type="button" variant="outline" size="sm">
+                      Why these suggestions?
+                    </Button>
+                  }
+                >
+                  <div className="space-y-3 text-sm">
+                    <p>Brand evidence from the homepage: “{suggestion.draft.brandEvidence}”</p>
+                    <ul className="list-disc space-y-1 pl-5">
+                      {suggestion.draft.competitors.map((item) => (
+                        <li key={item.name}>
+                          {item.name}: {item.reason}
+                        </li>
+                      ))}
+                    </ul>
+                    <ul className="list-disc space-y-1 pl-5">
+                      {suggestion.draft.questions.map((item) => (
+                        <li key={item.text}>
+                          {item.text} — {item.reason}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-muted-foreground">
+                      We only read homepage metadata and text. JavaScript-only content, login pages
+                      and other pages may be missing.
+                    </p>
+                  </div>
+                </WorkspaceModal>
+              </section>
+            )}
+            <section className="space-y-4" aria-labelledby="project-identity-heading">
+              <div className="space-y-1">
+                <h2 id="project-identity-heading" className="font-semibold">
+                  Company & competitors
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  These names and domains provide context for your saved evidence.
+                </p>
+              </div>
+              <IdentityFields
+                value={identity}
+                set={setIdentity}
+                disabled={review || action.busy}
+                domainReadOnly
+              />
+              <p className="text-xs text-muted-foreground">
+                Use Back to website to change the domain.
+              </p>
+            </section>
+            <section className="space-y-4 border-t pt-5" aria-labelledby="buyer-questions-heading">
+              <div className="space-y-1">
+                <h2 id="buyer-questions-heading" className="font-semibold">
+                  Three buyer questions
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Use questions a buyer would ask when comparing options.
+                  {reviewMode
+                    ? ' Finish review leaves your existing project and questions unchanged.'
+                    : saveOnly
+                      ? ' Saving creates your project without calling a provider.'
+                      : ' All three questions will be checked.'}
+                </p>
+              </div>
+              {questions.map((q, index) => (
+                <label key={index} className="block space-y-2 rounded-lg bg-muted/40 p-3 text-sm">
+                  Buyer question {index + 1}
+                  <Textarea
+                    required
+                    minLength={10}
+                    maxLength={500}
+                    disabled={review || action.busy}
+                    value={q}
+                    placeholder="Which customer onboarding tools work for a small B2B SaaS team?"
+                    onChange={(e) => {
+                      setQuestions(
+                        questions.map((text, i) => (i === index ? e.target.value : text)),
+                      );
+                    }}
+                  />
+                  {identity.brandName.length > 1 &&
+                    q.toLowerCase().includes(identity.brandName.toLowerCase()) && (
+                      <span className="text-muted-foreground">
+                        Naming your brand may encourage a mention. Keep it if that reflects a real
+                        buyer question.
+                      </span>
+                    )}
+                </label>
+              ))}
+            </section>
+            {review && (
+              <Notice>
+                {reviewMode
+                  ? 'Finish this review without saving a project or running checks. Your existing project, trial and schedule remain unchanged.'
+                  : saveOnly
+                    ? 'Save your project without starting a check. Daily monitoring stays off. Review provider setup, access and quota before starting a manual check.'
+                    : 'We will save a baseline, then re-check successful questions 72 hours after baseline processing finishes. Your trial ends after 14 days. Questions stay fixed during the trial. No card required.'}
+              </Notice>
+            )}
+          </>
         )}
         <Failure error={action.error} />
         <div className="flex flex-wrap gap-3 border-t pt-5">
+          {!websiteReady && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={action.busy}
+              onClick={() => {
+                void prepareWebsite(false);
+              }}
+            >
+              Set up manually
+            </Button>
+          )}
+          {websiteReady && !review && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={action.busy}
+              onClick={() => {
+                setWebsiteReady(false);
+              }}
+            >
+              Back to website
+            </Button>
+          )}
           {review && (
             <Button
               type="button"
               variant="outline"
+              disabled={action.busy}
               onClick={() => {
                 setReview(false);
               }}
@@ -572,14 +828,20 @@ export function V2Onboarding() {
           )}
           <Button disabled={action.busy}>
             {action.busy
-              ? 'Starting…'
-              : review
-                ? data.internalTestAccess
-                  ? 'Create staging project'
-                  : 'Run my baseline'
-                : data.internalTestAccess
-                  ? 'Review project'
-                  : 'Review baseline'}
+              ? websiteReady
+                ? 'Saving…'
+                : 'Reading website and drafting…'
+              : !websiteReady
+                ? 'Suggest setup'
+                : review
+                  ? reviewMode
+                    ? 'Finish review'
+                    : saveOnly
+                      ? 'Create project'
+                      : 'Run my baseline'
+                  : saveOnly
+                    ? 'Review project'
+                    : 'Review baseline'}
           </Button>
         </div>
       </form>
@@ -610,7 +872,6 @@ interface RunView {
 }
 const runPending = (run: RunView) => !run.terminal;
 export function RunProgress({ id }: { id: string }) {
-  const { data } = useOutletContext<WorkspaceContext>();
   const run = useResource<RunView>(`/scans/${id}`, runPending);
   if (!run.data) return <Failure error={run.error} />;
   return (
@@ -629,9 +890,9 @@ export function RunProgress({ id }: { id: string }) {
       {run.data.terminal && run.data.counts.successful === 0 && (
         <p className="text-sm">
           This check ended without a usable answer.{' '}
-          <a className="underline" href={`mailto:${data.supportEmail}`}>
+          <FeedbackButton className="h-auto min-h-0 p-0 text-sm underline">
             Contact the founder for help
-          </a>
+          </FeedbackButton>
           .
         </p>
       )}
@@ -656,14 +917,32 @@ export function V2Questions() {
     await rows.reload();
     await context.reload();
   });
-  const [text, setText] = useState('');
-  const [filter, setFilter] = useState('all');
   if (!data.project) return <Navigate to="/app/onboarding" replace />;
   const runId = fixture.requested
     ? null
     : (params.get('run') ?? sessionStorage.getItem('citescout-run'));
+  const active = data.project.questions.filter((q) => q.enabled && !q.archivedAt);
+  const reason = geoSettings.error
+    ? 'Monitoring configuration unavailable. Reload before starting a check.'
+    : !data.scansEnabled
+      ? 'Monitoring is paused. Saved answers remain available.'
+      : !data.canScan && data.trial?.state !== 'eligible'
+        ? 'Monitoring access is inactive. Review your plan in Settings.'
+        : data.usage.today >= data.usage.dailyLimit
+          ? 'Daily observation limit reached.'
+          : data.usage.month >= data.usage.monthlyLimit
+            ? 'Monthly observation limit reached.'
+            : !active.length
+              ? 'Add an active prompt before monitoring.'
+              : null;
   async function start() {
-    if (geoSettings.loading || geoSettings.error || geoSettings.data?.configured === true) return;
+    if (
+      geoSettings.loading ||
+      geoSettings.error ||
+      (geoSettings.data?.configured && data.plan?.id !== 'legacy_perplexity') ||
+      reason
+    )
+      return;
     await action.run(async () => {
       const result = await api<{ runId: string }>('/scans', {
         mode: data.canScan ? 'today' : 'baseline',
@@ -672,150 +951,70 @@ export function V2Questions() {
       setParams({ run: result.runId });
     });
   }
-  const visible =
-    rows.data?.questions.filter((q) =>
-      filter === 'archived'
-        ? Boolean(q.archivedAt)
-        : filter === 'paused'
-          ? !q.enabled && !q.archivedAt
-          : !q.archivedAt &&
-            q.enabled &&
-            (filter === 'changed'
-              ? q.delta?.changed
-              : filter === 'attention'
-                ? q.needsAttention
-                : true),
-    ) ?? [];
   return (
-    <section className="space-y-6">
-      <WorkspaceHeading
-        title={geoSettings.data?.configured ? 'Prompt Sets' : 'Buyer questions'}
-        description={`Manage buyer questions for ${data.project.brandName}, group them into sets and inspect their saved evidence.`}
-      >
-        {geoSettings.data?.configured !== true &&
-          !geoSettings.loading &&
-          (data.canScan || data.trial?.state === 'eligible') && (
-            <Button
-              disabled={action.busy || Boolean(geoSettings.error)}
-              onClick={() => void start()}
-            >
-              {data.canScan ? 'Check today' : 'Run my baseline'}
-            </Button>
-          )}
-      </WorkspaceHeading>
-      <TrialStatus data={data} />
-      <GeoPromptSets />
-      {geoSettings.data?.configured && (
-        <Notice>
-          Legacy Perplexity saved answers and question management. These literal-match summaries are
-          separate from classified GEO cohort metrics above. Existing frozen trials retain their
-          scheduled follow-up.
-        </Notice>
-      )}
-      <Failure error={action.error ?? rows.error ?? geoSettings.error} />
-      {runId && <RunProgress id={runId} />}
-      <div className="space-y-1 border-t pt-5">
-        <h2 className="text-lg font-semibold">Buyer question library</h2>
-        <p className="text-sm text-muted-foreground">
-          Manage the questions used in your prompt sets. Saved Perplexity answers and literal-match
-          summaries remain available below.
-        </p>
-      </div>
-      {rows.data && (
+    <PromptWorkspace
+      settings={geoSettings}
+      onChange={async () => {
+        await rows.reload();
+        await context.reload();
+      }}
+      notice={
+        <>
+          <Failure error={action.error} />
+          {runId && <RunProgress id={runId} />}
+        </>
+      }
+      legacyMonitor={
         <div className="space-y-2">
-          <p className="text-xl font-medium">
-            Brand match in {rows.data.summary.brandMatched} of {rows.data.summary.available}{' '}
-            available answers.
+          <Button
+            disabled={action.busy || geoSettings.loading || Boolean(reason)}
+            aria-describedby="legacy-prompt-monitor-status"
+            onClick={() => void start()}
+          >
+            Monitor Prompts
+          </Button>
+          <p id="legacy-prompt-monitor-status" className="max-w-sm text-xs text-muted-foreground">
+            {reason ?? 'Perplexity · daily checks within your allowance.'}
           </p>
-          <p className="text-sm text-muted-foreground">
-            {rows.data.summary.tracked} questions tracked · {rows.data.summary.changed} changed of{' '}
-            {rows.data.summary.comparable} comparable questions ·{' '}
-            {rows.data.summary.sourcesUnavailable} with incomplete source comparisons.
-          </p>
-          {rows.data.summary.from && (
-            <p className="text-xs text-muted-foreground">
-              Captured {time(rows.data.summary.from)} — {time(rows.data.summary.to)}
-            </p>
+          {reason && (
+            <Link className="text-xs text-primary underline" to="/app/settings">
+              Review monitoring settings
+            </Link>
           )}
         </div>
-      )}
-      {!data.canScan && ['completed', 'expired', 'cancelled'].includes(data.trial?.state ?? '') && (
-        <Notice>
-          Monitoring stopped. Your saved evidence remains available.{' '}
-          <Link className="underline" to="/app/settings">
-            Continue daily monitoring — $19/month
-          </Link>
-        </Notice>
-      )}
-      <div role="group" aria-label="Question filter" className="flex flex-wrap gap-2">
-        {[
-          ['all', 'All'],
-          ['changed', 'Changed'],
-          ['attention', 'Needs attention'],
-          ['paused', 'Paused'],
-          ['archived', 'Archived'],
-        ].map(([value, label]) => (
-          <Button
-            key={value}
-            size="sm"
-            variant={filter === value ? 'default' : 'outline'}
-            onClick={() => {
-              if (value) setFilter(value);
-            }}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
-      {rows.loading ? (
-        <p role="status">Loading evidence…</p>
-      ) : visible.length === 0 ? (
-        <Notice>No questions in this view.</Notice>
-      ) : (
-        <div className="grid gap-4">
-          {visible.map((q) => (
-            <QuestionCard
-              key={q.id}
-              q={q}
-              canEdit={!['baseline', 'waiting', 'followup'].includes(data.trial?.state ?? '')}
-              canResume={data.canScan}
-              busy={action.busy}
-              mutate={(work) => action.run(work)}
-            />
-          ))}
-        </div>
-      )}
-      {data.canScan && (
-        <form
-          className={`${box} space-y-3`}
-          onSubmit={(e) => {
-            e.preventDefault();
-            void action.run(async () => {
-              await api('/questions', { text });
-              setText('');
-            });
-          }}
-        >
-          <label htmlFor="new-question" className="font-medium">
-            Add a buyer question
-          </label>
-          <Textarea
-            id="new-question"
-            required
-            minLength={10}
-            maxLength={500}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-            }}
-          />
-          <p className="text-xs text-muted-foreground">
-            Up to ten active questions. New questions join the next UTC day's checks.
+      }
+      legacy={
+        <>
+          <p className="text-sm text-muted-foreground">
+            These saved Perplexity answers use literal brand matching, separately from multi-engine
+            answer analysis. A name match is not a recommendation or ranking.
           </p>
-          <Button disabled={action.busy}>Add question</Button>
-        </form>
-      )}
-    </section>
+          <Failure error={action.error ?? rows.error} />
+          {rows.loading ? (
+            <p role="status">Loading saved answers…</p>
+          ) : rows.error ? (
+            <Button variant="outline" onClick={() => void rows.reload()}>
+              Retry saved answers
+            </Button>
+          ) : rows.data?.questions.length ? (
+            <div className="grid gap-3">
+              {rows.data.questions.map((q) => (
+                <QuestionCard
+                  key={q.id}
+                  q={q}
+                  canEdit={!['baseline', 'waiting', 'followup'].includes(data.trial?.state ?? '')}
+                  canResume={data.canScan}
+                  busy={action.busy}
+                  mutate={(work) => action.run(work)}
+                />
+              ))}
+            </div>
+          ) : (
+            <Notice>No previous Perplexity answers yet.</Notice>
+          )}
+        </>
+      }
+    />
   );
 }
 function QuestionCard({
@@ -950,7 +1149,7 @@ export function V2QuestionDetail() {
   return (
     <section className="space-y-6">
       <Link to="/app/questions" className="text-sm underline">
-        ← Buyer questions
+        ← Back to Prompts
       </Link>
       <h1 className="text-2xl font-semibold leading-snug">
         {history.data?.question.text ?? 'Question history'}
@@ -1254,7 +1453,7 @@ function Answer({ observation: o, label }: { observation: V2Observation; label: 
   return (
     <article className={`${box} min-w-0 space-y-4`}>
       <header>
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+        <p className="text-xs font-medium text-muted-foreground">
           {label} · {time(o.capturedAt)}
         </p>
         <p className="mt-2 text-sm font-medium">{o.questionText}</p>
@@ -1273,11 +1472,12 @@ function Answer({ observation: o, label }: { observation: V2Observation; label: 
             {o.legacySources.map((source, index) => (
               <li key={index}>
                 <a
-                  className="break-all underline"
+                  className="inline-flex min-w-0 items-start gap-2 break-all underline"
                   href={source.url}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
+                  <SourceIcon url={source.url} />
                   {source.title ?? source.url}
                 </a>
               </li>
@@ -1334,7 +1534,7 @@ function Answer({ observation: o, label }: { observation: V2Observation; label: 
                   className="min-w-0 rounded-lg border p-3 text-sm"
                 >
                   <a
-                    className="break-words underline"
+                    className="inline-flex min-w-0 items-start gap-2 break-words underline"
                     href={source.url}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -1342,6 +1542,7 @@ function Answer({ observation: o, label }: { observation: V2Observation; label: 
                       emitEvent('source_opened', o.id, { sourceKey: source.key });
                     }}
                   >
+                    <SourceIcon url={source.url} />
                     {source.title ?? source.hostname}
                   </a>
                   <p className="mt-1 break-all text-xs text-muted-foreground">{source.url}</p>
@@ -1388,7 +1589,7 @@ function Answer({ observation: o, label }: { observation: V2Observation; label: 
     </article>
   );
 }
-interface Billing {
+export interface Billing extends PlanBillingStatus {
   checkoutAvailable: boolean;
   portalAvailable: boolean;
   availabilityMessage: string | null;
@@ -1401,6 +1602,7 @@ export function V2Settings() {
   const billing = useResource<Billing>('/api/billing/status');
   const action = useAction(reload);
   const [identity, setIdentity] = useState<IdentityDraft | null>(null);
+  const [identityOpen, setIdentityOpen] = useState(false);
   const [confirmation, setConfirmation] = useState('');
   const [forfeit, setForfeit] = useState(false);
   const [monitoringReady, setMonitoringReady] = useState(false);
@@ -1447,51 +1649,108 @@ export function V2Settings() {
           Account
         </a>
       </nav>
-      <TrialStatus data={data} />
       <GeoSettingsPanel onReady={setMonitoringReady} />
       <Failure error={action.error ?? billing.error} />
-      <form
-        id="brand-context"
-        className={`${box} scroll-mt-20 space-y-4`}
-        onSubmit={(e) => {
-          e.preventDefault();
-          void action.run(async () => {
-            await api(
-              '/project',
-              { ...value, expectedContextVersion: data.project?.contextVersion },
-              'PATCH',
-            );
-            setIdentity(null);
-          });
-        }}
-      >
-        <h2 className="text-lg font-medium">Brand and competitors</h2>
-        <IdentityFields value={value} set={setIdentity} disabled={locked} />
-        <p className="text-sm text-muted-foreground">
-          Future checks start a new comparison baseline when names, domains or competitors change.
-          Saved evidence stays unchanged.
-        </p>
-        {locked ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={action.busy}
-            onClick={() => void action.run(() => api('/trial/cancel', {}))}
+      <section id="brand-context" className={`${box} scroll-mt-20 space-y-3`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-medium">Brand and competitors</h2>
+          <WorkspaceModal
+            title="Brand and competitors"
+            description="Names and domains provide context for future checks"
+            trigger={
+              <Button variant="outline" size="sm">
+                Edit brand and competitors
+              </Button>
+            }
+            open={identityOpen}
+            onOpenChange={(open) => {
+              if (!open && action.busy) return;
+              if (!open) setIdentity(null);
+              setIdentityOpen(open);
+            }}
+            footer={
+              <>
+                <Button
+                  variant="outline"
+                  disabled={action.busy}
+                  onClick={() => {
+                    setIdentity(null);
+                    setIdentityOpen(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+                {locked ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={action.busy}
+                    onClick={() => void action.run(() => api('/trial/cancel', {}))}
+                  >
+                    Stop trial to change configuration
+                  </Button>
+                ) : (
+                  <Button type="submit" form="brand-context-form" disabled={action.busy}>
+                    Save configuration
+                  </Button>
+                )}
+              </>
+            }
           >
-            Stop trial to change configuration
-          </Button>
-        ) : (
-          <Button disabled={action.busy}>Save configuration</Button>
+            <Failure error={action.error} />
+            <form
+              id="brand-context-form"
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void action.run(async () => {
+                  await api(
+                    '/project',
+                    { ...value, expectedContextVersion: data.project?.contextVersion },
+                    'PATCH',
+                  );
+                  setIdentity(null);
+                  setIdentityOpen(false);
+                });
+              }}
+            >
+              <IdentityFields value={value} set={setIdentity} disabled={locked} />
+              <p className="text-sm text-muted-foreground">
+                Future checks start a new comparison baseline when names, domains or competitors
+                change. Saved evidence stays unchanged.
+              </p>
+            </form>
+          </WorkspaceModal>
+        </div>
+        <p className="text-sm">
+          {data.project.brandName}{' '}
+          <span className="text-muted-foreground">· {data.project.canonicalDomain}</span>
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {data.project.competitors.length
+            ? data.project.competitors.map((competitor) => competitor.name).join(' · ')
+            : 'No competitors added'}
+        </p>
+        {locked && (
+          <p className="text-xs text-muted-foreground">
+            Brand changes are locked during the trial. Open Edit for the available options.
+          </p>
         )}
-      </form>
+      </section>
       <section id="subscription" className={`${box} scroll-mt-20 space-y-4`}>
         <h2 className="text-lg font-medium">Monitoring and billing</h2>
         <p className="text-sm">
-          Legacy Perplexity plan · $19/month · One project · Up to 10 active questions · Daily
-          checks
+          {billing.loading
+            ? 'Loading plan…'
+            : billing.error
+              ? 'Subscription status unavailable.'
+              : billing.data?.subscription
+                ? subscriptionLabel(billing.data.plan)
+                : 'No subscription. Review available plans in Billing & usage.'}
         </p>
         <p className="text-xs text-muted-foreground">
-          GEO owner preview and collector budgets are separate from this subscription.
+          Your verified subscription determines monitoring engines and limits. Saved evidence stays
+          available when monitoring stops.
         </p>
         <p className="text-sm text-muted-foreground">
           {data.usage.today}/{data.usage.dailyLimit} attempts today · {data.usage.month}/
@@ -1500,20 +1759,19 @@ export function V2Settings() {
           (UTC boundaries).
         </p>
         <p className="text-sm">
-          Subscription: {billing.data?.subscription?.status ?? 'No subscription'}
+          Subscription:{' '}
+          {billing.loading
+            ? 'Loading…'
+            : billing.error
+              ? 'Unavailable'
+              : (billing.data?.subscription?.status ?? 'No subscription')}
           {billing.data?.subscription?.testMode ? ' · Test-mode billing' : ''}
         </p>
         {billing.data?.availabilityMessage && <Notice>{billing.data.availabilityMessage}</Notice>}
         <div className="flex flex-wrap gap-3">
-          {billing.data?.checkoutAvailable && (
-            <Button
-              className="h-auto min-h-9 max-w-full whitespace-normal"
-              disabled={action.busy || fixture.requested}
-              onClick={() => void billingAction('checkout')}
-            >
-              Continue daily monitoring — $19/month
-            </Button>
-          )}
+          <Button asChild variant="outline">
+            <Link to="/app/billing">View plans & usage</Link>
+          </Button>
           {billing.data?.portalAvailable && (
             <Button
               variant="outline"

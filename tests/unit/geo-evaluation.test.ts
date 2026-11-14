@@ -13,6 +13,13 @@ import { buildGeoEvaluation, projectGeoClassification } from '../../src/domain/g
 import { diagnoseGeo } from '../../src/domain/geo-diagnosis';
 import type { GeoObservation } from '../../src/shared/geo';
 import type { NativeDecision } from '../../src/shared/geo-analysis';
+import {
+  createSourceReview,
+  readSourceReview,
+  reviewSourceGroup,
+  sourceReviewGroups,
+} from '../../scripts/geo-source-review';
+import { startGeoReview } from '../../scripts/review-geo';
 
 function at<T>(values: T[], index = 0): T {
   const value = values[index];
@@ -153,6 +160,333 @@ function gold(source: EvaluationInput, packet: ReturnType<typeof prepareEvaluati
 }
 
 describe('local human GEO evaluation', () => {
+  it('keeps prospective G3 review blinded and held out, with unmeasured dimensions explicit', () => {
+    const data = input();
+    for (const row of data.records)
+      row.observation.capture.sources = [
+        {
+          id: 's1',
+          url: 'https://rival.example/page',
+          canonicalUrl: 'https://rival.example/page',
+          title: null,
+          referenceLevel: 'answer',
+        },
+      ];
+    const packet = prepareEvaluation(data, undefined, 'g3_validation');
+    expect(packet.manifest.records.every((row) => row.split === 'held_out')).toBe(true);
+    expect(packet.review.every((row) => row.sources.length === 1)).toBe(true);
+    expect(sourceReviewGroups(packet)).toEqual([]);
+    for (const row of packet.labels.records) {
+      expect(Object.values(row.values).every((value) => value === null)).toBe(true);
+      expect(Object.keys(row.values).some((field) => /^(source|evidence)\./u.test(field))).toBe(
+        false,
+      );
+      expect(row.values).toHaveProperty('task.inspect_owned_page');
+    }
+    const labels = gold(data, packet),
+      lock = freezeHumanLabels(packet, labels);
+    const report = scoreEvaluation(data, packet, labels, lock);
+    expect(report).toMatchObject({
+      status: 'critical_fields_human_reviewed_synthetic',
+      reviewScope: 'g3_validation',
+      pilotGatePassed: false,
+      unmeasuredDimensions: ['source role', 'source type', 'segment relevance'],
+    });
+    at(labels.records).values.answerQuality = null;
+    expect(() => freezeHumanLabels(packet, labels)).toThrow(/Missing or invalid/);
+    const tampered = structuredClone(packet);
+    delete tampered.manifest.reviewScope;
+    expect(() => scoreEvaluation(data, tampered, gold(data, packet), lock)).toThrow(/changed/);
+    const full = prepareEvaluation(data);
+    delete at(full.review).options['source.s1.role'];
+    expect(() => sourceReviewGroups(full)).toThrow('Source field missing');
+  });
+  it('evaluates repeated-source tasks within their frozen partition and project context', () => {
+    const data = input([
+      record('a', 'one'),
+      record('b', 'one'),
+      record('c', 'two'),
+      record('d', 'one'),
+    ]);
+    for (const row of data.records) {
+      if (row.observation.id === 'd') continue;
+      row.observation.capture.sources = [
+        {
+          id: 'shared',
+          url: 'https://community.example/thread',
+          canonicalUrl: 'https://community.example/thread',
+          title: 'Synthetic discussion',
+          referenceLevel: 'answer',
+        },
+      ];
+      row.classification = projectGeoClassification(
+        row.observation,
+        buildGeoEvaluation(row.observation),
+        row.classification.native,
+      );
+    }
+    const packet = prepareEvaluation(data),
+      labels = gold(data, packet);
+    for (const row of labels.records) {
+      if (row.id !== 'd') {
+        row.values['source.shared.role'] = 'third_party';
+        row.values['source.shared.type'] = 'unknown';
+      }
+      row.values['task.inspect_earned_source'] = ['a', 'b'].includes(row.id) ? 'yes' : 'no';
+    }
+    expect(packet.manifest.records.find((r) => r.id === 'a')?.split).toBe(
+      packet.manifest.records.find((r) => r.id === 'b')?.split,
+    );
+    expect(packet.manifest.records.find((r) => r.id === 'a')?.split).not.toBe(
+      packet.manifest.records.find((r) => r.id === 'c')?.split,
+    );
+    const report = scoreEvaluation(data, packet, labels, freezeHumanLabels(packet, labels));
+    expect(report.overall.fields['task.inspect_earned_source']?.disagreements).toEqual([]);
+    expect(report.scoringVersion).toBe('geo-local-scoring-4');
+
+    const separated = input([record('x', 'same'), record('y', 'same')]);
+    for (const row of separated.records) {
+      row.observation.capture.sources = structuredClone(
+        at(data.records).observation.capture.sources,
+      );
+      row.classification = projectGeoClassification(
+        row.observation,
+        buildGeoEvaluation(row.observation),
+        row.classification.native,
+      );
+    }
+    at(separated.records, 1).observation.projectId = 'different-project';
+    at(separated.records, 1).observation.context.projectId = 'different-project';
+    const isolatedPacket = prepareEvaluation(separated),
+      isolatedLabels = gold(separated, isolatedPacket);
+    for (const row of isolatedLabels.records) {
+      row.values['source.shared.role'] = 'third_party';
+      row.values['source.shared.type'] = 'unknown';
+    }
+    expect(
+      scoreEvaluation(
+        separated,
+        isolatedPacket,
+        isolatedLabels,
+        freezeHumanLabels(isolatedPacket, isolatedLabels),
+      ).overall.fields['task.inspect_earned_source']?.disagreements,
+    ).toEqual([]);
+  });
+  it('replays legacy methods and scoring without silently promoting the frozen packet', () => {
+    const versions = { rubric: 'geo-rubric-1', policy: 'geo-policy-1', ownership: 'geo-domain-1' };
+    const data = input();
+    for (const row of data.records) {
+      row.classification = projectGeoClassification(
+        row.observation,
+        buildGeoEvaluation(row.observation, row.checks, row.criteria, versions),
+        row.classification.native,
+        versions,
+      );
+      row.diagnoses = diagnoseGeo(row.observation, row.classification, row.checks);
+    }
+    const packet = prepareEvaluation(data, versions),
+      labels = gold(data, packet);
+    const before = JSON.stringify(packet);
+    const report = scoreEvaluation(data, packet, labels, freezeHumanLabels(packet, labels));
+    expect(report.scoringVersion).toBe('geo-local-scoring-2');
+    expect(report.safety.storedPolicyDisagreements).toBe(0);
+    expect(JSON.stringify(packet)).toBe(before);
+    expect(() => prepareEvaluation(data, { ...versions, policy: 'unrecognized' })).toThrow(
+      'GEO_UNSUPPORTED_ANALYSIS_VERSIONS',
+    );
+  });
+  it('completes the local grouped API review and freezes both files without filling raw human source values', async () => {
+    const data = input();
+    for (const row of data.records)
+      row.observation.capture.sources = [
+        {
+          id: 's1',
+          url: 'https://rival.example/page',
+          canonicalUrl: 'https://rival.example/page',
+          title: null,
+          referenceLevel: 'retrieved',
+        },
+      ];
+    const packet = prepareEvaluation(data),
+      labels = gold(data, packet);
+    labels.reviewedAt = null;
+    for (const row of labels.records)
+      for (const field of Object.keys(row.values))
+        if (field.startsWith('source.')) row.values[field] = null;
+    const dir = mkdtempSync(join(tmpdir(), 'citescout-review-complete-'));
+    writeFileSync(join(dir, 'packet.json'), JSON.stringify(packet));
+    writeFileSync(join(dir, 'human-labels.json'), JSON.stringify(labels));
+    const local = await startGeoReview(dir);
+    try {
+      const headers = {
+        'X-Review-Token': local.token,
+        Origin: local.origin,
+        'Content-Type': 'application/json',
+      };
+      const state = async () =>
+        (await (await fetch(`${local.origin}/state`, { headers })).json()) as {
+          version: string;
+          labels: typeof labels;
+        };
+      const post = (path: string, body: unknown) =>
+        fetch(`${local.origin}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+      const firstRow = at(labels.records);
+      const complete = async () =>
+        post('/save', {
+          version: (await state()).version,
+          reviewedBy: 'Synthetic human',
+          recordId: firstRow.id,
+          values: firstRow.values,
+          complete: true,
+        });
+      const groups = sourceReviewGroups(packet);
+      for (const group of groups.slice(0, -1))
+        expect(
+          (
+            await post('/sources', {
+              version: (await state()).version,
+              reviewedBy: 'Synthetic human',
+              action: 'save',
+              groupId: group.id,
+              value: group.kind === 'role' ? 'competitor_owned' : 'unknown',
+            })
+          ).status,
+        ).toBe(200);
+      expect((await complete()).status).toBe(422);
+      const last = at(groups.slice(-1));
+      expect(
+        (
+          await post('/sources', {
+            version: (await state()).version,
+            reviewedBy: 'Synthetic human',
+            action: 'save',
+            groupId: last.id,
+            value: last.kind === 'role' ? 'competitor_owned' : 'unknown',
+          })
+        ).status,
+      ).toBe(200);
+      expect((await complete()).status).toBe(200);
+      const finished = await state();
+      expect(finished.labels.reviewedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
+      expect(
+        finished.labels.records.every(
+          (row) => row.values['source.s1.role'] === null && row.values['source.s1.type'] === null,
+        ),
+      ).toBe(true);
+      const provenance = await readSourceReview(dir);
+      if (!provenance) throw Error('Source review missing');
+      expect(freezeHumanLabels(packet, finished.labels, provenance).sourceReviewHash).toBeTypeOf(
+        'string',
+      );
+      expect(
+        (
+          await post('/sources', {
+            version: finished.version,
+            reviewedBy: 'Synthetic human',
+            action: 'save',
+            groupId: last.id,
+            value: 'unknown',
+          })
+        ).status,
+      ).toBe(409);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        local.server.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        }),
+      );
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it('freezes source provenance and excludes assisted annotations from all accuracy partitions', () => {
+    const data = input();
+    for (const row of data.records) {
+      row.observation.capture.sources = [
+        {
+          id: 's1',
+          url: 'https://rival.example/page',
+          canonicalUrl: 'https://rival.example/page',
+          title: null,
+          referenceLevel: 'retrieved',
+        },
+      ];
+      row.classification.sources = [{ id: 's1', role: 'competitor_owned', type: 'unknown' }];
+    }
+    const packet = prepareEvaluation(data),
+      labels = gold(data, packet);
+    for (const row of labels.records)
+      for (const field of Object.keys(row.values))
+        if (field.startsWith('source.')) row.values[field] = null;
+    const original = JSON.stringify(labels);
+    expect(() => freezeHumanLabels(packet, labels)).toThrow(/Missing/);
+    let review = createSourceReview(packet);
+    for (const group of sourceReviewGroups(packet))
+      review = reviewSourceGroup(packet, review, {
+        action: 'save',
+        reviewedBy: 'Synthetic reviewer',
+        groupId: group.id,
+        value: group.kind === 'role' ? 'competitor_owned' : 'unknown',
+      });
+    const lock = freezeHumanLabels(packet, labels, review);
+    const report = scoreEvaluation(data, packet, labels, lock, review);
+    expect(report.sourceReview?.assistedFieldsExcludedFromAccuracy).toBe(4);
+    expect(report.sourceReview?.independentGroupDecisions).toBe(2);
+    const calibration = report.byPartition.calibration,
+      heldOut = report.byPartition.held_out;
+    if (!calibration || !heldOut) throw Error('Missing expected partitions');
+    expect(calibration.fields).not.toHaveProperty('source.s1.role');
+    expect(heldOut.fields['source.s1.role']?.reviewed).toBe(1);
+    expect(report.overall.fields['source.s1.role']?.reviewed).toBe(1);
+    expect(report.pilotGatePassed).toBe(false);
+    expect(report.scoringVersion).toBe('geo-local-scoring-4');
+    expect(report.status).toBe('partially_human_reviewed_synthetic');
+    expect(report.sourceReview?.contentCoverage.overall).toEqual({
+      sourceOccurrences: 3,
+      withCheckedContent: 0,
+      withoutCheckedContent: 3,
+    });
+    expect(report.sourceReview?.contentCoverage.byPartition.held_out.sourceOccurrences).toBe(1);
+    expect(JSON.stringify(labels)).toBe(original);
+    const changed = structuredClone(review);
+    at(Object.values(changed.decisions).filter((decision) => decision !== undefined)).reviewedBy =
+      'changed';
+    expect(() => scoreEvaluation(data, packet, labels, lock, changed)).toThrow(/changed/);
+    expect(() => scoreEvaluation(data, packet, labels, lock)).toThrow();
+  });
+  it('does not request a duplicate support label and scores legacy packets without inventing one', () => {
+    const data = input();
+    const modern = prepareEvaluation(data);
+    expect(modern.review[0]?.options).not.toHaveProperty('evidence.support');
+    const legacy = structuredClone(modern);
+    for (const row of legacy.review) row.options['evidence.support'] = ['yes', 'no', 'unknown'];
+    for (const row of legacy.labels.records) row.values['evidence.support'] = null;
+    const labels = gold(data, legacy);
+    for (const row of labels.records) row.values['evidence.support'] = null;
+    const packetBefore = JSON.stringify(legacy),
+      labelsBefore = JSON.stringify(labels);
+    const lock = freezeHumanLabels(legacy, labels);
+    const report = scoreEvaluation(data, legacy, labels, lock);
+    expect(report.overall.fields).not.toHaveProperty('evidence.support');
+    expect(report.overall.fields.evidenceSupport?.reviewed).toBe(data.records.length);
+    expect(report).toMatchObject({
+      pilotGatePassed: false,
+      unscoredLegacyFields: [{ field: 'evidence.support', records: 3 }],
+    });
+    expect(JSON.stringify(legacy)).toBe(packetBefore);
+    expect(JSON.stringify(labels)).toBe(labelsBefore);
+    const changedLegacyValue = structuredClone(labels);
+    at(changedLegacyValue.records).values['evidence.support'] = 'yes';
+    expect(() => scoreEvaluation(data, legacy, changedLegacyValue, lock)).toThrow(/changed/);
+    const missing = structuredClone(labels);
+    at(missing.records).values.evidenceSupport = null;
+    expect(() => freezeHumanLabels(legacy, missing)).toThrow(/Missing or invalid/);
+    const tampered = structuredClone(legacy);
+    at(tampered.review).answerText += 'changed';
+    expect(() =>
+      scoreEvaluation(data, tampered, labels, freezeHumanLabels(tampered, labels)),
+    ).toThrow(/changed/);
+  });
   it('the CLI rejects public paths and preserves prepared packets and frozen label locks', () => {
     const directory = mkdtempSync(join(tmpdir(), 'citescout-evaluation-'));
     const privateRoot = join(directory, 'research/private');
@@ -189,6 +523,23 @@ describe('local human GEO evaluation', () => {
       expect(
         JSON.parse(readFileSync(join(privateRoot, 'review/report.json'), 'utf8')),
       ).toMatchObject({ dataset: 'synthetic', pilotGatePassed: false });
+      const legacy = prepareEvaluation(data, {
+        rubric: 'geo-rubric-1',
+        policy: 'geo-policy-1',
+        ownership: 'geo-domain-1',
+      });
+      mkdirSync(join(privateRoot, 'legacy'));
+      writeFileSync(join(privateRoot, 'legacy/packet.json'), JSON.stringify(legacy));
+      writeFileSync(
+        join(privateRoot, 'legacy/human-labels.json'),
+        JSON.stringify(gold(data, legacy)),
+      );
+      run('freeze', 'research/private/legacy');
+      run('score', 'research/private/legacy');
+      run('prepare-g3', 'research/private/g3');
+      expect(JSON.parse(readFileSync(join(privateRoot, 'g3/packet.json'), 'utf8'))).toMatchObject({
+        manifest: { reviewScope: 'g3_validation' },
+      });
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

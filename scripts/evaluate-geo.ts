@@ -10,9 +10,17 @@ import {
   geoClassificationSchema,
   geoDiagnosisSchema,
   geoVersions,
+  readGeoVersions,
   type GeoPageCheck,
+  type GeoVersionSet,
 } from '../src/shared/geo-analysis';
 import { geoEngineSchema, type GeoObservation } from '../src/shared/geo';
+import {
+  isAssistedSourceField,
+  readSourceReview,
+  resolveSourceReview,
+  type SourceReview,
+} from './geo-source-review';
 
 export interface EvaluationRecord {
   observation: GeoObservation;
@@ -48,7 +56,12 @@ const templates = [
   'inspect_earned_source',
 ];
 const abstentions = new Set(['unknown', 'unclear', 'ambiguous', 'unavailable', 'not_applicable']);
-function fieldOptions(row: EvaluationRecord) {
+export const isEvaluationReviewField = (field: string) => field !== 'evidence.support';
+function fieldOptions(
+  row: EvaluationRecord,
+  versions: GeoVersionSet,
+  reviewScope?: 'g3_validation',
+) {
   const fields: Record<string, readonly string[]> = {
     captureQuality: ['complete', 'partial', 'no_feature'],
     answerQuality: geoClassificationSchema.shape.answerQuality.options,
@@ -57,11 +70,12 @@ function fieldOptions(row: EvaluationRecord) {
     evidenceSupport: geoClassificationSchema.shape.evidenceSupport.options,
   };
   for (const [id, question] of Object.entries(
-    buildGeoEvaluation(row.observation, row.checks, row.criteria).questions,
+    buildGeoEvaluation(row.observation, row.checks, row.criteria, versions).questions,
   )) {
     if (id.startsWith('fit_') && question.type === 'choice')
       fields[`fit.${id.slice(4)}`] = Object.keys(question.criteria);
-    if (id.startsWith('evidence_')) fields[`evidence.${id.slice(9)}`] = ['yes', 'no', 'unknown'];
+    if (id.startsWith('evidence_') && question.type === 'noul')
+      fields[`evidence.${id.slice(9)}`] = ['yes', 'no', 'unknown'];
   }
   for (const competitor of row.observation.context.competitors.slice(0, 5))
     fields[`competitor.${competitor.id}`] = geoClassificationSchema.shape.brandStance.options;
@@ -74,9 +88,21 @@ function fieldOptions(row: EvaluationRecord) {
   for (const issue of issues)
     fields[`diagnosis.${issue}`] = ['none', ...geoDiagnosisSchema.shape.status.options];
   for (const template of templates) fields[`task.${template}`] = ['yes', 'no', 'unknown'];
-  return fields;
+  return reviewScope === 'g3_validation'
+    ? Object.fromEntries(
+        Object.entries(fields).filter(([field]) => !/^(source|evidence)\./u.test(field)),
+      )
+    : fields;
 }
-export function prepareEvaluation(input: EvaluationInput) {
+export function prepareEvaluation(
+  input: EvaluationInput,
+  method: GeoVersionSet = geoVersions,
+  reviewScope?: 'g3_validation',
+) {
+  const versions = readGeoVersions(method);
+  z.literal('g3_validation').optional().parse(reviewScope);
+  if (reviewScope !== undefined && versions.policy === 'geo-policy-1')
+    throw new Error('Unsupported review scope or method');
   const ids = input.records.map((row) => row.observation.id),
     expected = input.expectedObservationIds;
   if (
@@ -126,7 +152,7 @@ export function prepareEvaluation(input: EvaluationInput) {
   const groups = [...grouped.values()]
     .map((members) => ({ id: hash([...members].sort()), members: [...members].sort() }))
     .sort((a, b) => a.id.localeCompare(b.id));
-  const heldOut = Math.max(1, Math.round(groups.length / 3));
+  const heldOut = reviewScope ? groups.length : Math.max(1, Math.round(groups.length / 3));
   const assigned = groups.map((group, index) => ({
     ...group,
     split: index >= groups.length - heldOut ? ('held_out' as const) : ('calibration' as const),
@@ -134,7 +160,8 @@ export function prepareEvaluation(input: EvaluationInput) {
   const manifest = {
     version: 'geo-local-evaluation-1',
     dataset: input.dataset,
-    versions: geoVersions,
+    versions,
+    ...(reviewScope ? { reviewScope } : {}),
     inputHash: hash(input),
     groups: assigned,
     records: input.records.map((row) => {
@@ -165,8 +192,9 @@ export function prepareEvaluation(input: EvaluationInput) {
       sources: row.observation.capture.sources,
       checks: row.checks,
       criteria: row.criteria,
-      candidates: buildGeoEvaluation(row.observation, row.checks, row.criteria).candidates,
-      options: fieldOptions(row),
+      candidates: buildGeoEvaluation(row.observation, row.checks, row.criteria, versions)
+        .candidates,
+      options: fieldOptions(row, versions, reviewScope),
     })),
     labels: {
       reviewedBy: '',
@@ -174,7 +202,10 @@ export function prepareEvaluation(input: EvaluationInput) {
       records: input.records.map((row) => ({
         id: row.observation.id,
         values: Object.fromEntries(
-          Object.keys(fieldOptions(row)).map((field) => [field, null as string | null]),
+          Object.keys(fieldOptions(row, versions, reviewScope)).map((field) => [
+            field,
+            null as string | null,
+          ]),
         ),
       })),
     },
@@ -182,7 +213,29 @@ export function prepareEvaluation(input: EvaluationInput) {
 }
 type Packet = ReturnType<typeof prepareEvaluation>;
 type HumanLabels = Packet['labels'];
-export function freezeHumanLabels(packet: Packet, labels: HumanLabels) {
+function preparedPacketHash(packet: Packet) {
+  // Legacy packets included a duplicate choice question with no corresponding prediction.
+  const normalized = structuredClone(packet);
+  for (const row of normalized.review) {
+    if (
+      Object.hasOwn(row.options, 'evidence.support') &&
+      hash(row.options['evidence.support']) !== hash(['yes', 'no', 'unknown'])
+    )
+      throw new Error('Prepared legacy field changed');
+    delete row.options['evidence.support'];
+  }
+  for (const row of normalized.labels.records) {
+    if (Object.hasOwn(row.values, 'evidence.support') && row.values['evidence.support'] !== null)
+      throw new Error('Prepared legacy placeholder changed');
+    delete row.values['evidence.support'];
+  }
+  return hash(normalized);
+}
+export function freezeHumanLabels(
+  packet: Packet,
+  labels: HumanLabels,
+  sourceReview?: SourceReview,
+) {
   if (
     !labels.reviewedBy.trim() ||
     !labels.reviewedAt ||
@@ -194,19 +247,35 @@ export function freezeHumanLabels(packet: Packet, labels: HumanLabels) {
     new Set(labels.records.map((row) => row.id)).size !== packet.review.length
   )
     throw new Error('Every observation requires one human label record');
+  const resolved = sourceReview ? resolveSourceReview(packet, labels, sourceReview).labels : labels;
   for (const row of packet.review) {
-    const label = labels.records.find((label) => label.id === row.id);
+    const label = resolved.records.find((label) => label.id === row.id);
     if (!label || hash(Object.keys(label.values).sort()) !== hash(Object.keys(row.options).sort()))
       throw new Error('Human label fields must match the blinded packet');
     for (const [field, options] of Object.entries(row.options)) {
       const value = label.values[field] ?? null;
+      if (value === null && !isEvaluationReviewField(field)) continue;
       if (value === null || !options.includes(value))
         throw new Error(`Missing or invalid human label for ${field}`);
     }
   }
-  return { packetHash: hash(packet), labelsHash: hash(labels) };
+  return {
+    packetHash: hash(packet),
+    labelsHash: hash(labels),
+    ...(sourceReview ? { sourceReviewHash: hash(sourceReview) } : {}),
+  };
 }
-function predictions(row: EvaluationRecord) {
+const taskInput = (row: EvaluationRecord) => ({
+  observation: row.observation,
+  analysis: {
+    id: `stored-${row.observation.id}`,
+    state: 'completed' as const,
+    createdAt: row.observation.capturedAt,
+    classification: row.classification,
+    diagnoses: row.diagnoses,
+  },
+});
+function predictions(row: EvaluationRecord, tasks = actionCandidates([taskInput(row)])) {
   const classification = row.classification;
   const fields: Record<string, string> = {
     captureQuality: row.observation.capture.quality,
@@ -227,20 +296,14 @@ function predictions(row: EvaluationRecord) {
   for (const issue of issues)
     fields[`diagnosis.${issue}`] =
       row.diagnoses.find((diagnosis) => diagnosis.type === issue)?.status ?? 'none';
-  const tasks = actionCandidates([
-    {
-      observation: row.observation,
-      analysis: {
-        id: `stored-${row.observation.id}`,
-        state: 'completed',
-        createdAt: row.observation.capturedAt,
-        classification,
-        diagnoses: row.diagnoses,
-      },
-    },
-  ]);
   for (const template of templates)
-    fields[`task.${template}`] = tasks.some((task) => task.templateId === template) ? 'yes' : 'no';
+    fields[`task.${template}`] = tasks.some(
+      (task) =>
+        task.templateId === template &&
+        task.evidence.some((proof) => proof.observationId === row.observation.id),
+    )
+      ? 'yes'
+      : 'no';
   return fields;
 }
 const ratio = (numerator: number, denominator: number) =>
@@ -335,11 +398,14 @@ export function scoreEvaluation(
   packet: Packet,
   labels: HumanLabels,
   lock: ReturnType<typeof freezeHumanLabels>,
+  sourceReview?: SourceReview,
 ) {
+  const versions = readGeoVersions(packet.manifest.versions);
   if (
-    hash(lock) !== hash(freezeHumanLabels(packet, labels)) ||
+    hash(lock) !== hash(freezeHumanLabels(packet, labels, sourceReview)) ||
     packet.manifest.inputHash !== hash(input) ||
-    hash(packet) !== hash(prepareEvaluation(input))
+    preparedPacketHash(packet) !==
+      hash(prepareEvaluation(input, versions, packet.manifest.reviewScope))
   )
     throw new Error('Frozen input, labels or split changed');
   const safety = {
@@ -351,11 +417,51 @@ export function scoreEvaluation(
     unsupportedFit: 0,
     storedPolicyDisagreements: 0,
   };
+  const resolved = sourceReview ? resolveSourceReview(packet, labels, sourceReview) : undefined;
+  const splits = new Map(packet.manifest.records.map((row) => [row.id, row.split]));
+  const taskGroup = (row: EvaluationRecord) =>
+    hash({
+      split: splits.get(row.observation.id),
+      projectId: row.observation.projectId,
+      contextVersion: row.observation.context.contextVersion,
+      brand: row.observation.context.brand,
+      competitors: [...row.observation.context.competitors].sort((a, b) =>
+        a.id.localeCompare(b.id),
+      ),
+      method: [
+        row.classification.rubricVersion,
+        row.classification.policyVersion,
+        row.classification.ownershipVersion,
+      ],
+    });
+  const groups = new Map<string, EvaluationRecord[]>();
+  if (versions.policy !== 'geo-policy-1')
+    for (const row of input.records) {
+      const key = taskGroup(row),
+        group = groups.get(key) ?? [];
+      group.push(row);
+      groups.set(key, group);
+    }
+  const cohortTasks = new Map(
+    [...groups].map(([key, group]) => [key, actionCandidates(group.map(taskInput))]),
+  );
   const rows = input.records.map((row) => {
-    const expected = labels.records.find((label) => label.id === row.observation.id)?.values;
+    const expected = (resolved?.labels ?? labels).records.find(
+      (label) => label.id === row.observation.id,
+    )?.values;
     if (!expected) throw new Error('Human label missing');
-    const evaluation = buildGeoEvaluation(row.observation, row.checks, row.criteria);
-    const replay = projectGeoClassification(row.observation, evaluation, row.classification.native);
+    const storedMethod = readGeoVersions({
+      rubric: row.classification.rubricVersion,
+      policy: row.classification.policyVersion,
+      ownership: row.classification.ownershipVersion,
+    });
+    const evaluation = buildGeoEvaluation(row.observation, row.checks, row.criteria, storedMethod);
+    const replay = projectGeoClassification(
+      row.observation,
+      evaluation,
+      row.classification.native,
+      storedMethod,
+    );
     const diagnoses = diagnoseGeo(row.observation, replay, row.checks);
     safety.falseComplete += Number(
       row.observation.capture.quality === 'complete' && expected.captureQuality !== 'complete',
@@ -397,14 +503,65 @@ export function scoreEvaluation(
       id: row.observation.id,
       engine: row.observation.engine,
       split: packet.manifest.records.find((item) => item.id === row.observation.id)?.split,
-      expected,
-      predicted: predictions(row),
+      expected: Object.fromEntries(
+        Object.entries(expected).filter(
+          ([field]) =>
+            isEvaluationReviewField(field) &&
+            (!resolved || !isAssistedSourceField(resolved.assisted, row.observation.id, field)),
+        ),
+      ),
+      predicted: predictions(row, cohortTasks.get(taskGroup(row))),
     };
   });
   return {
-    status: input.dataset === 'synthetic' ? 'human_reviewed_synthetic' : 'human_reviewed_real',
+    status: packet.manifest.reviewScope
+      ? `critical_fields_human_reviewed_${input.dataset}`
+      : resolved?.assisted.size
+        ? `partially_human_reviewed_${input.dataset}`
+        : `human_reviewed_${input.dataset}`,
     dataset: input.dataset,
+    ...(packet.manifest.reviewScope
+      ? {
+          reviewScope: packet.manifest.reviewScope,
+          unmeasuredDimensions: ['source role', 'source type', 'segment relevance'],
+        }
+      : {}),
     pilotGatePassed: false,
+    scoringVersion:
+      versions.policy !== 'geo-policy-1'
+        ? 'geo-local-scoring-4'
+        : sourceReview
+          ? 'geo-local-scoring-3'
+          : 'geo-local-scoring-2',
+    ...(versions.policy !== 'geo-policy-1'
+      ? { taskScope: 'frozen_partition_and_project_context' }
+      : {}),
+    ...(resolved
+      ? {
+          sourceReview: {
+            protocol: sourceReview?.protocol,
+            assistedFieldsExcludedFromAccuracy: resolved.assisted.size,
+            independentGroupDecisions: resolved.independentGroups,
+            assistedGroupDecisions: resolved.assistedGroups,
+            remainingSourceFields: resolved.remaining,
+            contentCoverage: resolved.contentCoverage,
+            preservedHumanSourceDifferences: resolved.preservedHumanDifferences,
+            note: 'Assisted annotations are excluded from accuracy. Repeated source occurrences are not independent samples; missing-content unknowns do not validate content categories.',
+          },
+        }
+      : {}),
+    unscoredLegacyFields: packet.review.some((row) =>
+      Object.hasOwn(row.options, 'evidence.support'),
+    )
+      ? [
+          {
+            field: 'evidence.support',
+            records: packet.review.filter((row) => Object.hasOwn(row.options, 'evidence.support'))
+              .length,
+            reason: 'Duplicate of evidenceSupport; no separate classifier prediction.',
+          },
+        ]
+      : [],
     manifestHash: hash(packet.manifest),
     labelsHash: hash(labels),
     abstentionLabels: [...abstentions],
@@ -464,7 +621,12 @@ const observationSchema = z.object({
       'bing_copilot_answers',
     ]),
     collector: z.enum(['perplexity_api', 'openai_responses', 'serpapi', 'dataforseo_standard']),
-    collectorVersion: z.enum(['geo-collector-1', 'geo-collector-2', 'geo-collector-3']),
+    collectorVersion: z.enum([
+      'geo-collector-1',
+      'geo-collector-2',
+      'geo-collector-3',
+      'geo-collector-4',
+    ]),
     requestedModel: z.string().optional(),
     languageCode: z.string(),
     locationCode: z.number(),
@@ -521,9 +683,14 @@ const inputSchema = z.object({
 });
 async function main() {
   const [command, inputFile, directory] = process.argv.slice(2);
-  if (!command || !['prepare', 'freeze', 'score'].includes(command) || !inputFile || !directory)
+  if (
+    !command ||
+    !['prepare', 'prepare-g3', 'freeze', 'score'].includes(command) ||
+    !inputFile ||
+    !directory
+  )
     throw new Error(
-      'Usage: npx tsx scripts/evaluate-geo.ts prepare|freeze|score research/private/input.json research/private/review',
+      'Usage: npx tsx scripts/evaluate-geo.ts prepare|prepare-g3|freeze|score research/private/input.json research/private/review',
     );
   const privateRoot = resolve('research/private');
   const privatePath = (path: string) => {
@@ -543,8 +710,12 @@ async function main() {
   const readJson = async (name: string): Promise<unknown> =>
     JSON.parse(await readFile(name, 'utf8')) as unknown;
   const input: EvaluationInput = inputSchema.parse(await readJson(source));
-  if (command === 'prepare') {
-    const packet = prepareEvaluation(input);
+  if (command === 'prepare' || command === 'prepare-g3') {
+    const packet = prepareEvaluation(
+      input,
+      geoVersions,
+      command === 'prepare-g3' ? 'g3_validation' : undefined,
+    );
     await mkdir(output, { recursive: true });
     for (const [file, value] of [
       ['packet.json', packet],
@@ -558,20 +729,26 @@ async function main() {
   }
   const packet = (await readJson(resolve(output, 'packet.json'))) as Packet;
   const labels = (await readJson(resolve(output, 'human-labels.json'))) as HumanLabels;
-  if (hash(packet) !== hash(prepareEvaluation(input)))
+  const sourceReview = await readSourceReview(output);
+  if (
+    preparedPacketHash(packet) !==
+    hash(prepareEvaluation(input, packet.manifest.versions, packet.manifest.reviewScope))
+  )
     throw new Error('Prepared input or split changed');
   if (command === 'freeze') {
     await writeFile(
       resolve(output, 'labels-lock.json'),
-      `${JSON.stringify(freezeHumanLabels(packet, labels), null, 2)}\n`,
+      `${JSON.stringify(freezeHumanLabels(packet, labels, sourceReview), null, 2)}\n`,
       { flag: 'wx' },
     );
-    console.log('Human labels frozen. Model results may now be scored locally.');
+    console.log(
+      'Review frozen, including source provenance when supplied. Model results may now be scored locally.',
+    );
   } else {
     const lock = (await readJson(resolve(output, 'labels-lock.json'))) as ReturnType<
       typeof freezeHumanLabels
     >;
-    const report = scoreEvaluation(input, packet, labels, lock);
+    const report = scoreEvaluation(input, packet, labels, lock, sourceReview);
     await writeFile(resolve(output, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
     console.log(
       `Scored ${String(input.records.length)} ${input.dataset} observations. Private report written; pilot gate remains pending.`,

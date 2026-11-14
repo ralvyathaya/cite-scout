@@ -1,5 +1,6 @@
+import { seedGeoSubscriber as seed, geoBindings as withBindings } from './geo-fixtures';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { seed, withBindings } from './fixtures';
+
 import { readGeoRun, saveGeoSettings, startGeoRun } from '../../src/server/v2/geo-store';
 import { processGeoCollectors, reconcileGeoSubmission } from '../../src/server/v2/collectors';
 import { deleteAccountData } from '../../src/server/account-deletion';

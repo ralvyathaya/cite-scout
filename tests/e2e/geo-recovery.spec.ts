@@ -114,9 +114,15 @@ test('discovers scheduled uncertainty and follows operator settlement without pa
     .locator('summary')
     .filter({ hasText: 'scheduled check · 0/8 observations · partial' });
   await expect(summary).toBeVisible();
+  const details = page.locator('details').filter({ has: summary });
+  const progress = page.getByText('0 of 8 observations saved · partial');
+  await expect(details).toHaveJSProperty('open', true);
+  await expect(progress).toBeVisible();
   await summary.focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByText('0 of 8 observations saved · partial')).toBeVisible();
+  await expect(progress).toBeHidden();
+  await page.keyboard.press('Enter');
+  await expect(progress).toBeVisible();
   await expect(page.getByText('SUBMISSION_LEASE_EXPIRED').first()).toBeVisible();
   run.status = 'failed';
   run.completedAt = new Date().toISOString();
@@ -176,9 +182,7 @@ test('owned-page picker submits the canonical observed target', async ({ page })
     await route.fulfill({ json: { data } });
   });
   await page.goto(`/app/observations/${observation.id}`);
-  await expect(
-    page.getByRole('heading', { name: 'Original observation', exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Answer details', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Check owned page', exact: true }).click();
   await expect.poll(() => submitted).toBe(source.canonicalUrl);
 });

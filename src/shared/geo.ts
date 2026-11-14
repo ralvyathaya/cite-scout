@@ -6,11 +6,20 @@ export const geoEngineSchema = z.enum([
   'google_aio',
   'chatgpt_search',
   'bing_copilot',
+  'claude_web_search',
 ]);
 export type GeoEngine = z.infer<typeof geoEngineSchema>;
 export type GeoCollector =
-  'perplexity_api' | 'openai_responses' | 'serpapi' | 'dataforseo_standard';
+  'perplexity_api' | 'openai_responses' | 'serpapi' | 'dataforseo_standard' | 'anthropic_messages';
 export const geoSurfaces = {
+  claude_web_search: {
+    label: 'Claude Web Search API',
+    surface: 'claude_web_search',
+    collector: 'anthropic_messages',
+    reportsModel: true,
+    supportsLocale: false,
+    supportsDevice: false,
+  },
   perplexity: {
     label: 'Perplexity',
     surface: 'perplexity_agent',
@@ -59,12 +68,13 @@ export function geoCollectorPolicy(
 ): Pick<GeoRequestContext, 'collectorVersion' | 'maxOutputTokens'> {
   return {
     collectorVersion:
-      engine === 'openai_web_search' || (engine === 'bing_copilot' && collector === 'serpapi')
-        ? 'geo-collector-3'
-        : (engine === 'google_aio' || engine === 'bing_copilot') && collector === 'serpapi'
-          ? 'geo-collector-2'
+      engine === 'google_aio' && collector === 'serpapi'
+        ? 'geo-collector-4'
+        : engine === 'openai_web_search' || (engine === 'bing_copilot' && collector === 'serpapi')
+          ? 'geo-collector-3'
           : 'geo-collector-1',
-    maxOutputTokens: engine === 'openai_web_search' ? 1600 : 700,
+    maxOutputTokens:
+      engine === 'claude_web_search' ? 4096 : engine === 'openai_web_search' ? 1600 : 700,
   };
 }
 
@@ -72,7 +82,7 @@ const unique = (items: unknown[]) => new Set(items).size === items.length;
 export const geoRunRequestSchema = z
   .object({
     requestId: z.uuid(),
-    promptIds: z.array(z.string().min(1).max(100)).min(1).max(10).refine(unique).optional(),
+    promptIds: z.array(z.string().min(1).max(100)).min(1).max(30).refine(unique).optional(),
     engines: z.array(geoEngineSchema).min(1).max(4).refine(unique).optional(),
   })
   .strict();
@@ -95,7 +105,7 @@ export interface GeoSettings extends GeoSettingsInput {
 export const geoPromptSetSchema = z.object({
   id: z.string().min(1).max(100).optional(),
   name: z.string().trim().min(1).max(100),
-  promptIds: z.array(z.string().min(1).max(100)).min(1).max(10).refine(unique),
+  promptIds: z.array(z.string().min(1).max(100)).min(1).max(30).refine(unique),
 });
 export type GeoPromptSetInput = z.infer<typeof geoPromptSetSchema>;
 export interface GeoPromptSet {
@@ -116,7 +126,7 @@ export interface GeoRequestContext {
   engine: GeoEngine;
   surface: (typeof geoSurfaces)[GeoEngine]['surface'];
   collector: GeoCollector;
-  collectorVersion: 'geo-collector-1' | 'geo-collector-2' | 'geo-collector-3';
+  collectorVersion: 'geo-collector-1' | 'geo-collector-2' | 'geo-collector-3' | 'geo-collector-4';
   requestedModel?: string;
   languageCode: string;
   locationCode: number;

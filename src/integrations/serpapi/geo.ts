@@ -154,7 +154,10 @@ function normalize(
               }
               if (item.title != null) part(item.title, blockIndex);
               if (item.snippet != null) part(item.snippet, blockIndex);
-              if (item.title == null && item.snippet == null && item.list == null) partial();
+              // Keep pending requests on their snapshotted parsing method.
+              if (item.text_blocks != null && context.collectorVersion === 'geo-collector-4')
+                blocks(item.text_blocks, depth + 1, blockIndex);
+              else if (item.title == null && item.snippet == null && item.list == null) partial();
               links(item);
               if (item.list != null)
                 blocks([{ type: 'list', list: item.list }], depth + 1, blockIndex);
@@ -264,6 +267,8 @@ function normalize(
   }
   capture.answerText = capture.textParts.map((value) => value.text).join('\n');
   if (!capture.answerText.trim()) partial();
+  // shortcut: structured Google output can omit HTML sections; require verified coverage before marking it complete.
+  if (context.engine === 'google_aio' && context.collectorVersion === 'geo-collector-4') partial();
   return capture;
 }
 

@@ -1,5 +1,6 @@
 ﻿import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { cookie, seed } from './fixtures';
 
 const ORIGIN = 'https://citescout.test';
 
@@ -105,6 +106,30 @@ describe('authentication is required for every private resource', () => {
 });
 
 describe('authentication boundary hardening', () => {
+  it('revokes only the signed-out session and still rejects a foreign origin', async () => {
+    const first = await seed(0);
+    const second = await seed(0);
+    const firstCookie = await cookie(first.userId);
+    const secondCookie = await cookie(second.userId);
+    const signOut = (origin: string) =>
+      call('/api/auth/sign-out', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: firstCookie },
+        body: '{}',
+      });
+    const session = (value: string) => call('/api/me', { headers: { Cookie: value } });
+
+    expect((await session(firstCookie)).status).toBe(200);
+    expect((await signOut('https://attacker.example')).status).toBe(403);
+    expect((await session(firstCookie)).status).toBe(200);
+    const response = await signOut(new URL(env.APP_URL).origin);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true });
+    expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
+    expect((await session(firstCookie)).status).toBe(401);
+    expect((await session(secondCookie)).status).toBe(200);
+  });
+
   it('keeps malformed login JSON on the generic response path', async () => {
     const response = await call('/api/login/magic-link', {
       method: 'POST',

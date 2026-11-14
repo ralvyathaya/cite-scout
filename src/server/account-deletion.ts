@@ -48,6 +48,14 @@ export async function deleteAccountData(
   // Reservations keep anonymous cost counts; deletion also revokes in-flight evidence writes.
   statements.push(
     env.DB.prepare(
+      `UPDATE onboarding_suggestions SET draft_json=NULL,source_key='REDACTED',
+      state=CASE WHEN state='reserved' THEN 'failed' ELSE state END,
+      error_code=CASE WHEN state='reserved' THEN 'ACCOUNT_DELETED' ELSE error_code END
+      WHERE user_id=? AND NOT EXISTS(SELECT 1 FROM subscriptions WHERE user_id=?)`,
+    ).bind(userId, userId),
+  );
+  statements.push(
+    env.DB.prepare(
       `UPDATE geo_processing_attempts SET input_json='{}',result_json=NULL,input_hash='REDACTED',lease_token=NULL,lease_until=NULL,
       state=CASE WHEN state IN ('queued','running') THEN 'failed' ELSE state END,
       failure_code=CASE WHEN state IN ('queued','running') THEN 'ACCOUNT_DELETED' ELSE failure_code END

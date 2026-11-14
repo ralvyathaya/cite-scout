@@ -23,7 +23,7 @@ The fox mark comes from the supplied `logo blue.svg`, `logo dark.svg`, and `logo
 - Use blue or dark on a light background; white on a dark background.
 - Keep the original proportions. Leave clear space around the mark of at least one quarter of its height.
 - Use the mark alone for small icons, and the horizontal lockup where the name needs to be visible.
-- The wordmark uses Plus Jakarta Sans Bold, matching the app. Downloadable SVG wordmarks contain paths, so recipients do not need the font installed. The font license is included in `FONT-LICENSE.txt`.
+- Downloadable SVG wordmarks contain outlined Plus Jakarta Sans Bold artwork, so recipients do not need the font installed. Its license is retained in `FONT-LICENSE.txt`; the website and app UI use Switzer.
 - The app uses the blue mark with live text through `src/client/components/BrandLogo.tsx`; its text follows the surrounding foreground color.
 - The social preview uses the canonical domain already configured in `index.html`: `https://cite-scout.com`. Update those absolute image URLs if the production domain changes.
 

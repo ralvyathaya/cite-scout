@@ -9,7 +9,11 @@ const paths = {
   chatgpt_search: '/ai_optimization/chat_gpt/llm_scraper',
 };
 function path(context: GeoRequestContext): string {
-  if (context.engine === 'perplexity' || context.engine === 'openai_web_search')
+  if (
+    context.engine === 'perplexity' ||
+    context.engine === 'openai_web_search' ||
+    context.engine === 'claude_web_search'
+  )
     throw new DataForSeoError('UNSUPPORTED_ENGINE');
   return paths[context.engine];
 }

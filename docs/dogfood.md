@@ -86,7 +86,7 @@ Local verification on 2026-09-30: formatting, lint, type checking, production bu
 - [ ] Run the existing real-provider checks below. Exercise trial failure, deferred quotas, manual eligibility, scheduled scans, and returned-source evidence using controlled accounts.
 - [ ] In Lemon Squeezy test mode, prove signed subscription and invoice payment events, duplicate/stale delivery, portal navigation, cancellation, expiry, and replacement after expiry. Verify redirect alone never enables scans.
 - [ ] Verify cancellation-confirmed account deletion with fresh sign-in and forfeiture confirmation; late webhooks must not recreate entitlement, and anonymous usage accounting must remain.
-- [ ] Configure and verify live store/product/variant, keys, signing secret, and mode separately. Safe capability flags must keep unavailable Google login hidden and unconfigured checkout disabled.
+- [ ] Configure and verify live store/product/variant, keys, signing secret, and mode separately. Google login stays visible and reports unavailability only after a click; keep unconfigured checkout disabled.
 - [ ] Keep production closed until the existing launch checks are complete. Local tests are not production billing certification.
 
 ### Existing real-provider launch checks

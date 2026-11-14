@@ -1,7 +1,8 @@
+import { seedGeoSubscriber as seed, geoBindings as withBindings } from './geo-fixtures';
 import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createExecutionContext } from 'cloudflare:test';
-import { seed, withBindings, cookie } from './fixtures';
+import { cookie } from './fixtures';
 import { seedGeoEvidence } from './geo-fixtures';
 import {
   syncGeoActions,
@@ -32,7 +33,7 @@ describe('action ownership, lifecycle and deduplicated proof', () => {
     const env = bindings(),
       at = new Date(),
       owner = await seed(1, true, at),
-      engines = ['perplexity', 'google_aio', 'bing_copilot'] as const,
+      engines = ['perplexity', 'openai_web_search'] as const,
       proofs = [];
     for (const engine of engines) {
       const proof = await seedGeoEvidence(env, owner, engine, at);
@@ -70,7 +71,7 @@ describe('action ownership, lifecycle and deduplicated proof', () => {
         },
         at,
       );
-      expect(followUp.evidence).toHaveLength(3);
+      expect(followUp.evidence).toHaveLength(2);
       expect(
         reads.mock.calls.filter(([query]) =>
           query.includes('canonical_domain AS domain FROM competitors'),
@@ -84,13 +85,13 @@ describe('action ownership, lifecycle and deduplicated proof', () => {
     const env = bindings(),
       at = new Date(),
       owner = await seed(1, true, at);
-    await seedGeoEvidence(env, owner, 'google_aio', at);
+    await seedGeoEvidence(env, owner, 'openai_web_search', at);
     await seedGeoEvidence(env, owner, 'perplexity', at);
     await saveGeoSettings(
       env,
       owner.userId,
       {
-        engines: ['google_aio', 'perplexity'],
+        engines: ['openai_web_search', 'perplexity'],
         dailyEnabled: false,
         languageCode: 'en',
         locationCode: 2840,
@@ -120,7 +121,7 @@ describe('action ownership, lifecycle and deduplicated proof', () => {
       env,
       owner.userId,
       {
-        engines: ['google_aio', 'perplexity'],
+        engines: ['openai_web_search', 'perplexity'],
         dailyEnabled: false,
         languageCode: 'en',
         locationCode: 2840,
@@ -361,7 +362,7 @@ describe('action ownership, lifecycle and deduplicated proof', () => {
     const env = bindings(),
       at = new Date(),
       owner = await seed(1, true, at);
-    const oldest = await seedGeoEvidence(env, owner, 'google_aio', at);
+    const oldest = await seedGeoEvidence(env, owner, 'openai_web_search', at);
     await seedGeoEvidence(env, owner, 'perplexity', at);
     await syncGeoActions(env, owner.userId, at);
     const action = (await readGeoActions(env, owner.userId)).find(
@@ -412,7 +413,7 @@ describe('action ownership, lifecycle and deduplicated proof', () => {
       expect(first.evidence).toHaveLength(50);
       expect(first.action.evidenceCount).toBe(62);
       expect(first.action.scopes.map((scope) => scope.context.engine).sort()).toEqual([
-        'google_aio',
+        'openai_web_search',
         'perplexity',
       ]);
       expect(
@@ -472,14 +473,14 @@ describe('action ownership, lifecycle and deduplicated proof', () => {
     const progressed = await patchGeoAction(env, owner.userId, action.id, body, at);
     const replay = await patchGeoAction(env, owner.userId, action.id, body, at);
     expect(replay.revision).toBe(progressed.revision);
-    await seedGeoEvidence(env, owner, 'google_aio', at);
+    await seedGeoEvidence(env, owner, 'openai_web_search', at);
     await syncGeoActions(env, owner.userId, at);
     const merged = await readGeoAction(env, owner.userId, action.id);
     expect(merged.action.checkedIds).toEqual(['step_1']);
     expect(merged.action.status).toBe('in_progress');
     expect(merged.action.evidenceCount).toBe(2);
     expect(merged.action.scopes.map((scope) => scope.context.engine).sort()).toEqual([
-      'google_aio',
+      'openai_web_search',
       'perplexity',
     ]);
     const dismissed = await patchGeoAction(

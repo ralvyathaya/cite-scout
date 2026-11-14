@@ -58,7 +58,7 @@ test('a closed pagination request cannot overwrite a reopened follow-up review',
   releaseOld?.();
   await (await oldFinished).finished();
   await dialog
-    .getByLabel('Owned page for new work', { exact: true })
+    .getByLabel('Page on your website', { exact: true })
     .fill('https://cedarflow.example/comparison');
   await dialog
     .getByLabel('Planned change', { exact: true })
@@ -87,7 +87,7 @@ test('review and create a synthetic follow-up with an explicit baseline', async 
   ).toBeDisabled();
   await dialog.getByRole('checkbox').first().check();
   await dialog
-    .getByLabel('Owned page for new work', { exact: true })
+    .getByLabel('Page on your website', { exact: true })
     .fill('https://cedarflow.example/comparison');
   await dialog
     .getByLabel('Planned change', { exact: true })
@@ -98,18 +98,18 @@ test('review and create a synthetic follow-up with an explicit baseline', async 
   await expect(dialog.getByLabel('Planned change', { exact: true })).toHaveValue(
     'Synthetic comparison update with verified feature details.',
   );
-  await expect(dialog.getByText(/Included: 1/)).toBeVisible();
-  await expect(dialog.getByText(/Excluded:/)).toBeVisible();
+  await expect(dialog.getByText(/Selected: 1/)).toBeVisible();
+  await expect(dialog.getByText(/Not selected:/)).toBeVisible();
   await dialog.getByRole('button', { name: 'Create follow-up action', exact: true }).click();
   await dialog.getByRole('link', { name: 'Open follow-up action', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Action brief', exact: true })).toBeVisible();
   await expect(
-    page.getByRole('link', { name: 'Source action history', exact: true }),
+    page.getByRole('link', { name: 'Previous task history', exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText('Fixture workspace — synthetic data · no provider calls', { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText('Included baseline records: 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('Starting answers selected: 1', { exact: true })).toBeVisible();
 });
 
 test('a failed follow-up save retains the draft and retries with the same request identity', async ({
@@ -146,7 +146,7 @@ test('a failed follow-up save retains the draft and retries with the same reques
   const dialog = page.getByRole('dialog', { name: 'Plan follow-up work', exact: true });
   await dialog.getByRole('checkbox').first().check();
   await dialog
-    .getByLabel('Owned page for new work', { exact: true })
+    .getByLabel('Page on your website', { exact: true })
     .fill('https://cedarflow.example/comparison');
   await dialog
     .getByLabel('Planned change', { exact: true })
@@ -168,36 +168,32 @@ test('a failed follow-up save retains the draft and retries with the same reques
 
 test('opening a filtered observation and returning keeps the evidence scope', async ({ page }) => {
   await page.goto('/app/observations?fixture=1&engine=perplexity&days=30');
-  await page.getByRole('link').filter({ hasText: 'View full answer & raw JSON →' }).first().click();
-  await expect(
-    page.getByRole('heading', { name: 'Original observation', exact: true }),
-  ).toBeVisible();
+  await page.getByRole('link').filter({ hasText: 'View answer →' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Answer details', exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Observation sections' })).toBeVisible();
-  await page.getByRole('link', { name: 'All observations', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Engine', exact: true })).toHaveText(
-    'Perplexity',
-  );
-  await expect(page.getByRole('combobox', { name: 'Period', exact: true })).toHaveText(
-    'Last 30 days',
-  );
+  await page.getByRole('link', { name: 'Back to Answers', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Remove Perplexity filter', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole('group', { name: 'Period', exact: true })
+      .getByRole('button', { name: '30 days', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
   await expect(page).toHaveURL(/engine=perplexity/);
   await page.goBack();
-  await expect(
-    page.getByRole('heading', { name: 'Original observation', exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Answer details', exact: true })).toBeVisible();
 });
 
 test('an observation links directly to the work supported by its evidence', async ({ page }) => {
   await page.goto('/app/observations?fixture=1');
-  await page.getByRole('link').filter({ hasText: 'View full answer & raw JSON →' }).first().click();
+  await page.getByRole('link').filter({ hasText: 'View answer →' }).first().click();
   const work = page.getByRole('region', { name: 'Related work' });
   await expect(work.getByRole('heading', { name: 'Related work', exact: true })).toBeVisible();
   await work.locator('a[href^="/app/playbook/"]').first().click();
   await expect(page.getByRole('heading', { name: 'Action brief', exact: true })).toBeVisible();
   await page.goBack();
-  await expect(
-    page.getByRole('heading', { name: 'Original observation', exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Answer details', exact: true })).toBeVisible();
 });
 
 test('refresh related work reads new tasks and excludes unrelated observation scopes', async ({
@@ -294,7 +290,7 @@ for (const quality of ['partial', 'no_feature'] as const) {
         : 'This is not evidence of brand absence',
     );
     await expect(
-      page.getByText('Classification pending or unavailable.', { exact: false }),
+      page.getByText('No analysis is available for this answer yet.', { exact: false }),
     ).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Download original response JSON' }),

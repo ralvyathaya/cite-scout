@@ -1,5 +1,10 @@
 import { getConfig, internalTestUserId } from '../config';
+import { anthropicPricingVersion } from '../../integrations/anthropic/geo';
 import { utcDate } from '../../domain/normalization';
+import { geoAccessSql } from './geo-store';
+import { readProductionCostPolicy } from '../../shared/geo-cost-policy';
+
+const exposureMicrosSql = `max(CAST(round(COALESCE(CAST(reserved_cost_usd AS REAL),0)*1000000) AS INTEGER),CAST(round(COALESCE(CAST(reported_cost_usd AS REAL),0)*1000000) AS INTEGER),CAST(round(COALESCE(CAST(estimated_cost_usd AS REAL),0)*1000000) AS INTEGER))`;
 
 interface RequestAdmission {
   operationKey: string;
@@ -14,14 +19,47 @@ export async function reserveGeoProviderRequest(env: CloudflareBindings, input: 
   const at = input.at ?? new Date(),
     config = getConfig(env);
   const internal = config.DEPLOYMENT_ENV === 'staging';
+  const production = config.DEPLOYMENT_ENV === 'production';
+  const policy = production ? readProductionCostPolicy(config.GEO_PRODUCTION_COST_POLICY) : null;
+  if (
+    input.collector === 'anthropic_messages' &&
+    (!internal ||
+      config.GEO_CLAUDE_ENABLED !== 'true' ||
+      !config.ANTHROPIC_API_KEY?.trim() ||
+      !internalTestUserId(env, at) ||
+      config.GEO_INTERNAL_TEST_ANTHROPIC_REQUEST_CAP <= 0)
+  )
+    throw new Error('GEO_CLAUDE_DISABLED');
+  if (
+    ![
+      'anthropic_messages',
+      'openai_responses',
+      'perplexity_api',
+      'workers_ai',
+      'typesafe',
+      'serpapi',
+      'dataforseo_standard',
+    ].includes(input.collector)
+  )
+    throw new Error('GEO_COLLECTOR_NOT_ALLOWED');
+  const productionCeiling = policy
+    ? Object.entries(policy.requestCeilingsUsd).find(
+        ([collector]) => collector === input.collector,
+      )?.[1]
+    : undefined;
+  if (production && (!policy || productionCeiling === undefined))
+    throw new Error('GEO_PRODUCTION_COST_POLICY_REQUIRED');
   const ceiling =
-    input.collector === 'openai_responses'
-      ? config.GEO_INTERNAL_TEST_OPENAI_MAX_COST_USD
-      : input.collector === 'perplexity_api'
-        ? config.GEO_INTERNAL_TEST_PERPLEXITY_MAX_COST_USD
-        : input.collector === 'workers_ai' || input.collector === 'typesafe'
-          ? config.GEO_INTERNAL_TEST_PROCESSING_MAX_COST_USD
-          : 0;
+    productionCeiling ??
+    (input.collector === 'anthropic_messages'
+      ? config.GEO_INTERNAL_TEST_ANTHROPIC_MAX_COST_USD
+      : input.collector === 'openai_responses'
+        ? config.GEO_INTERNAL_TEST_OPENAI_MAX_COST_USD
+        : input.collector === 'perplexity_api'
+          ? config.GEO_INTERNAL_TEST_PERPLEXITY_MAX_COST_USD
+          : input.collector === 'workers_ai' || input.collector === 'typesafe'
+            ? config.GEO_INTERNAL_TEST_PROCESSING_MAX_COST_USD
+            : 0);
   if (
     internal &&
     (!internalTestUserId(env, at) ||
@@ -42,13 +80,19 @@ export async function reserveGeoProviderRequest(env: CloudflareBindings, input: 
     : `SELECT a.project_id FROM geo_processing_attempts a JOIN projects p ON p.id=a.project_id WHERE a.id=? AND a.state='running' AND a.lease_until>?`;
   const result = await env.DB.prepare(
     `INSERT OR IGNORE INTO geo_provider_requests
-    (operation_key,reservation_id,processing_id,project_id,collector,usage_date,reserved_cost_usd,state,created_at)
-    SELECT ?,?,?,s.project_id,?,?,?,'started',? FROM (${source} AND (?='' OR p.user_id=?)) s
+    (operation_key,reservation_id,processing_id,project_id,collector,usage_date,reserved_cost_usd,state,created_at,pricing_version,estimated_cost_usd)
+    SELECT ?,?,?,s.project_id,?,?,?,'started',?,?,? FROM (${source} AND (?='' OR p.user_id=?) AND ${geoAccessSql(env, at)}) s
     WHERE (?<>'serpapi' OR (SELECT count(*) FROM geo_provider_requests WHERE collector='serpapi' AND usage_date LIKE ?)< ?)
     AND (?=0 OR (
       NOT EXISTS(SELECT 1 FROM geo_provider_requests WHERE state='uncertain' OR (state='started' AND created_at<?) OR (state='completed' AND reported_cost_usd IS NULL AND estimated_cost_usd IS NULL))
       AND COALESCE((SELECT SUM(max(CAST(reserved_cost_usd AS REAL),COALESCE(CAST(reported_cost_usd AS REAL),0),COALESCE(CAST(estimated_cost_usd AS REAL),0))) FROM geo_provider_requests),0)+?<=?
-      AND (SELECT count(*) FROM geo_provider_requests WHERE collector=? OR (? IN ('workers_ai','typesafe') AND collector IN ('workers_ai','typesafe')))<?))`,
+      AND (SELECT count(*) FROM geo_provider_requests WHERE collector=? OR (? IN ('workers_ai','typesafe') AND collector IN ('workers_ai','typesafe')))<?))
+    AND (?=0 OR (
+      NOT EXISTS(SELECT 1 FROM geo_provider_requests WHERE state='uncertain' OR (state='started' AND created_at<?) OR (state='completed' AND reported_cost_usd IS NULL AND estimated_cost_usd IS NULL))
+      AND COALESCE((SELECT SUM(${exposureMicrosSql}) FROM geo_provider_requests WHERE usage_date LIKE ?),0)+?<=?
+      AND COALESCE((SELECT SUM(${exposureMicrosSql}) FROM geo_provider_requests WHERE usage_date LIKE ? AND project_id=s.project_id),0)+?<=?
+      AND (SELECT count(*) FROM geo_provider_requests WHERE usage_date LIKE ?)<?
+      AND (SELECT count(*) FROM geo_provider_requests WHERE usage_date LIKE ? AND project_id=s.project_id)<?))`,
   )
     .bind(
       input.operationKey,
@@ -58,10 +102,15 @@ export async function reserveGeoProviderRequest(env: CloudflareBindings, input: 
       utcDate(at),
       String(ceiling),
       at.getTime(),
+      policy?.version ?? null,
+      input.collector === 'serpapi' && policy?.serpapiEstimatedCostUsd !== undefined
+        ? String(policy.serpapiEstimatedCostUsd)
+        : null,
       input.reservationId ?? input.processingId ?? '',
       at.getTime(),
       config.GEO_INTERNAL_TEST_USER_ID,
       config.GEO_INTERNAL_TEST_USER_ID,
+      at.getTime(),
       input.collector,
       `${utcDate(at).slice(0, 7)}%`,
       config.GEO_SERPAPI_MONTHLY_REQUEST_CAP,
@@ -77,7 +126,23 @@ export async function reserveGeoProviderRequest(env: CloudflareBindings, input: 
           ? config.internalTestLimits.classifier
           : input.collector === 'openai_responses'
             ? config.internalTestLimits.openai
-            : config.internalTestLimits.perplexity,
+            : input.collector === 'anthropic_messages'
+              ? config.GEO_INTERNAL_TEST_ANTHROPIC_REQUEST_CAP
+              : input.collector === 'perplexity_api'
+                ? config.internalTestLimits.perplexity
+                : 0,
+      production ? 1 : 0,
+      at.getTime() - 300_000,
+      `${utcDate(at).slice(0, 7)}%`,
+      Math.round(ceiling * 1_000_000),
+      Math.round((policy?.globalMonthlyUsd ?? 0) * 1_000_000),
+      `${utcDate(at).slice(0, 7)}%`,
+      Math.round(ceiling * 1_000_000),
+      Math.round((policy?.projectMonthlyUsd ?? 0) * 1_000_000),
+      `${utcDate(at).slice(0, 7)}%`,
+      policy?.globalMonthlyRequests ?? 0,
+      `${utcDate(at).slice(0, 7)}%`,
+      policy?.projectMonthlyRequests ?? 0,
     )
     .run();
   if (!result.meta.changes) throw new Error('GEO_PROVIDER_BUDGET_BLOCKED');
@@ -93,17 +158,19 @@ export async function completeGeoProviderRequests(
     status: 'completed' | 'uncertain';
   },
 ) {
-  // SerpApi's free allowance is an estimate, never an invoice supplied by the response.
+  const stagingFreeSearch = getConfig(env).DEPLOYMENT_ENV === 'staging';
   await env.DB.prepare(
-    `UPDATE geo_provider_requests SET state=?,reported_cost_usd=?,estimated_cost_usd=CASE WHEN collector='serpapi' AND ?='completed' THEN '0' ELSE ? END,
-    pricing_version=CASE WHEN collector='serpapi' THEN 'serpapi-free-250-2026-10-12' WHEN collector='openai_responses' THEN 'openai-gpt-6-luna-2026-10-12' ELSE NULL END
+    `UPDATE geo_provider_requests SET state=?,reported_cost_usd=CASE WHEN collector='serpapi' THEN NULL ELSE ? END,estimated_cost_usd=CASE WHEN collector='serpapi' THEN CASE WHEN ?=1 AND ?='completed' THEN '0' ELSE estimated_cost_usd END ELSE ? END,
+    pricing_version=COALESCE(pricing_version,CASE WHEN collector='serpapi' THEN ? WHEN collector='openai_responses' THEN 'openai-gpt-6-luna-2026-10-12' WHEN collector='anthropic_messages' THEN '${anthropicPricingVersion}' ELSE NULL END)
     WHERE reservation_id=? AND state='started'`,
   )
     .bind(
       result.status,
       result.reportedCostUsd === null ? null : String(result.reportedCostUsd),
+      stagingFreeSearch ? 1 : 0,
       result.status,
       result.estimatedCostUsd === null ? null : String(result.estimatedCostUsd),
+      stagingFreeSearch ? 'serpapi-free-250-2026-10-12' : 'serpapi-unpriced',
       reservationId,
     )
     .run();
@@ -116,7 +183,7 @@ export async function completeGeoProcessingRequest(
   uncertain = false,
 ) {
   await env.DB.prepare(
-    "UPDATE geo_provider_requests SET state=?,estimated_cost_usd=?,pricing_version='clef-2026-10-11' WHERE processing_id=? AND state='started'",
+    "UPDATE geo_provider_requests SET state=?,estimated_cost_usd=?,pricing_version=COALESCE(pricing_version,'clef-2026-10-11') WHERE processing_id=? AND state='started'",
   )
     .bind(uncertain ? 'uncertain' : 'completed', cost === null ? null : String(cost), processingId)
     .run();

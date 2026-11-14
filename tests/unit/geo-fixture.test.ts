@@ -31,9 +31,15 @@ it('uses the prospective collector policy for fresh synthetic runs and preserves
   ).toEqual({
     perplexity: ['geo-collector-1', 700],
     openai_web_search: ['geo-collector-3', 1600],
-    google_aio: ['geo-collector-2', 700],
+    google_aio: ['geo-collector-4', 700],
     bing_copilot: ['geo-collector-3', 700],
   });
+  const latest = (await fixture.request('/geo/observations')) as GeoObservationPage;
+  const google = latest.observations.filter(
+    (row) => row.runId === run.id && row.engine === 'google_aio',
+  );
+  expect(google.length).toBeGreaterThan(0);
+  expect(google.every((row) => row.capture.quality === 'partial')).toBe(true);
   for (const saved of before.observations)
     expect(
       ((await fixture.request(`/geo/observations/${saved.id}`)) as typeof saved).context,

@@ -1,11 +1,33 @@
 import { z } from 'zod';
 export const decisionModelSchema = z.enum(['clef-flash', 'clef', 'jev-1.13.0']);
 export type DecisionModel = z.infer<typeof decisionModelSchema>;
-export const geoVersions = {
+export const legacyGeoVersions = {
   rubric: 'geo-rubric-1',
   policy: 'geo-policy-1',
   ownership: 'geo-domain-1',
 } as const;
+export const geoVersionsV2 = {
+  ...legacyGeoVersions,
+  rubric: 'geo-rubric-2',
+  policy: 'geo-policy-2',
+} as const;
+export const geoVersionsV3 = { ...geoVersionsV2, policy: 'geo-policy-3' } as const;
+export const geoVersions = { ...geoVersionsV3, policy: 'geo-policy-4' } as const;
+export interface GeoVersionSet {
+  rubric: string;
+  policy: string;
+  ownership: string;
+}
+export function readGeoVersions(input: GeoVersionSet) {
+  const versions = [legacyGeoVersions, geoVersionsV2, geoVersionsV3, geoVersions].find(
+    (candidate) =>
+      candidate.rubric === input.rubric &&
+      candidate.policy === input.policy &&
+      candidate.ownership === input.ownership,
+  );
+  if (!versions) throw new Error('GEO_UNSUPPORTED_ANALYSIS_VERSIONS');
+  return versions;
+}
 export type DecisionQuestion =
   | { type: 'choice'; instructions: string; criteria: Record<string, string> }
   | { type: 'noul'; instructions: string };

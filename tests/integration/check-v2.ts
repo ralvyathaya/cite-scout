@@ -1,7 +1,10 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { backup, DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { analyzeEvidence, compareEvidence } from '../../src/domain/evidence';
 import { processDueScans, startScan, readRun, cancelTrial } from '../../src/server/v2/scans';
 import { observationPayload, projectPayload, questionRows } from '../../src/server/v2/read-model';
@@ -12,6 +15,9 @@ import { highlight } from '../../src/client/lib/highlight';
 
 // In-memory SQLite and synthetic provider responses only; never reads credentials or calls a service.
 const db = new DatabaseSync(':memory:');
+const backupPath = join(tmpdir(), `citescout-synthetic-upgrade-${crypto.randomUUID()}.sqlite`);
+let legacyAnswer: Record<string, unknown> | undefined;
+let legacySubscription: Record<string, unknown> | undefined;
 db.exec('PRAGMA foreign_keys=ON');
 for (const name of [
   '0000_careless_selene',
@@ -25,21 +31,61 @@ for (const name of [
   '0008_geo_playbook_recovery',
   '0009_geo_daily_outcomes',
   '0010_tough_gamma_corps',
+  '0011_onboarding_suggestions',
 ]) {
   if (name === '0002_citescout_v2')
     db.exec(`
     INSERT INTO users(id,name,email,created_at,updated_at) VALUES('legacy','Legacy','legacy@example.test',1,1);
+    INSERT INTO subscriptions(id,user_id,lemon_squeezy_subscription_id,lemon_squeezy_customer_id,lemon_squeezy_store_id,lemon_squeezy_product_id,lemon_squeezy_variant_id,status,test_mode,created_at,updated_at)
+    VALUES('legacy-test','legacy','legacy-test','legacy-test','1','1','1','active',1,1,1);
     INSERT INTO projects(id,user_id,name,brand_name,canonical_domain,created_at,updated_at) VALUES('legacy','legacy','Legacy','Legacy','legacy.example',1,1);
     INSERT INTO prompts(id,project_id,text,normalized_text,created_at,updated_at) VALUES('legacy','legacy','Legacy question','legacy question',1,1);
     INSERT INTO scan_runs(id,project_id,trigger_type,provider,status,observation_date,created_at) VALUES('legacy','legacy','trial','perplexity','completed','2026-01-01',1);
     INSERT INTO scan_results(id,scan_run_id,project_id,prompt_id,provider,provider_model,observation_date,raw_response_text,citation_data_json,brand_mentioned,context_classification,created_at)
     VALUES('legacy','legacy','legacy','legacy','perplexity','old','2026-01-01','Retained legacy answer','[{"url":"https://legacy.example/docs"}]',1,'mentioned',1);
   `);
+  if (name === '0002_citescout_v2') {
+    legacyAnswer = db.prepare("SELECT * FROM scan_results WHERE id='legacy'").get();
+    legacySubscription = db.prepare("SELECT * FROM subscriptions WHERE id='legacy-test'").get();
+    await backup(db, backupPath);
+  }
   if (name === '0007_geo_processing_usage')
     db.exec(`INSERT INTO geo_processing_attempts(id,request_id,kind,provider,input_hash,input_json,state,estimated_cost_usd,created_at,due_at)
       VALUES('retained-processing','retained-request','analysis','workers_ai','retained-hash','{}','failed','0.01',1767225600000,1767225600000)`);
   db.exec(readFileSync(`migrations/${name}.sql`, 'utf8'));
 }
+assert.ok(legacyAnswer);
+assert.deepEqual(
+  db.prepare("SELECT * FROM subscriptions WHERE id='legacy-test'").get(),
+  legacySubscription,
+);
+const upgradedAnswer = db.prepare("SELECT * FROM scan_results WHERE id='legacy'").get();
+assert.ok(upgradedAnswer);
+for (const [column, value] of Object.entries(legacyAnswer))
+  assert.deepEqual(upgradedAnswer[column], value);
+assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+assert.equal(db.prepare('PRAGMA integrity_check').get()?.integrity_check, 'ok');
+const restored = new DatabaseSync(backupPath, { readOnly: true });
+try {
+  assert.deepEqual(
+    restored.prepare("SELECT * FROM subscriptions WHERE id='legacy-test'").get(),
+    legacySubscription,
+  );
+  assert.deepEqual(
+    restored.prepare("SELECT * FROM scan_results WHERE id='legacy'").get(),
+    legacyAnswer,
+  );
+  assert.equal(
+    restored.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='geo_observations'").get()
+      ?.n,
+    0,
+  );
+  assert.deepEqual(restored.prepare('PRAGMA foreign_key_check').all(), []);
+} finally {
+  restored.close();
+  await unlink(backupPath);
+}
+console.log('Synthetic 0000/0001 backup, additive upgrade and pre-upgrade restore verified.');
 assert.deepEqual(
   {
     ...db
@@ -103,6 +149,10 @@ const adapter = {
 };
 const env = {
   DB: adapter,
+  LEMON_SQUEEZY_STORE_ID: '1',
+  LEMON_SQUEEZY_PRODUCT_ID: '1',
+  LEMON_SQUEEZY_VARIANT_ID: '1',
+  LEMON_SQUEEZY_TEST_MODE: 'false',
   EXTERNAL_INTEGRATIONS_ENABLED: 'true',
   V2_SCANS_ENABLED: 'true',
   PERPLEXITY_API_KEY: 'synthetic',
@@ -115,6 +165,14 @@ const legacyWorkspace = await projectPayload(env, 'legacy');
 assert.equal(legacyWorkspace.project?.id, 'legacy');
 assert.equal(legacyWorkspace.project.questions[0]?.id, 'legacy');
 assert.equal(legacyWorkspace.enrolled, false);
+assert.equal(legacyWorkspace.canScan, false);
+assert.equal(legacyWorkspace.plan, null);
+const retainedTestWorkspace = await projectPayload(
+  { ...env, LEMON_SQUEEZY_TEST_MODE: 'true' },
+  'legacy',
+);
+assert.equal(retainedTestWorkspace.canScan, true);
+assert.ok(retainedTestWorkspace.plan);
 const newWorkspace = await projectPayload(env, 'new-account');
 assert.equal(newWorkspace.project, null);
 assert.equal(newWorkspace.trial, null);

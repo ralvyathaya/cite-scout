@@ -7,13 +7,16 @@ import { normalizeDomain, normalizeText } from '../../domain/normalization';
 import { createAuth } from '../auth';
 import { readJson } from '../http';
 import { consumeRateLimit } from '../rate-limit';
-import { internalTestUserId } from '../config';
 import { eventStatement } from './events';
 import { cancelTrial, processDueScans, readRun, startScan } from './scans';
 import { geoRoutes } from './geo-routes';
+import { onboardingRequest, suggestWebsiteSetup } from './onboarding';
+import { planLimitSql } from '../scan-policy';
 import {
   ownedProject,
   paidAccess,
+  userPlan,
+  activePromptLimit,
   projectPayload,
   questionRows,
   questionView,
@@ -95,7 +98,8 @@ const errorMessages: Record<string, string> = {
   CONFLICT: 'The configuration changed in another tab. Reload and try again.',
   CONFIGURATION_CHANGED:
     'The configuration changed while starting this check. Reload and try again.',
-  QUESTION_LIMIT: 'You can monitor up to ten active questions.',
+  QUESTION_LIMIT:
+    'Your active prompts exceed this plan’s limit. Pause prompts or choose a larger plan.',
   QUESTION_EXISTS: 'This question already exists; resume it instead.',
   REPLACE_REQUIRED: 'This question has evidence. Create a replacement to preserve its history.',
   TRIAL_ALREADY_USED: 'This account has already started its trial.',
@@ -109,24 +113,75 @@ v2Routes.use('*', async (c, next) => {
   if (!session)
     return c.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401);
   c.set('userId', session.user.id);
-  try {
-    await next();
-  } catch (error) {
-    const code = error instanceof Error ? error.message : '';
-    if (!errorMessages[code]) throw error;
+  await next();
+});
+v2Routes.onError((error, c) => {
+  const code = error.message;
+  if (!errorMessages[code]) throw error;
+  return c.json(
+    { error: { code, message: errorMessages[code] } },
+    code.endsWith('NOT_FOUND')
+      ? 404
+      : code === 'VALIDATION_ERROR' || code === 'DUPLICATE_INPUT'
+        ? 422
+        : code.includes('REQUIRED') && code !== 'REPLACE_REQUIRED'
+          ? 403
+          : 409,
+  );
+});
+v2Routes.route('/geo', geoRoutes);
+v2Routes.post('/onboarding/suggestions', async (c) => {
+  if (!(await consumeRateLimit(c.env.DB, `setup:${c.get('userId')}`, 6, 60)))
     return c.json(
-      { error: { code, message: errorMessages[code] } },
-      code.endsWith('NOT_FOUND')
-        ? 404
-        : code === 'VALIDATION_ERROR' || code === 'DUPLICATE_INPUT'
-          ? 422
-          : code.includes('REQUIRED') && code !== 'REPLACE_REQUIRED'
-            ? 403
-            : 409,
+      {
+        error: {
+          code: 'RATE_LIMITED',
+          message: 'Too many setup requests. Wait a minute or continue manually.',
+        },
+      },
+      429,
+    );
+  const input = parsed(onboardingRequest, await readJson(c.req.raw));
+  try {
+    c.header('Cache-Control', 'no-store');
+    return c.json({ data: await suggestWebsiteSetup(c.env, c.get('userId'), input) });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'SUGGESTION_FAILED';
+    const messages: Record<string, string> = {
+      ONBOARDING_REVIEW_UNAVAILABLE: 'Onboarding review is available only to the staging owner.',
+      SUGGESTIONS_UNAVAILABLE:
+        'New automatic setup suggestions are disabled or not configured here. You can continue manually.',
+      SUGGESTION_LIMIT_REACHED:
+        'Setup suggestion budget or quota reached. Use your saved draft or continue manually.',
+      SUGGESTIONS_IN_PROGRESS:
+        'Suggestions are still being prepared. Wait briefly, or continue manually.',
+      SUGGESTION_PREVIOUSLY_FAILED:
+        'This suggestion attempt did not finish. Continue manually; no automatic retry was made.',
+      SUGGESTION_REQUEST_CONFLICT:
+        'The website changed. Start a new setup request or continue manually.',
+      SETUP_ALREADY_COMPLETE:
+        'A project is already saved. Open your dashboard to edit its settings.',
+      UNSAFE_PAGE_TARGET: 'Enter a public website URL without credentials or a custom port.',
+      NON_PUBLIC_DNS: 'This address does not resolve to a public website. Continue manually.',
+      WEBSITE_UNREADABLE: 'The public homepage could not be read. Continue manually.',
+      WEBSITE_TOO_LITTLE_TEXT:
+        'The homepage has too little readable text to suggest a setup. Continue manually.',
+      SUGGESTION_FAILED:
+        'Suggestions could not be completed. Your draft is safe; continue manually.',
+    };
+    if (!messages[code]) throw error;
+    return c.json(
+      { error: { code, message: messages[code] } },
+      code === 'ONBOARDING_REVIEW_UNAVAILABLE'
+        ? 403
+        : code === 'SUGGESTION_LIMIT_REACHED'
+          ? 429
+          : code === 'UNSAFE_PAGE_TARGET' || code === 'NON_PUBLIC_DNS'
+            ? 422
+            : 503,
     );
   }
 });
-v2Routes.route('/geo', geoRoutes);
 v2Routes.get('/project', async (c) =>
   c.json({ data: await projectPayload(c.env, c.get('userId')) }),
 );
@@ -153,21 +208,6 @@ v2Routes.post('/project', async (c) => {
       return c.json({ data: { projectId: existing.id } });
     throw new Error('PROJECT_LIMIT');
   }
-  const enrollment = await drizzle(c.env.DB)
-    .select()
-    .from(pilotEnrollments)
-    .where(eq(pilotEnrollments.userId, userId))
-    .get();
-  if (!enrollment && internalTestUserId(c.env) !== userId && !(await paidAccess(c.env, userId)))
-    return c.json(
-      {
-        error: {
-          code: 'PILOT_ENROLLMENT_REQUIRED',
-          message: errorMessages.PILOT_ENROLLMENT_REQUIRED,
-        },
-      },
-      403,
-    );
   const projectId = crypto.randomUUID();
   const now = Date.now();
   const statements = [
@@ -283,6 +323,7 @@ async function checkedBatch(
 ) {
   const result = await env.DB.batch([claim, ...rest]);
   if (!result[0]?.meta.changes) throw new Error('CONFLICT');
+  return result;
 }
 v2Routes.patch('/project', async (c) => {
   const input = parsed(
@@ -382,6 +423,7 @@ v2Routes.post('/questions', async (c) => {
   const input = parsed(z.object({ text: questionText }), await readJson(c.req.raw));
   if (!(await paidAccess(c.env, c.get('userId')))) throw new Error('PAID_ACCESS_REQUIRED');
   const m = await mutation(c.env, c.get('userId'));
+  const limit = await activePromptLimit(c.env, c.get('userId'));
   const existing = await sql(
     c.env,
     'SELECT id FROM prompts WHERE project_id=? AND normalized_text=?',
@@ -399,7 +441,7 @@ v2Routes.post('/questions', async (c) => {
     sql(
       c.env,
       `INSERT INTO prompts(id,project_id,text,normalized_text,enabled,created_at,updated_at)
-    SELECT ?,?,?,?,1,?,? WHERE ${m.guard} AND (SELECT count(*) FROM prompts WHERE project_id=? AND enabled=1 AND archived_at IS NULL)<10`,
+    SELECT ?,?,?,?,1,?,? WHERE ${m.guard} AND (SELECT count(*) FROM prompts WHERE project_id=? AND enabled=1 AND archived_at IS NULL)<min(?,(SELECT ${planLimitSql(c.env, 'promptLimit', true)} FROM projects p WHERE p.id='${m.project.id}'))`,
       id,
       m.project.id,
       input.text,
@@ -407,6 +449,7 @@ v2Routes.post('/questions', async (c) => {
       m.now,
       m.now,
       m.project.id,
+      limit,
     ),
   ]);
   if (!outcome[0]?.meta.changes) throw new Error('CONFLICT');
@@ -434,6 +477,7 @@ v2Routes.patch('/questions/:id', async (c) => {
   if (!input.text && !input.action) throw new Error('VALIDATION_ERROR');
   if (input.action === 'resume' && !(await paidAccess(c.env, c.get('userId'))))
     throw new Error('PAID_ACCESS_REQUIRED');
+  const limit = input.action === 'resume' ? await activePromptLimit(c.env, c.get('userId')) : 0;
   if (
     input.text &&
     (await sql(
@@ -467,7 +511,7 @@ v2Routes.patch('/questions/:id', async (c) => {
     : sql(
         c.env,
         `UPDATE prompts SET enabled=?,archived_at=?,updated_at=? WHERE id=? AND ${m.guard}
-      AND (?<>1 OR (SELECT count(*) FROM prompts WHERE project_id=? AND id<>? AND enabled=1 AND archived_at IS NULL)<10)`,
+      AND (?<>1 OR (SELECT count(*) FROM prompts WHERE project_id=? AND id<>? AND enabled=1 AND archived_at IS NULL)<min(?,(SELECT ${planLimitSql(c.env, 'promptLimit', true)} FROM projects p WHERE p.id='${m.project.id}')))`,
         Number(input.action === 'resume'),
         input.action === 'archive' ? m.now : null,
         m.now,
@@ -475,6 +519,7 @@ v2Routes.patch('/questions/:id', async (c) => {
         Number(input.action === 'resume'),
         m.project.id,
         q.id,
+        limit,
       );
   const result = await c.env.DB.batch([
     m.claim,
@@ -501,6 +546,15 @@ v2Routes.post('/questions/:id/replacement', async (c) => {
     .where(and(eq(prompts.id, c.req.param('id')), eq(prompts.projectId, m.project.id)))
     .get();
   if (!q) throw new Error('QUESTION_NOT_FOUND');
+  if (q.enabled && !q.archivedAt) {
+    const count = await sql(
+      c.env,
+      'SELECT count(*) AS n FROM prompts WHERE project_id=? AND enabled=1 AND archived_at IS NULL',
+      m.project.id,
+    ).first<number>('n');
+    if (Number(count) > (await activePromptLimit(c.env, c.get('userId'))))
+      throw new Error('QUESTION_LIMIT');
+  }
   if (
     await sql(
       c.env,
@@ -512,18 +566,21 @@ v2Routes.post('/questions/:id/replacement', async (c) => {
     throw new Error('QUESTION_EXISTS');
   const id = crypto.randomUUID();
   // Replacing an inactive question stays inactive, so replacement cannot bypass the active limit.
-  await checkedBatch(c.env, m.claim, [
+  const result = await checkedBatch(c.env, m.claim, [
     sql(
       c.env,
-      `UPDATE prompts SET enabled=0,archived_at=?,updated_at=? WHERE id=? AND ${m.guard}`,
+      `UPDATE prompts SET enabled=0,archived_at=?,updated_at=? WHERE id=? AND ${m.guard}
+      AND (?=0 OR (SELECT count(*) FROM prompts WHERE project_id=? AND enabled=1 AND archived_at IS NULL)<=(SELECT ${planLimitSql(c.env, 'promptLimit', true)} FROM projects p WHERE p.id='${m.project.id}'))`,
       m.now,
       m.now,
       q.id,
+      Number(q.enabled && !q.archivedAt),
+      m.project.id,
     ),
     sql(
       c.env,
       `INSERT INTO prompts(id,project_id,text,normalized_text,enabled,created_at,updated_at,replaces_question_id)
-      SELECT ?,?,?,?,?,?,?,? WHERE ${m.guard}`,
+      SELECT ?,?,?,?,?,?,?,? WHERE ${m.guard} AND EXISTS(SELECT 1 FROM prompts WHERE id=? AND archived_at=? AND updated_at=?)`,
       id,
       m.project.id,
       input.text,
@@ -532,13 +589,20 @@ v2Routes.post('/questions/:id/replacement', async (c) => {
       m.now,
       m.now,
       q.id,
+      q.id,
+      m.now,
+      m.now,
     ),
     sql(
       c.env,
-      `UPDATE scan_run_items SET status='cancelled',terminal_reason='question_replaced' WHERE prompt_id=? AND status='pending' AND ${m.guard}`,
+      `UPDATE scan_run_items SET status='cancelled',terminal_reason='question_replaced' WHERE prompt_id=? AND status='pending' AND ${m.guard} AND EXISTS(SELECT 1 FROM prompts WHERE id=? AND archived_at=? AND updated_at=?)`,
       q.id,
+      q.id,
+      m.now,
+      m.now,
     ),
   ]);
+  if (!result[2]?.meta.changes) throw new Error('QUESTION_LIMIT');
   return c.json({ data: { id, replacesQuestionId: q.id } }, 201);
 });
 v2Routes.get('/questions/:id/history', async (c) => {
@@ -619,6 +683,7 @@ v2Routes.post('/scans', async (c) => {
   );
   if (
     input.mode === 'today' &&
+    (await userPlan(c.env, c.get('userId')))?.id !== 'legacy_perplexity' &&
     (await c.env.DB.prepare(
       'SELECT s.project_id FROM geo_settings s JOIN projects p ON p.id=s.project_id WHERE p.user_id=?',
     )

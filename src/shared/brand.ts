@@ -2,6 +2,5 @@ export const brand = {
   name: 'CiteScout',
   tagline: 'From AI answers to your next marketing action.',
   description:
-    'A GEO workspace for founders and marketers. Organise buyer questions, inspect AI answers and sources, review suggested actions, and measure again.',
-  priceMonthly: 19,
+    'An AI visibility workspace for founders and marketers. Organise buyer questions, review saved answers and suggested actions, and compare follow-up checks.',
 } as const;

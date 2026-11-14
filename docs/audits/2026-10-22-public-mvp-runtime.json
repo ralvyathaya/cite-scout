@@ -1,0 +1,568 @@
+{
+  "auditDate": "2026-10-22",
+  "capturedAt": "2026-10-22T16:26:54.065Z",
+  "remoteMutation": false,
+  "environments": {
+    "production": {
+      "worker": "citescout",
+      "observations": {
+        "tables": [
+          {
+            "name": "_cf_KV"
+          },
+          {
+            "name": "accounts"
+          },
+          {
+            "name": "billing_webhook_receipts"
+          },
+          {
+            "name": "competitors"
+          },
+          {
+            "name": "d1_migrations"
+          },
+          {
+            "name": "projects"
+          },
+          {
+            "name": "prompts"
+          },
+          {
+            "name": "provider_call_reservations"
+          },
+          {
+            "name": "rate_limits"
+          },
+          {
+            "name": "scan_results"
+          },
+          {
+            "name": "scan_runs"
+          },
+          {
+            "name": "sessions"
+          },
+          {
+            "name": "sqlite_sequence"
+          },
+          {
+            "name": "subscriptions"
+          },
+          {
+            "name": "users"
+          },
+          {
+            "name": "verifications"
+          }
+        ],
+        "subscriptions": [
+          {
+            "status": "active",
+            "test_mode": 1,
+            "count": 1
+          }
+        ],
+        "projects": [
+          {
+            "count": 0
+          }
+        ],
+        "migrations": [
+          {
+            "name": "0000_careless_selene.sql"
+          },
+          {
+            "name": "0001_sticky_the_hand.sql"
+          }
+        ]
+      },
+      "errors": [
+        {
+          "name": "geoSettings",
+          "message": "Read-only audit HTTP 400"
+        },
+        {
+          "name": "captures",
+          "message": "Read-only audit HTTP 400"
+        },
+        {
+          "name": "processing",
+          "message": "Read-only audit HTTP 400"
+        },
+        {
+          "name": "actions",
+          "message": "Read-only audit HTTP 400"
+        },
+        {
+          "name": "actionEvents",
+          "message": "Read-only audit HTTP 400"
+        },
+        {
+          "name": "measurementSamples",
+          "message": "Read-only audit HTTP 400"
+        },
+        {
+          "name": "costs",
+          "message": "Read-only audit HTTP 400"
+        }
+      ],
+      "deployment": {
+        "id": "25e83de4-c002-4914-b99e-26661324f16f",
+        "createdAt": "2026-10-10T00:00:50.250313Z",
+        "versions": [
+          {
+            "version_id": "bc938a47-378d-42ef-909c-c003569ad041",
+            "percentage": 100
+          }
+        ]
+      },
+      "runtime": {
+        "compatibilityDate": "2026-09-16",
+        "compatibilityFlags": ["nodejs_compat"],
+        "crons": ["0 * * * *"]
+      },
+      "plainVariables": {
+        "APP_ENV": "production",
+        "APP_URL": "https://cite-scout.com",
+        "EXTERNAL_INTEGRATIONS_ENABLED": "true",
+        "GLOBAL_DAILY_PROVIDER_CALL_CAP": "150",
+        "LEMON_SQUEEZY_TEST_MODE": "true",
+        "MAX_PROVIDER_CALLS_PER_CRON_INVOCATION": "20",
+        "PER_USER_MONTHLY_PROVIDER_CALL_CAP": "350",
+        "TEST_AUTH_ENABLED": "false",
+        "V2_SCANS_ENABLED": "true"
+      },
+      "secretPresence": {
+        "BETTER_AUTH_SECRET": true,
+        "RESEND_API_KEY": true,
+        "TURNSTILE_SECRET_KEY": true,
+        "OPERATOR_SECRET": true,
+        "GOOGLE_CLIENT_ID": true,
+        "GOOGLE_CLIENT_SECRET": true,
+        "LEMON_SQUEEZY_API_KEY": true,
+        "LEMON_SQUEEZY_WEBHOOK_SECRET": true,
+        "OPENAI_API_KEY": false,
+        "PERPLEXITY_API_KEY": true,
+        "SERPAPI_API_KEY": false,
+        "ANTHROPIC_API_KEY": false,
+        "DATAFORSEO_LOGIN": false,
+        "DATAFORSEO_PASSWORD": false
+      },
+      "billingIdentifiersPresent": true,
+      "resources": [
+        {
+          "name": "ASSETS",
+          "type": "assets"
+        },
+        {
+          "name": "DB",
+          "type": "d1"
+        }
+      ]
+    },
+    "staging": {
+      "worker": "citescout-staging",
+      "observations": {
+        "tables": [
+          {
+            "name": "_cf_KV"
+          },
+          {
+            "name": "accounts"
+          },
+          {
+            "name": "billing_webhook_receipts"
+          },
+          {
+            "name": "competitors"
+          },
+          {
+            "name": "d1_migrations"
+          },
+          {
+            "name": "geo_action_events"
+          },
+          {
+            "name": "geo_action_evidence"
+          },
+          {
+            "name": "geo_actions"
+          },
+          {
+            "name": "geo_daily_outcomes"
+          },
+          {
+            "name": "geo_measurement_samples"
+          },
+          {
+            "name": "geo_observations"
+          },
+          {
+            "name": "geo_processing_attempts"
+          },
+          {
+            "name": "geo_prompt_sets"
+          },
+          {
+            "name": "geo_prompt_versions"
+          },
+          {
+            "name": "geo_provider_requests"
+          },
+          {
+            "name": "geo_run_items"
+          },
+          {
+            "name": "geo_run_snapshots"
+          },
+          {
+            "name": "geo_settings"
+          },
+          {
+            "name": "onboarding_suggestions"
+          },
+          {
+            "name": "pilot_enrollments"
+          },
+          {
+            "name": "product_events"
+          },
+          {
+            "name": "projects"
+          },
+          {
+            "name": "prompts"
+          },
+          {
+            "name": "provider_call_reservations"
+          },
+          {
+            "name": "rate_limits"
+          },
+          {
+            "name": "scan_results"
+          },
+          {
+            "name": "scan_run_items"
+          },
+          {
+            "name": "scan_runs"
+          },
+          {
+            "name": "sessions"
+          },
+          {
+            "name": "sqlite_sequence"
+          },
+          {
+            "name": "subscriptions"
+          },
+          {
+            "name": "users"
+          },
+          {
+            "name": "verifications"
+          }
+        ],
+        "subscriptions": [],
+        "projects": [
+          {
+            "count": 1
+          }
+        ],
+        "geoSettings": [
+          {
+            "daily_enabled": 0,
+            "count": 1
+          }
+        ],
+        "captures": [
+          {
+            "engine": "bing_copilot",
+            "status": "captured",
+            "count": 5
+          },
+          {
+            "engine": "claude_web_search",
+            "status": "captured",
+            "count": 2
+          },
+          {
+            "engine": "google_aio",
+            "status": "captured",
+            "count": 4
+          },
+          {
+            "engine": "openai_web_search",
+            "status": "captured",
+            "count": 6
+          },
+          {
+            "engine": "perplexity",
+            "status": "captured",
+            "count": 5
+          }
+        ],
+        "processing": [
+          {
+            "kind": "analysis",
+            "state": "completed",
+            "count": 20
+          }
+        ],
+        "actions": [
+          {
+            "status": "completed",
+            "count": 1
+          },
+          {
+            "status": "in_progress",
+            "count": 1
+          },
+          {
+            "status": "proposed",
+            "count": 15
+          }
+        ],
+        "actionEvents": [
+          {
+            "kind": "accepted",
+            "count": 1
+          },
+          {
+            "kind": "completed",
+            "count": 2
+          },
+          {
+            "kind": "progress",
+            "count": 13
+          },
+          {
+            "kind": "reopened",
+            "count": 1
+          }
+        ],
+        "measurementSamples": {
+          "before": 46,
+          "trend": 36
+        },
+        "costs": [
+          {
+            "collector": "anthropic_messages",
+            "state": "completed",
+            "count": 3,
+            "unknown_count": 0,
+            "reported_sum": null,
+            "estimated_sum": 0.11244000000000001,
+            "reserved_sum": 0.35
+          },
+          {
+            "collector": "openai_responses",
+            "state": "completed",
+            "count": 6,
+            "unknown_count": 0,
+            "reported_sum": null,
+            "estimated_sum": 0.06913050000000001,
+            "reserved_sum": 1.5
+          },
+          {
+            "collector": "perplexity_api",
+            "state": "completed",
+            "count": 6,
+            "unknown_count": 0,
+            "reported_sum": 0.02136,
+            "estimated_sum": null,
+            "reserved_sum": 3
+          },
+          {
+            "collector": "serpapi",
+            "state": "completed",
+            "count": 17,
+            "unknown_count": 0,
+            "reported_sum": null,
+            "estimated_sum": 0,
+            "reserved_sum": 0
+          },
+          {
+            "collector": "workers_ai",
+            "state": "completed",
+            "count": 20,
+            "unknown_count": 0,
+            "reported_sum": null,
+            "estimated_sum": 0.001968476,
+            "reserved_sum": 0.04
+          }
+        ],
+        "migrations": [
+          {
+            "name": "0000_careless_selene.sql"
+          },
+          {
+            "name": "0001_sticky_the_hand.sql"
+          },
+          {
+            "name": "0002_citescout_v2.sql"
+          },
+          {
+            "name": "0003_geo_action_loop.sql"
+          },
+          {
+            "name": "0004_geo_analysis.sql"
+          },
+          {
+            "name": "0005_geo_actions.sql"
+          },
+          {
+            "name": "0006_geo_measurement.sql"
+          },
+          {
+            "name": "0007_geo_processing_usage.sql"
+          },
+          {
+            "name": "0008_geo_playbook_recovery.sql"
+          },
+          {
+            "name": "0009_geo_daily_outcomes.sql"
+          },
+          {
+            "name": "0010_tough_gamma_corps.sql"
+          },
+          {
+            "name": "0011_onboarding_suggestions.sql"
+          }
+        ],
+        "captureQuality": [
+          {
+            "engine": "bing_copilot",
+            "quality": "no_feature",
+            "count": 5
+          },
+          {
+            "engine": "claude_web_search",
+            "quality": "partial",
+            "count": 2
+          },
+          {
+            "engine": "google_aio",
+            "quality": "complete",
+            "count": 4
+          },
+          {
+            "engine": "openai_web_search",
+            "quality": "partial",
+            "count": 6
+          },
+          {
+            "engine": "perplexity",
+            "quality": "complete",
+            "count": 5
+          }
+        ],
+        "captureAdmissions": [
+          {
+            "count": 27
+          }
+        ],
+        "activeSubmittedWork": []
+      },
+      "errors": [],
+      "deployment": {
+        "id": "b111b06a-953d-48c4-ac0d-9867400e5967",
+        "createdAt": "2026-10-20T10:52:59.078831Z",
+        "versions": [
+          {
+            "version_id": "0bbff4e8-6b52-4bc3-ab4b-481c34eb8683",
+            "percentage": 100
+          }
+        ]
+      },
+      "runtime": {
+        "compatibilityDate": "2026-09-16",
+        "compatibilityFlags": ["nodejs_compat"],
+        "crons": ["*/5 * * * *"]
+      },
+      "plainVariables": {
+        "APP_ENV": "production",
+        "APP_URL": "https://staging.cite-scout.com",
+        "DEPLOYMENT_ENV": "staging",
+        "EXTERNAL_INTEGRATIONS_ENABLED": "true",
+        "GEO_ANALYSIS_ENABLED": "false",
+        "GEO_CLASSIFIER_MODEL": "clef-flash",
+        "GEO_CLAUDE_ENABLED": "true",
+        "GEO_CLAUDE_MODEL": "claude-sonnet-5-5",
+        "GEO_GLOBAL_DAILY_CALL_CAP": "3",
+        "GEO_INTERNAL_TEST_ANTHROPIC_MAX_COST_USD": "0.25",
+        "GEO_INTERNAL_TEST_ANTHROPIC_REQUEST_CAP": "3",
+        "GEO_INTERNAL_TEST_LIMITS": "{\"observations\":27,\"openai\":0,\"perplexity\":0,\"serpapi\":0,\"classifier\":0}",
+        "GEO_INTERNAL_TEST_OPENAI_MAX_COST_USD": "0",
+        "GEO_INTERNAL_TEST_PERPLEXITY_MAX_COST_USD": "0",
+        "GEO_INTERNAL_TEST_PROCESSING_MAX_COST_USD": "0",
+        "GEO_INTERNAL_TEST_SPEND_CAP_USD": "4.90",
+        "GEO_OPENAI_MODEL": "gpt-6-luna",
+        "GEO_PAGE_CHECKS_ENABLED": "false",
+        "GEO_PROCESSING_GLOBAL_DAILY_CAP": "0",
+        "GEO_PROCESSING_PROJECT_DAILY_CAP": "0",
+        "GEO_PROJECT_DAILY_CALL_CAP": "3",
+        "GEO_PROJECT_MONTHLY_CALL_CAP": "27",
+        "GEO_SCANS_ENABLED": "true",
+        "GEO_SERPAPI_MONTHLY_REQUEST_CAP": "0",
+        "GEO_SERP_COLLECTOR": "serpapi",
+        "GLOBAL_DAILY_PROVIDER_CALL_CAP": "18",
+        "LEMON_SQUEEZY_TEST_MODE": "true",
+        "MAX_PROVIDER_CALLS_PER_CRON_INVOCATION": "4",
+        "ONBOARDING_SUGGESTIONS_DAILY_CAP": "9",
+        "ONBOARDING_SUGGESTIONS_TOTAL_BUDGET_USD": "0.09",
+        "PER_USER_MONTHLY_PROVIDER_CALL_CAP": "36",
+        "TEST_AUTH_ENABLED": "false",
+        "V2_SCANS_ENABLED": "true"
+      },
+      "secretPresence": {
+        "BETTER_AUTH_SECRET": true,
+        "RESEND_API_KEY": true,
+        "TURNSTILE_SECRET_KEY": true,
+        "OPERATOR_SECRET": true,
+        "GOOGLE_CLIENT_ID": true,
+        "GOOGLE_CLIENT_SECRET": true,
+        "LEMON_SQUEEZY_API_KEY": false,
+        "LEMON_SQUEEZY_WEBHOOK_SECRET": false,
+        "OPENAI_API_KEY": true,
+        "PERPLEXITY_API_KEY": true,
+        "SERPAPI_API_KEY": true,
+        "ANTHROPIC_API_KEY": true,
+        "DATAFORSEO_LOGIN": false,
+        "DATAFORSEO_PASSWORD": false
+      },
+      "billingIdentifiersPresent": false,
+      "resources": [
+        {
+          "name": "AI",
+          "type": "ai"
+        },
+        {
+          "name": "ASSETS",
+          "type": "assets"
+        },
+        {
+          "name": "DB",
+          "type": "d1"
+        }
+      ]
+    }
+  },
+  "reviewedRevision": "1379ddf",
+  "method": "Worker settings/deployments/schedules GET; named-environment D1 single SELECT statements; no app measurement GET, mutations or paid provider calls",
+  "localEvaluation": {
+    "records": 20,
+    "reviewerPresent": false,
+    "reviewedAtPresent": false,
+    "labelsLockPresent": false,
+    "scoredReportPresent": false,
+    "valuesNotExported": true
+  },
+  "syntheticDiagnostic": {
+    "testSubscriptionMatchesPaidPredicate": true,
+    "admitted": 1,
+    "remoteRequests": 0
+  }
+}

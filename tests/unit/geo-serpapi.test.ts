@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { captureSerpApiGeo, SerpApiError } from '../../src/integrations/serpapi/geo';
-import { geoSurfaces, type GeoRequestContext } from '../../src/shared/geo';
+import { geoCollectorPolicy, geoSurfaces, type GeoRequestContext } from '../../src/shared/geo';
 
 // Synthetic documented envelopes exercise parsing; they are not live monitoring results.
 const context = (engine: 'google_aio' | 'bing_copilot' = 'google_aio'): GeoRequestContext => ({
@@ -13,7 +13,8 @@ const context = (engine: 'google_aio' | 'bing_copilot' = 'google_aio'): GeoReque
   promptText: 'C++ tools at 50%?',
   engine,
   ...geoSurfaces[engine],
-  collectorVersion: 'geo-collector-1',
+  collector: 'serpapi',
+  ...geoCollectorPolicy(engine, 'serpapi'),
   languageCode: 'en',
   locationCode: 2840,
   device: 'desktop',
@@ -21,7 +22,6 @@ const context = (engine: 'google_aio' | 'bing_copilot' = 'google_aio'): GeoReque
   brand: { id: 'b', name: 'Orbit', domain: 'orbit.example' },
   competitors: [],
   instructionVersion: 'neutral-research-1',
-  maxOutputTokens: 500,
 });
 const envelope = (data: Record<string, unknown> = {}, id = 'search-1') => ({
   search_metadata: { id, status: 'Success' },
@@ -41,7 +41,7 @@ const overview = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('bounded SerpApi captures', () => {
-  it('sends literal Google prompt fresh and preserves answer and reference provenance', async () => {
+  it('preserves Google evidence without treating provider success as verified answer coverage', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(reply(envelope({ ai_overview: overview })));
@@ -60,7 +60,7 @@ describe('bounded SerpApi captures', () => {
     expect(before).toHaveBeenCalledTimes(1);
     expect(capture).toMatchObject({
       answerText: 'Orbit is an option.',
-      quality: 'complete',
+      quality: 'partial',
       model: null,
       providerRequestId: 'search-1',
       providerStatus: 'Success',
@@ -68,6 +68,19 @@ describe('bounded SerpApi captures', () => {
     });
     expect(capture.sources.some((source) => source.referenceLevel === 'answer')).toBe(true);
     expect(capture.sources.every((source) => source.spans === undefined)).toBe(true);
+    const legacyFetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(reply(envelope({ ai_overview: overview })));
+    expect(
+      (
+        await captureSerpApiGeo(
+          'key',
+          { ...context(), collectorVersion: 'geo-collector-2' },
+          allow,
+          legacyFetcher,
+        )
+      ).quality,
+    ).toBe('complete');
   });
 
   it('reserves every follow-up, uses a fixed endpoint, and redacts both raw envelopes', async () => {
@@ -185,7 +198,7 @@ describe('bounded SerpApi captures', () => {
       .fn<typeof fetch>()
       .mockResolvedValue(reply(envelope({ ai_overview: feature })));
     const capture = await captureSerpApiGeo('key', context(), allow, fetcher);
-    expect(capture.quality).toBe('complete');
+    expect(capture.quality).toBe('partial');
     for (const text of [
       'Orbit',
       'Works for teams.',
@@ -218,6 +231,86 @@ describe('bounded SerpApi captures', () => {
     expect(capture.quality).toBe('partial');
     expect(capture.answerText).toBe('Answer');
     expect(capture.sources).toEqual([]);
+  });
+
+  it('preserves nested Google list text blocks in order with their source references', async () => {
+    const feature = {
+      text_blocks: [
+        { type: 'paragraph', snippet: 'Options:' },
+        {
+          type: 'list',
+          list: [
+            {
+              text_blocks: [
+                { type: 'heading', snippet: 'Orbit' },
+                { type: 'paragraph', snippet: 'For teams.', reference_indexes: [0] },
+                { type: 'list', list: [{ snippet: 'Compare plans.' }] },
+              ],
+            },
+          ],
+        },
+      ],
+      references: [{ index: 0, link: 'https://evidence.example/' }],
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(reply(envelope({ ai_overview: feature }))));
+    const capture = await captureSerpApiGeo('key', context(), allow, fetcher);
+    expect(capture.quality).toBe('partial');
+    expect(capture.answerText).toBe('Options:\nOrbit\nFor teams.\nCompare plans.');
+    expect(capture.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          canonicalUrl: 'https://evidence.example/',
+          referenceLevel: 'element',
+        }),
+      ]),
+    );
+    expect(capture.raw).toMatchObject({ search: { ai_overview: feature } });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    const prior = await captureSerpApiGeo(
+      'key',
+      { ...context(), collectorVersion: 'geo-collector-2' },
+      allow,
+      fetcher,
+    );
+    expect(prior.quality).toBe('partial');
+    expect(prior.answerText).toBe('Options:');
+  });
+
+  it.each([
+    ['malformed blocks', 'invalid'],
+    ['invalid source index', [{ type: 'paragraph', snippet: 'Nested', reference_indexes: [99] }]],
+    [
+      'unsafe link',
+      [{ type: 'paragraph', snippet: 'Nested', snippet_links: [{ link: 'javascript:alert(1)' }] }],
+    ],
+    [
+      'excessive nesting',
+      Array.from({ length: 10 }).reduce<unknown>(
+        (text_blocks) => [{ type: 'list', list: [{ text_blocks }] }],
+        [{ type: 'paragraph', snippet: 'Too deep' }],
+      ),
+    ],
+  ])('keeps %s within nested Google lists partial', async (_name, text_blocks) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      reply(
+        envelope({
+          ai_overview: {
+            text_blocks: [
+              { type: 'paragraph', snippet: 'Available introduction.' },
+              { type: 'list', list: [{ text_blocks }] },
+            ],
+          },
+        }),
+      ),
+    );
+    const capture = await captureSerpApiGeo('key', context(), allow, fetcher);
+    expect(capture.quality).toBe('partial');
+    expect(capture.answerText).toContain('Available introduction.');
+    expect(capture.sources).toEqual([]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it('uses Bing overview and question/answer content, excluding organic snippets', async () => {
@@ -460,7 +553,7 @@ describe('bounded SerpApi captures', () => {
         reply(envelope({ ai_overview: { text_blocks: [], page_token: 'token' } })),
       )
       .mockResolvedValueOnce(reply(envelope({ ai_overview: overview }, 'second')));
-    expect((await captureSerpApiGeo('key', context(), allow, fetcher)).quality).toBe('complete');
+    expect((await captureSerpApiGeo('key', context(), allow, fetcher)).quality).toBe('partial');
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 

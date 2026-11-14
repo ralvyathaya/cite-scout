@@ -1,0 +1,120 @@
+{
+  "document": "C:\\Users\\RALVY\\Desktop\\WEBSAASCANIVIBECODEIT\\docs\\plans\\2026-10-10-2109-feat-geo-action-loop-plan.md",
+  "reviewed_sha256": "5bd731a2193ff2ee0c7cfd7a10cf239478ef302211a8388f261a72605578a75c",
+  "edit_authority": "User requested this implementation draft. Apply technical corrections necessary for established R20 comparability and U6 verification; preserve Product Contract and settled scope.",
+  "coverage": [
+    {
+      "role": "coherence-reviewer",
+      "result": {
+        "reviewer": "coherence",
+        "findings": [],
+        "residual_risks": [],
+        "deferred_questions": []
+      }
+    },
+    {
+      "role": "feasibility-reviewer",
+      "result": {
+        "reviewer": "feasibility",
+        "findings": [],
+        "residual_risks": [],
+        "deferred_questions": []
+      }
+    },
+    {
+      "role": "security-lens-reviewer",
+      "result": {
+        "reviewer": "security-lens",
+        "findings": [],
+        "residual_risks": [],
+        "deferred_questions": []
+      }
+    },
+    {
+      "role": "design-lens-reviewer",
+      "result": {
+        "reviewer": "design-lens",
+        "findings": [],
+        "residual_risks": [],
+        "deferred_questions": []
+      }
+    },
+    {
+      "role": "scope-guardian-reviewer",
+      "result": {
+        "reviewer": "scope-guardian",
+        "findings": [],
+        "residual_risks": [],
+        "deferred_questions": []
+      }
+    },
+    {
+      "role": "adversarial-document-reviewer",
+      "result": {
+        "reviewer": "adversarial",
+        "findings": [
+          {
+            "title": "Latest daily sample permits outcome selection",
+            "severity": "P2",
+            "section": "Planning Contract — Metrics, Action Pins and Re-measurement",
+            "why_it_matters": "Repeated manual checks can change the measured trend even though each day still contributes one sample: a scheduled answer without a recommendation can be replaced by a later favorable answer, and rerunning until favorable can turn the after-window rate into apparent improvement. KTD8 (one observation per day) prevents extra weighting but does not prevent this outcome selection; the U6 (comparable re-measurement) test promises stronger protection than the sampling rule provides. Freezing the first successful daily sample preserves equal weighting and prevents later manual outcomes from replacing the measurement sample.",
+            "finding_type": "error",
+            "autofix_class": "gated_auto",
+            "confidence": 75,
+            "evidence": [
+              "KTD8. Metrik memakai sampel dan coverage yang terlihat. Cohort prompt-version/engine/configuration tetap; satu successful observation terakhir per pasangan per hari UTC mencegah manual checks membobot ulang tren.",
+              "Manual observations remain inspectable but at most the latest successful sample per UTC day enters trends.",
+              "repeated manual sampling cannot distort daily trends"
+            ],
+            "suggested_fix": "Change KTD8 (daily cohort sampling), the measurement rule, and U6 (comparable re-measurement) to use the first successful eligible capture per fixed cohort and UTC day, with later manual captures still inspectable as latest evidence. Add the concrete U6 scenario where a later favorable manual capture cannot replace that day's already-selected measurement sample; preserve the existing coverage and limited-data labels."
+          }
+        ],
+        "residual_risks": [],
+        "deferred_questions": []
+      }
+    },
+    {
+      "role": "product-lens-reviewer",
+      "result": {
+        "reviewer": "product-lens",
+        "findings": [],
+        "residual_risks": [],
+        "deferred_questions": []
+      }
+    }
+  ],
+  "cross_model": {
+    "result": "not_run",
+    "reason": "jq absent; four worker legs clean-skipped before document egress"
+  },
+  "dispositions": [
+    {
+      "finding": "Latest daily sample permits outcome selection",
+      "reviewer": "adversarial",
+      "severity": "P2",
+      "confidence": 75,
+      "route": "Apply",
+      "reason": "R20 promises comparable descriptive measurement and U6 promises repeated manual sampling cannot distort trends. Latest-success selection permits replacement with a favorable stochastic result. First-success fixed sampling closes this at no extra infrastructure cost and preserves manual fresh captures.",
+      "correction": "Replace latest daily measurement selection with first successful eligible frozen sample; add later-favorable-manual scenario.",
+      "state": "applied_verified"
+    }
+  ],
+  "remaining_proposed_fixes": 0,
+  "remaining_decisions": 0,
+  "remaining_fyi": 0,
+  "final_sha256": "e3e7997e9c862f5ae1590443e208dfe52db65247a8f6345cf8a16cb5e1acfabd",
+  "fixes_applied": 1,
+  "confidence_check": {
+    "depth": "Deep",
+    "risk": "external integrations, migration, usage budget, tenant privacy",
+    "section_scores": {
+      "Key Technical Decisions": 1,
+      "Implementation Units": 1,
+      "System-Wide Impact": 1,
+      "Dependencies": 1,
+      "High-Level Technical Design": 0
+    },
+    "result": "No section reaches two points after provider/repo/flow grounding; no additional research needed"
+  },
+  "scratch_retained_for_review_resume": "C:\\Users\\RALVY\\AppData\\Local\\Temp\\ce-plan-geo-20261010\\review"
+}
