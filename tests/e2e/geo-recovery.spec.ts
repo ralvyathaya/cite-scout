@@ -114,9 +114,15 @@ test('discovers scheduled uncertainty and follows operator settlement without pa
     .locator('summary')
     .filter({ hasText: 'scheduled check · 0/8 observations · partial' });
   await expect(summary).toBeVisible();
+  const details = page.locator('details').filter({ has: summary });
+  const progress = page.getByText('0 of 8 observations saved · partial');
+  await expect(details).toHaveJSProperty('open', true);
+  await expect(progress).toBeVisible();
   await summary.focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByText('0 of 8 observations saved · partial')).toBeVisible();
+  await expect(progress).toBeHidden();
+  await page.keyboard.press('Enter');
+  await expect(progress).toBeVisible();
   await expect(page.getByText('SUBMISSION_LEASE_EXPIRED').first()).toBeVisible();
   run.status = 'failed';
   run.completedAt = new Date().toISOString();
